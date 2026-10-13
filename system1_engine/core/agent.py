@@ -25,6 +25,7 @@ class ReflexDecision:
     latent_value: Optional[float] = None  # Valor estimado V(s) se solicitado
     calibration: float = 0.0   # [0.0, 1.0] - Nível de calibração / temperatura aplicada
     latency_ms: float = 0.0    # Latência de execução do reflexo em ms
+    ensemble_fallback_triggered: bool = False  # Flag indicando se o fallback de ensemble foi ativado sob incerteza
 
 
 class UniversalS1Agent(nn.Module):
@@ -223,6 +224,7 @@ class UniversalS1Agent(nn.Module):
         auto_calibrate: bool = False,
         avoid_action: Optional[Union[int, List[int], Set[int]]] = None,
         quality_filter: bool = True,
+        ensemble_fallback: bool = False,
     ) -> Union[int, np.ndarray, ReflexDecision]:
         """Ultra-fast single-forward reflex inference.
 
@@ -230,6 +232,7 @@ class UniversalS1Agent(nn.Module):
         Supports deterministic (mean/argmax), calibrated sampling (0.0 to 1.0), and homeostatic
         auto-calibration (auto_calibrate=True or calibration='auto') based on reward momentum.
         If return_decision=True, returns ReflexDecision with uncertainty gating signals and active calibration.
+        If ensemble_fallback=True and is_uncertain=True, triggers ConfidenceGatedEnsemble sub-millisecond fallback.
         """
         t0 = time.perf_counter()
         raw_obs = obs_dict["obs"]
@@ -432,6 +435,21 @@ class UniversalS1Agent(nn.Module):
                         action = alt_action
                         break
 
+            is_uncertain = (uncertainty >= uncertainty_threshold) or (confidence < confidence_threshold)
+            ensemble_fallback_triggered = False
+
+            # Fallback Ativo por Gating de Confiança (A.2)
+            if is_uncertain and ensemble_fallback:
+                from system1_engine.core.ensemble import ConfidenceGatedEnsemble
+                action, _ = ConfidenceGatedEnsemble.resolve_uncertain_action(
+                    agent=self,
+                    h=h,
+                    is_discrete=True,
+                    avoid_set=avoid_set,
+                    quality_filter=quality_filter,
+                )
+                ensemble_fallback_triggered = True
+
             if not hasattr(self, "_action_history"):
                 self._action_history = []
             self._action_history.append(action)
@@ -441,7 +459,6 @@ class UniversalS1Agent(nn.Module):
             if not return_decision:
                 return action
 
-            is_uncertain = (uncertainty >= uncertainty_threshold) or (confidence < confidence_threshold)
             latent_val = float(self.value_head(h).squeeze().item()) if return_value else None
             latency_ms = (time.perf_counter() - t0) * 1000.0
 
@@ -455,6 +472,7 @@ class UniversalS1Agent(nn.Module):
                 latent_value=latent_val,
                 calibration=calib,
                 latency_ms=latency_ms,
+                ensemble_fallback_triggered=ensemble_fallback_triggered,
             )
         else:
             mu = self.policy_head.mu_net(h)
@@ -500,10 +518,32 @@ class UniversalS1Agent(nn.Module):
 
             if hasattr(self, "action_space") and isinstance(self.action_space, gym.spaces.Box):
                 action_np = np.clip(action_np, self.action_space.low, self.action_space.high)
+
+            is_uncertain = (uncertainty >= uncertainty_threshold) or (confidence < confidence_threshold)
+            ensemble_fallback_triggered = False
+
+            # Fallback Ativo por Gating de Confiança Contínuo (A.2)
+            if is_uncertain and ensemble_fallback:
+                from system1_engine.core.ensemble import ConfidenceGatedEnsemble
+                action_np, _ = ConfidenceGatedEnsemble.resolve_uncertain_action(
+                    agent=self,
+                    h=h,
+                    is_discrete=False,
+                    quality_filter=quality_filter,
+                )
+                if hasattr(self, "action_space") and isinstance(self.action_space, gym.spaces.Box):
+                    action_np = np.clip(action_np, self.action_space.low, self.action_space.high)
+                ensemble_fallback_triggered = True
+
+            if not hasattr(self, "_action_history"):
+                self._action_history = []
+            self._action_history.append(action_np)
+            if len(self._action_history) > 8:
+                self._action_history.pop(0)
+
             if not return_decision:
                 return action_np
 
-            is_uncertain = (uncertainty >= uncertainty_threshold) or (confidence < confidence_threshold)
             latent_val = float(self.value_head(h).squeeze().item()) if return_value else None
             latency_ms = (time.perf_counter() - t0) * 1000.0
 
@@ -517,6 +557,7 @@ class UniversalS1Agent(nn.Module):
                 latent_value=latent_val,
                 calibration=calib,
                 latency_ms=latency_ms,
+                ensemble_fallback_triggered=ensemble_fallback_triggered,
             )
 
     @torch.no_grad()
@@ -532,6 +573,7 @@ class UniversalS1Agent(nn.Module):
         auto_calibrate: bool = False,
         avoid_action: Optional[Union[int, List[int], Set[int]]] = None,
         quality_filter: bool = True,
+        ensemble_fallback: bool = False,
     ) -> ReflexDecision:
         """Executa a decisão reflexiva retornando a estrutura ReflexDecision com telemetria e calibração."""
         decision = self.act_fast(
@@ -546,6 +588,7 @@ class UniversalS1Agent(nn.Module):
             auto_calibrate=auto_calibrate,
             avoid_action=avoid_action,
             quality_filter=quality_filter,
+            ensemble_fallback=ensemble_fallback,
         )
         assert isinstance(decision, ReflexDecision)
         return decision

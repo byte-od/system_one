@@ -103,3 +103,77 @@ def test_ppo_vectorized_exploration_scale_does_not_collapse():
     # A escala deve se manter saudável e NÃO cair abaixo do piso configurado (0.40)
     assert trainer._adaptive_scale >= 0.40, f"Escala colapsou para {trainer._adaptive_scale}"
     assert trainer.exploration_scale >= 0.40
+
+
+def test_confidence_gated_ensemble_triggered_on_uncertainty():
+    """Valida que o ConfidenceGatedEnsemble é acionado como fallback exclusivamente sob incerteza."""
+    env = RubiksCubeEnv(scramble_depth=2)
+    obs, _ = env.reset(seed=77)
+    agent = UniversalS1Agent(obs_space=env.observation_space, action_space=env.action_space)
+    agent.eval()
+
+    obs_dict = {
+        "obs": obs,
+        "prev_action": 0,
+        "prev_reward": 0.0,
+        "delta_obs": None,
+    }
+
+    # 1. Quando ensemble_fallback=False, nunca deve acionar
+    dec_no_fallback = agent.act_with_confidence(
+        obs_dict,
+        confidence_threshold=0.99,  # Força is_uncertain = True
+        ensemble_fallback=False,
+    )
+    assert dec_no_fallback.is_uncertain is True
+    assert dec_no_fallback.ensemble_fallback_triggered is False
+
+    # 2. Quando ensemble_fallback=True e sob incerteza, deve acionar o fallback instantâneo
+    dec_with_fallback = agent.act_with_confidence(
+        obs_dict,
+        confidence_threshold=0.99,  # Força is_uncertain = True
+        ensemble_fallback=True,
+    )
+    assert dec_with_fallback.is_uncertain is True
+    assert dec_with_fallback.ensemble_fallback_triggered is True
+    # Latência sub-milissegundo preservada
+    assert dec_with_fallback.latency_ms < 1.0, f"Latência excedeu orçamento: {dec_with_fallback.latency_ms} ms"
+
+
+def test_continuous_purity_score_penalizes_jitter_and_reversals():
+    """Garante que a pureza contínua generalizada penaliza oscilações de cosseno e alto jerk."""
+    # 1. Trajetória suave unidirecional
+    smooth_traj = [
+        np.array([1.0, 0.0], dtype=np.float32),
+        np.array([0.95, 0.05], dtype=np.float32),
+        np.array([0.90, 0.10], dtype=np.float32),
+        np.array([0.85, 0.15], dtype=np.float32),
+    ]
+    purity_smooth = QualityEnsembleEvaluator.compute_purity_score(smooth_traj, is_discrete=False)
+    assert purity_smooth >= 0.95, f"Pureza suave muito baixa: {purity_smooth}"
+
+    # 2. Trajetória com reversões bruscas de direção (cosine similarity negativa)
+    reversing_traj = [
+        np.array([1.0, 0.0], dtype=np.float32),
+        np.array([-1.0, 0.0], dtype=np.float32),
+        np.array([1.0, 0.0], dtype=np.float32),
+        np.array([-1.0, 0.0], dtype=np.float32),
+    ]
+    purity_reversing = QualityEnsembleEvaluator.compute_purity_score(reversing_traj, is_discrete=False)
+    assert purity_reversing < purity_smooth, f"Pureza não penalizou reversões: {purity_reversing}"
+    assert purity_reversing <= 0.60, f"Pureza de reversão esperada <= 0.60, obteve {purity_reversing}"
+
+
+def test_discrete_purity_score_generalized_for_any_environment():
+    """Valida o cálculo de pureza discreta agnóstico ao domínio (com e sem regras de cubo)."""
+    # Trajetória suave sem repetições
+    pure_discrete = [0, 1, 2, 3, 4, 5]
+    purity_pure = QualityEnsembleEvaluator.compute_purity_score(pure_discrete, is_atomic_cube=False)
+    assert purity_pure == 1.0
+
+    # Trajetória com oscilação ping-pong 2-passos (A -> B -> A -> B)
+    oscillating_discrete = [0, 1, 0, 1, 0]
+    purity_osc = QualityEnsembleEvaluator.compute_purity_score(oscillating_discrete, is_atomic_cube=False)
+    assert purity_osc < 1.0
+    assert purity_osc <= 0.65
+

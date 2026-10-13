@@ -600,6 +600,59 @@ class HUDServer:
                     self.end_headers()
                     self.wfile.write(encoded_resp)
 
+                elif clean_path in ("/manifest.json", "/manifest.webmanifest"):
+                    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+                    if os.path.exists(manifest_path):
+                        with open(manifest_path, "rb") as f:
+                            content = f.read()
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/manifest+json; charset=utf-8")
+                        self.send_header("Content-Length", str(len(content)))
+                        self.send_header("Cache-Control", "no-cache")
+                        self.send_header("Access-Control-Allow-Origin", "*")
+                        self.end_headers()
+                        self.wfile.write(content)
+                    else:
+                        self.send_response(404)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+
+                elif clean_path == "/sw.js":
+                    sw_path = os.path.join(os.path.dirname(__file__), "sw.js")
+                    if os.path.exists(sw_path):
+                        with open(sw_path, "rb") as f:
+                            content = f.read()
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/javascript; charset=utf-8")
+                        self.send_header("Content-Length", str(len(content)))
+                        self.send_header("Cache-Control", "no-cache")
+                        self.send_header("Access-Control-Allow-Origin", "*")
+                        self.end_headers()
+                        self.wfile.write(content)
+                    else:
+                        self.send_response(404)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+
+                elif clean_path in ("/icon-192.png", "/icon-512.png", "/favicon.ico"):
+                    filename = clean_path.lstrip("/")
+                    icon_path = os.path.join(os.path.dirname(__file__), filename)
+                    if os.path.exists(icon_path):
+                        with open(icon_path, "rb") as f:
+                            content = f.read()
+                        mime = "image/x-icon" if filename.endswith(".ico") else "image/png"
+                        self.send_response(200)
+                        self.send_header("Content-Type", mime)
+                        self.send_header("Content-Length", str(len(content)))
+                        self.send_header("Cache-Control", "public, max-age=86400")
+                        self.send_header("Access-Control-Allow-Origin", "*")
+                        self.end_headers()
+                        self.wfile.write(content)
+                    else:
+                        self.send_response(404)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+
                 else:
                     self.send_response(404)
                     self.send_header("Content-Length", "0")

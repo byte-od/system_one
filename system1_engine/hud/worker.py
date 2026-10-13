@@ -387,6 +387,15 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
             train_calibration = "auto"
             print("⚡ Modo de Exploração no Treino: AUTO / HOMEOSTASE DINÂMICA (Auto-correção ativa)")
 
+    hindsight_replay = bool(config.get("hindsight_replay", True))
+    hindsight_bonus = float(config.get("hindsight_bonus", 2.0))
+    hindsight_min_gain = float(config.get("hindsight_min_gain", 0.02))
+
+    if hindsight_replay:
+        print(f"🎯 Hindsight Experience Replay (B.2): ATIVO (Bônus={hindsight_bonus:.1f}, Min Gain={hindsight_min_gain:.2f})")
+    else:
+        print("⚡ Hindsight Experience Replay (B.2): DESATIVADO")
+
     trainer = RecurrentPPOTrainer(
         agent=agent,
         env=env,
@@ -398,7 +407,11 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         tracker=tracker,
         device=device,
         exploration_scale=train_calibration,
+        hindsight_replay=hindsight_replay,
+        hindsight_bonus=hindsight_bonus,
+        hindsight_min_gain=hindsight_min_gain,
     )
+
 
     explainer = GradCAMExplainer(agent)
 
@@ -427,8 +440,9 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
             if tracker.metrics.curriculum_depth is not None:
                 extra_info["curriculum_depth"] = tracker.metrics.curriculum_depth
                 extra_info["successful_depth"] = successful_d if successful_d is not None else tracker.metrics.curriculum_depth
-                extra_info["depth"] = extra_info["successful_depth"]
+                extra_info["depth"] = tracker.metrics.curriculum_depth
             elif config.get("scramble_depth") is not None:
+
                 sd = int(config["scramble_depth"])
                 extra_info["scramble_depth"] = sd
                 extra_info["successful_depth"] = sd
@@ -636,7 +650,10 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
         for kw in ("ant", "halfcheetah", "cheetah", "hopper", "walker", "humanoid")
     )
 
+    ensemble_fallback = bool(config.get("ensemble_fallback", True))
     mode_desc = "act_fast() [Reflexo Puro]" if use_fast else "act_with_confidence() [Gating]"
+    if ensemble_fallback:
+        mode_desc += " + Quality Ensemble Fallback (A.2)"
     print(f"=== [HUD Worker] Modo de Avaliação Iniciado no Ambiente: {env_id} ===")
     print(f"Dispositivo de Execução: {device.type.upper()} (Preferência: {device_pref})")
     print(f"Episódios: {episodes} | Decisão: {mode_desc} | Ação: {mode_action_desc} | FPS Alvo: {fps_target} | Renderização: {render_mode}")
@@ -681,6 +698,7 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
                         deterministic=eval_det,
                         noise_scale=noise_scale,
                         calibration=eval_calibration,
+                        ensemble_fallback=ensemble_fallback,
                     )
                     lat_us = (time.perf_counter_ns() - t0) / 1000.0
                     action = decision.action
@@ -697,6 +715,7 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
                         deterministic=eval_det,
                         noise_scale=noise_scale,
                         calibration=eval_calibration,
+                        ensemble_fallback=ensemble_fallback,
                     )
                     lat_us = (time.perf_counter_ns() - t0) / 1000.0
                     action = decision.action
@@ -707,6 +726,7 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
                         entropy=decision.entropy,
                         calibration=decision.calibration,
                     )
+
 
                 obs_dict, reward, terminated, truncated, _ = env.step(action)
                 done = terminated or truncated

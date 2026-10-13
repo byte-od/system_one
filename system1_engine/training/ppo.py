@@ -34,6 +34,9 @@ class RecurrentPPOTrainer:
         device: Union[str, torch.device] = "cpu",
         tracker: Optional[LiveStatsTracker] = None,
         exploration_scale: Union[float, str] = 1.0,
+        hindsight_replay: bool = False,
+        hindsight_bonus: float = 2.0,
+        hindsight_min_gain: float = 0.02,
     ) -> None:
         self.agent = agent.to(device)
         self.env = env
@@ -50,6 +53,9 @@ class RecurrentPPOTrainer:
         self.chunk_batch_size = chunk_batch_size
         self.device = torch.device(device)
         self.tracker = tracker
+        self.hindsight_replay = bool(hindsight_replay)
+        self.hindsight_bonus = float(hindsight_bonus)
+        self.hindsight_min_gain = float(hindsight_min_gain)
 
         # Suporte a exploração automática / homeostática no treino PPO (sem limite artificial, 0 à 1)
         self._min_adaptive_scale = 0.08
@@ -240,8 +246,10 @@ class RecurrentPPOTrainer:
             ep_starts = np.asarray(episode_start, dtype=bool)
 
         curr_ep_returns = np.zeros(E, dtype=np.float32)
+        stored_env_infos: Optional[List[Any]] = [] if self.hindsight_replay else None
 
         with torch.inference_mode():
+
             for step in range(S):
                 # 1. Salva hx inicial dos chunks nas fronteiras temporais
                 if step % T == 0:
@@ -362,6 +370,9 @@ class RecurrentPPOTrainer:
                 # Environment step vetorizado
                 next_obs_dict, rewards, terminateds, truncateds, env_infos = self.env.step(env_action)
                 dones = terminateds | truncateds
+                if stored_env_infos is not None:
+                    stored_env_infos.append(env_infos)
+
 
                 if self.tracker is not None:
                     primary_info = env_infos[0] if isinstance(env_infos, list) and len(env_infos) > 0 else {}
@@ -411,11 +422,15 @@ class RecurrentPPOTrainer:
             last_dones = terminateds
 
         # GAE computado em paralelo ao longo das trajetórias de cada ambiente
-        rew_es = stored_rew.T
+        rew_es = stored_rew.T.copy()
         done_es = stored_done.T
         val_es = stored_val.T
 
+        if self.hindsight_replay:
+            self._apply_hindsight_relabelling(rew_es, done_es, val_es, step_infos=stored_env_infos)
+
         adv_es = np.zeros((E, S), dtype=np.float32)
+
         last_gae = np.zeros(E, dtype=np.float32)
 
         for t in reversed(range(S)):
@@ -489,6 +504,74 @@ class RecurrentPPOTrainer:
 
         return current_obs_dict, current_hx, ep_starts, mean_return
 
+    def _apply_hindsight_relabelling(
+        self,
+        rew_es: np.ndarray,
+        done_es: np.ndarray,
+        val_es: np.ndarray,
+        step_infos: Optional[List[Any]] = None,
+    ) -> None:
+        """Aplica Hindsight Experience Replay (HER) / Reversão Retrospectiva On-Policy (B.2).
+
+        Para episódios incompletos/não-resolvidos no rollout, localiza o ápice de progresso
+        intermediário t* e injeta bônus retrospectivo para garantir que a vantagem GAE
+        reforce os passos de avanço, quebrando platôs de recompensa esparsa.
+        """
+        E, S = rew_es.shape
+
+        for e in range(E):
+            ep_start = 0
+            for t in range(S):
+                is_last_step = (t == S - 1)
+                is_terminal = bool(done_es[e, t])
+
+                if is_terminal or is_last_step:
+                    ep_end = t
+                    ep_len = ep_end - ep_start + 1
+
+                    if ep_len >= 2:
+                        was_solved = False
+                        if step_infos is not None and len(step_infos) > ep_end:
+                            info_end = step_infos[ep_end]
+                            if isinstance(info_end, list) and len(info_end) > e:
+                                info_e = info_end[e]
+                                was_solved = bool(info_e.get("is_solved", False) or info_e.get("success", False))
+
+                        if not was_solved:
+                            progress = np.empty(ep_len, dtype=np.float32)
+                            for step_offset, step_idx in enumerate(range(ep_start, ep_end + 1)):
+                                p_val = None
+                                if step_infos is not None and len(step_infos) > step_idx:
+                                    info_step = step_infos[step_idx]
+                                    if isinstance(info_step, list) and len(info_step) > e:
+                                        info_dict = info_step[e]
+                                        if "score" in info_dict:
+                                            p_val = float(info_dict["score"])
+                                        elif "progress" in info_dict:
+                                            p_val = float(info_dict["progress"])
+
+                                if p_val is None:
+                                    p_val = float(val_es[e, step_idx])
+
+                                progress[step_offset] = p_val
+
+                            best_rel_idx = int(np.argmax(progress))
+                            peak_progress = float(progress[best_rel_idx])
+                            init_progress = float(progress[0])
+                            delta_p = peak_progress - init_progress
+
+                            if delta_p >= self.hindsight_min_gain:
+                                peak_t = ep_start + best_rel_idx
+                                bonus = float(self.hindsight_bonus * np.clip(delta_p, 0.0, 1.0))
+                                rew_es[e, peak_t] += bonus
+
+                                if peak_t < ep_end:
+                                    decay_steps = ep_end - peak_t
+                                    step_penalty = float(0.10 * bonus / max(1, decay_steps))
+                                    rew_es[e, peak_t + 1 : ep_end + 1] -= step_penalty
+
+                    ep_start = t + 1
+
     def _update_adaptive_exploration(
         self,
         mean_return: float,
@@ -553,6 +636,8 @@ class RecurrentPPOTrainer:
         self.buffer.reset()
         self.agent.eval()
         last_env_info: Dict[str, Any] = {}
+        stored_step_infos: Optional[List[Any]] = [] if self.hindsight_replay else None
+
 
         with torch.no_grad():
             for _ in range(self.rollout_steps):
@@ -634,6 +719,9 @@ class RecurrentPPOTrainer:
                 next_obs_dict, reward, terminated, truncated, env_info = self.env.step(env_action)
                 done = terminated or truncated
                 last_env_info = env_info
+                if stored_step_infos is not None:
+                    stored_step_infos.append(env_info)
+
 
                 if self.tracker is not None:
                     self.tracker.record_env_step(reward=reward, done=done, info=env_info)
@@ -670,12 +758,22 @@ class RecurrentPPOTrainer:
             # Bootstrap value for last state
             input_dict = self._prepare_rollout_input(current_obs_dict)
             _, last_value, _ = self.agent.forward(input_dict, hx=current_hx, dones=None)
+
+            if self.hindsight_replay:
+                rew_arr = np.asarray(self.buffer.rewards, dtype=np.float32).reshape(1, -1)
+                done_arr = np.asarray(self.buffer.dones, dtype=bool).reshape(1, -1)
+                val_arr = np.asarray(self.buffer.values, dtype=np.float32).reshape(1, -1)
+                step_infos_wrapped = [[inf] for inf in stored_step_infos] if stored_step_infos is not None else None
+                self._apply_hindsight_relabelling(rew_arr, done_arr, val_arr, step_infos=step_infos_wrapped)
+                self.buffer.rewards = [float(r) for r in rew_arr.flatten()]
+
             self.buffer.compute_gae(
                 last_value=last_value.item(),
                 last_done=terminated,
                 gamma=self.gamma,
                 gae_lambda=self.gae_lambda,
             )
+
 
             # Global advantage normalization across entire rollout buffer
             adv = self.buffer.advantages
