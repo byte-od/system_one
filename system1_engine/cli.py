@@ -354,6 +354,9 @@ def run_mode(args: argparse.Namespace) -> None:
                 ep_reward = 0.0
                 steps = 0
                 done = False
+                win = False
+                env_name = getattr(args, "env_id", "") or ""
+                is_rubiks = "rubik" in env_name.lower()
 
                 while not done:
                     t_step_start = time.perf_counter()
@@ -372,16 +375,34 @@ def run_mode(args: argparse.Namespace) -> None:
                     else:
                         action = agent.act_fast(obs_dict, calibration=eval_calib)
 
-                    obs_dict, reward, terminated, truncated, _ = env.step(action)
+                    obs_dict, reward, terminated, truncated, env_info = env.step(action)
                     done = terminated or truncated
 
                     if tracker is not None:
-                        tracker.record_env_step(reward=reward, done=done)
+                        tracker.record_env_step(
+                            reward=reward,
+                            done=done,
+                            info=env_info if isinstance(env_info, dict) else {},
+                        )
                         if dashboard:
                             dashboard.update()
 
                     ep_reward += reward
                     steps += 1
+
+                    if is_rubiks:
+                        if terminated or (isinstance(env_info, dict) and bool(env_info.get("is_solved", False))):
+                            win = True
+                        else:
+                            try:
+                                raw = getattr(getattr(env, "unwrapped", env), "core", None)
+                                if raw and hasattr(raw, "is_solved") and raw.is_solved():
+                                    win = True
+                            except Exception:
+                                pass
+                    else:
+                        if terminated and not truncated:
+                            win = bool(env_info.get("is_success", True) if isinstance(env_info, dict) and "is_success" in env_info else terminated)
 
                     if getattr(args, "render", False) and not args.live_stats:
                         action_labels = {0: "ESQUERDA ⬅️", 1: "DIREITA ➡️", 2: "DISPARO 💥"}
@@ -394,8 +415,17 @@ def run_mode(args: argparse.Namespace) -> None:
                         if sleep_time > 0:
                             time.sleep(sleep_time)
 
+                if is_rubiks and not win:
+                    try:
+                        raw = getattr(getattr(env, "unwrapped", env), "core", None)
+                        if raw and hasattr(raw, "is_solved") and raw.is_solved():
+                            win = True
+                    except Exception:
+                        pass
+
                 if not args.live_stats:
-                    print(f"Episode {ep + 1}/{args.episodes} | Return: {ep_reward:.1f} | Steps: {steps}")
+                    win_str = "true" if win else "false"
+                    print(f"Episode {ep + 1}/{args.episodes} | Return: {ep_reward:.1f} | Steps: {steps} | win: {win_str}")
 
         if dashboard:
             with dashboard:

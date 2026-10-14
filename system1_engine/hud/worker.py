@@ -700,6 +700,8 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
             steps = 0
             standstill_steps = 0
             done = False
+            win = False
+            is_rubiks = "rubik" in env_id.lower()
 
             while not done:
                 t_step_start = time.perf_counter()
@@ -742,11 +744,29 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
                     )
 
 
-                obs_dict, reward, terminated, truncated, _ = env.step(action)
+                obs_dict, reward, terminated, truncated, env_info = env.step(action)
                 done = terminated or truncated
                 ep_reward += reward
                 steps += 1
-                tracker.record_env_step(reward=reward, done=done)
+                tracker.record_env_step(
+                    reward=reward,
+                    done=done,
+                    info=env_info if isinstance(env_info, dict) else {},
+                )
+
+                if is_rubiks:
+                    if terminated or (isinstance(env_info, dict) and bool(env_info.get("is_solved", False))):
+                        win = True
+                    else:
+                        try:
+                            raw = getattr(getattr(env, "unwrapped", env), "core", None)
+                            if raw and hasattr(raw, "is_solved") and raw.is_solved():
+                                win = True
+                        except Exception:
+                            pass
+                else:
+                    if terminated and not truncated:
+                        win = bool(env_info.get("is_success", True) if isinstance(env_info, dict) and "is_success" in env_info else terminated)
 
                 # Standstill Watchdog para ambientes de locomoção contínua (ex: Ant-v5)
                 # Se o agente ficar imóvel / travado por muitos passos consecutivos, encerra o episódio
@@ -838,7 +858,16 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
                     if sleep_time > 0:
                         time.sleep(sleep_time)
 
-            print(f"Episódio {ep + 1}/{episodes} finalizado | Retorno: {ep_reward:.1f} | Passos: {steps}")
+            if is_rubiks and not win:
+                try:
+                    raw = getattr(getattr(env, "unwrapped", env), "core", None)
+                    if raw and hasattr(raw, "is_solved") and raw.is_solved():
+                        win = True
+                except Exception:
+                    pass
+
+            win_str = "true" if win else "false"
+            print(f"Episódio {ep + 1}/{episodes} finalizado | Retorno: {ep_reward:.1f} | Passos: {steps} | win: {win_str}")
 
         if save_path:
             extra_info = {"env_id": env_id, "evaluated_episodes": episodes}

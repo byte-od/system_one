@@ -1522,7 +1522,7 @@
         if (sim.isSolved()) {
           stopEvaluation();
           document.getElementById('status-desc').innerText = "🏆 CUBO RESOLVIDO COM SUCESSO!";
-          appendLog(`[SOLVED] 🏆 Cubo 3x3 totalmente resolvido em ${stepCount} passos reflexivos!`);
+          appendLog(`[SOLVED] 🏆 Cubo 3x3 totalmente resolvido em ${stepCount} passos reflexivos! | win: true`);
         }
       } else {
         const res = sim.step(decision.action);
