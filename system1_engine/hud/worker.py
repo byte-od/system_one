@@ -698,8 +698,11 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
             agent.reset_memory()
             ep_reward = 0.0
             steps = 0
-            standstill_steps = 0
             done = False
+            standstill_steps = 0
+            is_rubiks = "rubik" in env_id.lower()
+            is_locomotion = env_id.lower().startswith(("ant", "halfcheetah", "hopper", "walker", "humanoid"))
+            solved_victory = False
 
             while not done:
                 t_step_start = time.perf_counter()
@@ -742,11 +745,26 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
                     )
 
 
-                obs_dict, reward, terminated, truncated, _ = env.step(action)
+                obs_dict, reward, terminated, truncated, env_info = env.step(action)
                 done = terminated or truncated
                 ep_reward += reward
                 steps += 1
-                tracker.record_env_step(reward=reward, done=done)
+                tracker.record_env_step(
+                    reward=reward,
+                    done=done,
+                    info=env_info if isinstance(env_info, dict) else {},
+                )
+
+                if is_rubiks:
+                    if terminated or (isinstance(env_info, dict) and bool(env_info.get("is_solved", False))):
+                        solved_victory = True
+                    else:
+                        try:
+                            raw = getattr(getattr(env, "unwrapped", env), "core", None)
+                            if raw and hasattr(raw, "is_solved") and raw.is_solved():
+                                solved_victory = True
+                        except Exception:
+                            pass
 
                 # Standstill Watchdog para ambientes de locomoção contínua (ex: Ant-v5)
                 # Se o agente ficar imóvel / travado por muitos passos consecutivos, encerra o episódio
@@ -838,7 +856,16 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
                     if sleep_time > 0:
                         time.sleep(sleep_time)
 
-            print(f"Episódio {ep + 1}/{episodes} finalizado | Retorno: {ep_reward:.1f} | Passos: {steps}")
+            if is_rubiks:
+                if solved_victory:
+                    print(f"🏆 [VITÓRIA] Cubo Mágico 3x3 RESOLVIDO com sucesso em {steps} passos! (Retorno: {ep_reward:.2f})")
+                    print(f"Episódio {ep + 1}/{episodes} finalizado | Status: 🏆 VITÓRIA (RESOLVIDO) | Retorno: {ep_reward:.1f} | Passos: {steps}")
+                else:
+                    print(f"⏱️ [NÃO RESOLVIDO] Cubo Mágico atingiu o limite de {steps} passos sem resolver. (Retorno: {ep_reward:.1f})")
+                    print(f"Episódio {ep + 1}/{episodes} finalizado | Status: ❌ NÃO RESOLVIDO (Timeout) | Retorno: {ep_reward:.1f} | Passos: {steps}")
+            else:
+                status_tag = "🏆 CONCLUÍDO" if terminated else "FIM DO EPISÓDIO"
+                print(f"Episódio {ep + 1}/{episodes} finalizado | Status: {status_tag} | Retorno: {ep_reward:.1f} | Passos: {steps}")
 
         if save_path:
             extra_info = {"env_id": env_id, "evaluated_episodes": episodes}

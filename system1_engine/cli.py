@@ -372,11 +372,15 @@ def run_mode(args: argparse.Namespace) -> None:
                     else:
                         action = agent.act_fast(obs_dict, calibration=eval_calib)
 
-                    obs_dict, reward, terminated, truncated, _ = env.step(action)
+                    obs_dict, reward, terminated, truncated, env_info = env.step(action)
                     done = terminated or truncated
 
                     if tracker is not None:
-                        tracker.record_env_step(reward=reward, done=done)
+                        tracker.record_env_step(
+                            reward=reward,
+                            done=done,
+                            info=env_info if isinstance(env_info, dict) else {},
+                        )
                         if dashboard:
                             dashboard.update()
 
@@ -395,7 +399,26 @@ def run_mode(args: argparse.Namespace) -> None:
                             time.sleep(sleep_time)
 
                 if not args.live_stats:
-                    print(f"Episode {ep + 1}/{args.episodes} | Return: {ep_reward:.1f} | Steps: {steps}")
+                    is_rubiks = "rubik" in getattr(args, "env", "").lower()
+                    is_victory = bool(terminated) or (isinstance(env_info, dict) and bool(env_info.get("is_solved", False)))
+                    if not is_victory and is_rubiks:
+                        try:
+                            raw = getattr(getattr(env, "unwrapped", env), "core", None)
+                            if raw and hasattr(raw, "is_solved") and raw.is_solved():
+                                is_victory = True
+                        except Exception:
+                            pass
+
+                    if is_rubiks:
+                        if is_victory:
+                            print(f"🏆 [VITÓRIA] Cubo Mágico 3x3 RESOLVIDO com sucesso em {steps} passos! (Retorno: {ep_reward:.2f})")
+                            print(f"Episode {ep + 1}/{args.episodes} | Status: 🏆 VITÓRIA (RESOLVIDO) | Return: {ep_reward:.1f} | Steps: {steps}")
+                        else:
+                            print(f"⏱️ [NÃO RESOLVIDO] Limite de passos atingido ({steps} passos) sem resolução. (Retorno: {ep_reward:.1f})")
+                            print(f"Episode {ep + 1}/{args.episodes} | Status: ❌ NÃO RESOLVIDO (Timeout) | Return: {ep_reward:.1f} | Steps: {steps}")
+                    else:
+                        status_str = " | Status: 🏆 CONCLUÍDO" if terminated else ""
+                        print(f"Episode {ep + 1}/{args.episodes}{status_str} | Return: {ep_reward:.1f} | Steps: {steps}")
 
         if dashboard:
             with dashboard:
