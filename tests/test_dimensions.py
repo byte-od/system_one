@@ -5,7 +5,7 @@ import torch
 
 from system1_engine.core.agent import UniversalS1Agent
 from system1_engine.core.encoders import ImpalaVisualFrontEnd, VectorFrontEnd
-from system1_engine.core.trunk import System1Trunk
+from system1_engine.core.trunk import LeanResidualTrunk, System1Trunk
 
 
 def test_vector_frontend_dimensions():
@@ -66,6 +66,47 @@ def test_system1_trunk_dimensions_and_hx():
         h_masked, next_hx_masked = trunk(x, hx=hx, dones=dones)
         assert h_masked.shape == (b, t, 256)
         assert next_hx_masked.shape == (1, b, 256)
+
+
+def test_lean_residual_trunk_dimensions_and_hx():
+    """Verify LeanResidualTrunk accepts [B, T, 337] and returns [B, T, 512] and updated hx [1, B, 512]."""
+    trunk = LeanResidualTrunk(input_dim=337, fast_dim=256, slow_dim=256)
+    assert trunk.hidden_dim == 512
+
+    test_shapes = [(1, 1), (4, 16), (8, 32)]
+
+    for b, t in test_shapes:
+        x = torch.randn(b, t, 337)
+        hx = trunk.get_initial_hx(b)
+        assert hx.shape == (1, b, 512)
+
+        h, next_hx = trunk(x, hx=hx, dones=None)
+        assert h.shape == (b, t, 512), f"Expected {(b, t, 512)}, got {h.shape}"
+        assert next_hx.shape == (1, b, 512), f"Expected {(1, b, 512)}, got {next_hx.shape}"
+
+        # Test 2D input
+        x_2d = torch.randn(b, 337)
+        h_2d, next_hx_2d = trunk(x_2d, hx=hx, dones=None)
+        assert h_2d.shape == (b, 512)
+        assert next_hx_2d.shape == (1, b, 512)
+
+        # Test with dones mask
+        dones = torch.zeros(b, t)
+        dones[:, 0] = 1.0  # episode boundary at step 0
+        h_masked, next_hx_masked = trunk(x, hx=hx, dones=dones)
+        assert h_masked.shape == (b, t, 512)
+        assert next_hx_masked.shape == (1, b, 512)
+
+
+def test_lean_agent_parameter_count():
+    """Verify Lean UniversalS1Agent parameter count is ~1.5M-1.7M."""
+    agent = UniversalS1Agent(
+        obs_space=gym.spaces.Box(low=-1, high=1, shape=(4,)),
+        action_space=gym.spaces.Discrete(2),
+        trunk_type="lean",
+    )
+    total_params = sum(p.numel() for p in agent.parameters())
+    assert 1_400_000 <= total_params <= 1_800_000, f"Expected ~1.5M-1.7M params, got {total_params:,}"
 
 
 def test_parameter_counts_and_memory():

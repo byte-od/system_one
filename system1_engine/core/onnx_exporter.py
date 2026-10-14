@@ -124,9 +124,9 @@ def auto_sync_web_model(
             dummy_act = torch.zeros(1, 1, dtype=torch.long)
         else:
             act_dim = getattr(agent.policy_head, "act_dim", 1)
-            dummy_act = torch.zeros(1, 1, act_dim, dtype=torch.float32)
         dummy_rew = torch.zeros(1, 1, 1, dtype=torch.float32)
-        dummy_hx = torch.zeros(1, 1, 256, dtype=torch.float32)
+        trunk_hdim = getattr(agent.trunk, "hidden_dim", 256)
+        dummy_hx = torch.zeros(1, 1, trunk_hdim, dtype=torch.float32)
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")

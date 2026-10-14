@@ -35,6 +35,7 @@ class RecurrentRolloutBuffer:
         obs_shape: Tuple[int, ...] = (4,),
         action_shape: Tuple[int, ...] = (),
         device: torch.device = torch.device("cpu"),
+        hidden_dim: int = 256,
     ) -> None:
         assert buffer_size % chunk_length == 0, (
             f"buffer_size ({buffer_size}) must be divisible by chunk_length ({chunk_length})"
@@ -47,6 +48,7 @@ class RecurrentRolloutBuffer:
         self.obs_shape = obs_shape
         self.action_shape = action_shape
         self.device = device
+        self.hidden_dim = hidden_dim
 
         self.reset()
 
@@ -83,10 +85,10 @@ class RecurrentRolloutBuffer:
         # Record initial hidden state at chunk boundaries
         if self.step_idx % self.chunk_length == 0:
             if hx is not None:
-                # Store detached CPU copy: shape [1, 1, 256]
+                # Store detached CPU copy: shape [1, 1, hidden_dim]
                 self.chunk_hx.append(hx.detach().cpu())
             else:
-                self.chunk_hx.append(torch.zeros(1, 1, 256))
+                self.chunk_hx.append(torch.zeros(1, 1, self.hidden_dim))
 
         self.obs.append(np.asarray(obs_dict["obs"], dtype=np.float32))
         delta = obs_dict.get("delta_obs")

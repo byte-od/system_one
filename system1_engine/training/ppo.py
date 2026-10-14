@@ -96,6 +96,7 @@ class RecurrentPPOTrainer:
         else:
             self.steps_per_env = self.rollout_steps
 
+        self.trunk_hidden_dim = getattr(agent.trunk, "hidden_dim", 256)
         self.buffer = RecurrentRolloutBuffer(
             buffer_size=self.rollout_steps,
             chunk_length=chunk_length,
@@ -104,6 +105,7 @@ class RecurrentPPOTrainer:
             obs_shape=obs_shape,
             action_shape=act_shape,
             device=self.device,
+            hidden_dim=self.trunk_hidden_dim,
         )
 
         # Buffers de tensores pré-alocados no dispositivo para eliminar overhead de heap e alocações repetidas
@@ -239,7 +241,7 @@ class RecurrentPPOTrainer:
         recorded_chunk_hx: List[List[torch.Tensor]] = [[None for _ in range(E)] for _ in range(K)]
 
         if current_hx is None:
-            current_hx = torch.zeros((1, E, 256), dtype=torch.float32, device=self.device)
+            current_hx = torch.zeros((1, E, self.trunk_hidden_dim), dtype=torch.float32, device=self.device)
         if isinstance(episode_start, bool):
             ep_starts = np.full(E, episode_start, dtype=bool)
         else:

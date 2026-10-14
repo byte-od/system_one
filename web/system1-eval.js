@@ -1325,7 +1325,17 @@ class AntSim {
 class System1AgentWeb {
   constructor(session) {
     this.session = session;
-    this.hx = new Float32Array(256);
+    let hxDim = 256;
+    try {
+      if (session && session.inputMetadata && session.inputMetadata.hx && session.inputMetadata.hx.dimensions) {
+        const dims = session.inputMetadata.hx.dimensions;
+        hxDim = Number(dims[dims.length - 1]) || 256;
+      }
+    } catch (_) {
+      hxDim = 256;
+    }
+    this.hxDim = hxDim;
+    this.hx = new Float32Array(this.hxDim);
     this.prevObs = null;
     this.prevAction = 0;
     this.prevReward = 0.0;
@@ -1361,7 +1371,7 @@ class System1AgentWeb {
     const tDelta = new ort.Tensor('float32', deltaArr, [1, 1, obsDim]);
     const tAct = new ort.Tensor('int64', BigInt64Array.from([BigInt(this.prevAction)]), [1, 1]);
     const tRew = new ort.Tensor('float32', new Float32Array([this.prevReward]), [1, 1, 1]);
-    const tHx = new ort.Tensor('float32', this.hx, [1, 1, 256]);
+    const tHx = new ort.Tensor('float32', this.hx, [1, 1, this.hxDim]);
 
     const feeds = {
       obs: tObs,
@@ -1375,7 +1385,13 @@ class System1AgentWeb {
     const latencyMs = performance.now() - t0;
 
     const logits = results.logits.data;
-    this.hx.set(results.next_hx.data);
+    if (results.next_hx && results.next_hx.data) {
+      if (this.hx.length !== results.next_hx.data.length) {
+        this.hxDim = results.next_hx.data.length;
+        this.hx = new Float32Array(this.hxDim);
+      }
+      this.hx.set(results.next_hx.data);
+    }
 
     // Softmax & Entropia de Shannon (Gating nos logits originais)
     let maxLogit = -Infinity;

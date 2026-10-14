@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 import gymnasium as gym
+import numpy as np
 import pytest
 import torch
 
@@ -69,6 +70,60 @@ def test_auto_sync_web_model_vector():
         assert os.path.getsize(result) > 100_000
 
         # Limpeza
+        try:
+            if os.path.exists(result):
+                os.remove(result)
+            generate_web_manifest()
+        except OSError:
+            pass
+
+
+def test_auto_sync_web_model_lean_trunk():
+    env = gym.make("CartPole-v1")
+    wrapped = UniversalS1Wrapper(env)
+    agent = UniversalS1Agent(
+        obs_space=wrapped.observation_space,
+        action_space=wrapped.action_space,
+        trunk_type="lean",
+    )
+    assert agent.trunk.hidden_dim == 512
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ckpt_path = os.path.join(tmpdir, "s1_testlean_v0_test.pt")
+        KnowledgeTransferManager.save_checkpoint(
+            agent=agent,
+            checkpoint_path=ckpt_path,
+            extra_info={"env_id": "TestLean-v0"},
+            auto_sync_web=True,
+        )
+        assert os.path.exists(ckpt_path)
+
+        result = auto_sync_web_model(agent, checkpoint_path=ckpt_path, extra_info={"env_id": "TestLean-v0"})
+        assert result is not None
+        assert os.path.exists(result)
+        assert os.path.getsize(result) > 1_000_000  # Lean trunk is ~6 MB in fp32
+
+        # Verify execution in ONNX Runtime
+        import onnxruntime as ort
+        sess = ort.InferenceSession(result, providers=["CPUExecutionProvider"])
+        obs_in = np.zeros((1, 1, 4), dtype=np.float32)
+        delta_in = np.zeros((1, 1, 4), dtype=np.float32)
+        act_in = np.zeros((1, 1), dtype=np.int64)
+        rew_in = np.zeros((1, 1, 1), dtype=np.float32)
+        hx_in = np.zeros((1, 1, 512), dtype=np.float32)
+
+        outputs = sess.run(None, {
+            "obs": obs_in,
+            "delta_obs": delta_in,
+            "prev_action": act_in,
+            "prev_reward": rew_in,
+            "hx": hx_in,
+        })
+        logits, val, next_hx = outputs
+        assert logits.shape == (1, 2)
+        assert val.shape == (1, 1)
+        assert next_hx.shape == (1, 1, 512)
+
         try:
             if os.path.exists(result):
                 os.remove(result)

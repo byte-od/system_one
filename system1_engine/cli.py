@@ -127,9 +127,17 @@ def train_mode(args: argparse.Namespace) -> None:
         scramble_depth=getattr(args, "scramble_depth", None),
     )
 
+    trunk_type = getattr(args, "trunk", "classic")
+    checkpoint_to_load = getattr(args, "load", None) or getattr(args, "transfer_from", None)
+    if checkpoint_to_load and getattr(args, "trunk", "classic") == "classic":
+        detected = KnowledgeTransferManager.detect_trunk_type(checkpoint_to_load)
+        if detected == "lean":
+            trunk_type = "lean"
+
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
         action_space=env.action_space,
+        trunk_type=trunk_type,
     )
 
     checkpoint_to_load = getattr(args, "load", None) or getattr(args, "transfer_from", None)
@@ -265,9 +273,16 @@ def run_mode(args: argparse.Namespace) -> None:
         scramble_depth=getattr(args, "scramble_depth", None),
     )
 
+    trunk_type = getattr(args, "trunk", "classic")
+    if getattr(args, "load", None):
+        detected = KnowledgeTransferManager.detect_trunk_type(args.load)
+        if detected:
+            trunk_type = detected
+
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
         action_space=env.action_space,
+        trunk_type=trunk_type,
     ).to(device)
 
     if args.load:
@@ -393,6 +408,7 @@ def benchmark_mode(args: argparse.Namespace) -> None:
     agent = UniversalS1Agent(
         obs_space=env.env.observation_space,
         action_space=env.action_space,
+        trunk_type=getattr(args, "trunk", "classic"),
     ).to(device)
     agent.eval()
 
@@ -563,6 +579,13 @@ def main() -> None:
         type=int,
         default=None,
         help="Número de passos/profundidade de embaralhamento do Cubo Mágico (sem limite aberto, ex: 1, 3, 10, 20...)",
+    )
+    parser.add_argument(
+        "--trunk",
+        type=str,
+        default="classic",
+        choices=["classic", "lean"],
+        help="Tipo de tronco neural recorrente: 'classic' (GRU 256 + 2x ResMLP 256, ~830k) ou 'lean' (LeanResidualTrunk 512 Multi-Timescale, ~1.6M)",
     )
 
     args = parser.parse_args()

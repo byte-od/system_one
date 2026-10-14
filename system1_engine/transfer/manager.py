@@ -181,6 +181,19 @@ class KnowledgeTransferManager:
                 "trunk_frozen": eff_freeze_trunk,
                 "total_params": len(matching_keys),
             }
+        elif (
+            hasattr(agent.trunk, "fast_gru")
+            and "trunk.gru.weight_ih_l0" in raw_state_dict
+            and has_matching_front
+            and not force_trunk_only
+        ):
+            # Net2Net Architectural Expansion: Classic Trunk (256D) -> LeanResidualTrunk (512D)
+            return KnowledgeTransferManager.apply_net2net_classic_to_lean(
+                agent=agent,
+                checkpoint_path=checkpoint_path,
+                raw_state_dict=raw_state_dict,
+                freeze_trunk=freeze_trunk,
+            )
         else:
             # Cross-Domain Transfer or Forced Trunk Only
             eff_freeze_trunk = True if freeze_trunk is None else bool(freeze_trunk)
@@ -211,6 +224,107 @@ class KnowledgeTransferManager:
                 "trunk_frozen": eff_freeze_trunk,
                 "total_params": len(loaded_trunk_keys),
             }
+
+    @staticmethod
+    def apply_net2net_classic_to_lean(
+        agent: Any,
+        checkpoint_path: str,
+        raw_state_dict: Dict[str, Any],
+        freeze_trunk: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """Applies Net2Net architectural expansion transferring knowledge from classic trunk to LeanResidualTrunk.
+
+        Transfers:
+          1. Perception front-end (100% weight match)
+          2. Trunk input_norm and GRU weights -> Fast sensory GRU (exact shape match)
+          3. Policy and Value Heads -> initialized into the first 256 latent dimensions,
+             with zeros for the expanded slow/highway dimensions.
+          4. Zero-initialization for ResMLP fc2 and highway to ensure exact initial behavior.
+        """
+        eff_freeze_trunk = False if freeze_trunk is None else bool(freeze_trunk)
+        loaded_keys: List[str] = []
+
+        with torch.no_grad():
+            # 1. Front-End Transfer
+            for k, v in raw_state_dict.items():
+                if k.startswith("front_end.") and k in agent.state_dict():
+                    if agent.state_dict()[k].shape == v.shape:
+                        agent.state_dict()[k].copy_(v)
+                        loaded_keys.append(k)
+
+            # 2. Trunk input_norm and fast_gru
+            if "trunk.input_norm.weight" in raw_state_dict:
+                agent.trunk.input_norm.weight.copy_(raw_state_dict["trunk.input_norm.weight"])
+                agent.trunk.input_norm.bias.copy_(raw_state_dict["trunk.input_norm.bias"])
+                loaded_keys.extend(["trunk.input_norm.weight", "trunk.input_norm.bias"])
+
+            if "trunk.gru.weight_ih_l0" in raw_state_dict:
+                agent.trunk.fast_gru.weight_ih_l0.copy_(raw_state_dict["trunk.gru.weight_ih_l0"])
+                agent.trunk.fast_gru.weight_hh_l0.copy_(raw_state_dict["trunk.gru.weight_hh_l0"])
+                agent.trunk.fast_gru.bias_ih_l0.copy_(raw_state_dict["trunk.gru.bias_ih_l0"])
+                agent.trunk.fast_gru.bias_hh_l0.copy_(raw_state_dict["trunk.gru.bias_hh_l0"])
+                loaded_keys.extend([
+                    "trunk.fast_gru.weight_ih_l0",
+                    "trunk.fast_gru.weight_hh_l0",
+                    "trunk.fast_gru.bias_ih_l0",
+                    "trunk.fast_gru.bias_hh_l0",
+                ])
+
+            # Identity / Stable initialization for newly added capacity
+            for p in agent.trunk.slow_gru.parameters():
+                p.mul_(0.01)
+
+            agent.trunk.highway.weight.zero_()
+            if agent.trunk.highway.bias is not None:
+                agent.trunk.highway.bias.zero_()
+
+            agent.trunk.res_block.fc2.weight.zero_()
+            agent.trunk.res_block.fc2.bias.zero_()
+
+            # 3. Policy and Value Heads Expansion
+            if "policy_head.linear.weight" in raw_state_dict and hasattr(agent.policy_head, "linear"):
+                old_w = raw_state_dict["policy_head.linear.weight"]
+                agent.policy_head.linear.weight[:, :256].copy_(old_w)
+                agent.policy_head.linear.weight[:, 256:].zero_()
+                agent.policy_head.linear.bias.copy_(raw_state_dict["policy_head.linear.bias"])
+                loaded_keys.extend(["policy_head.linear.weight", "policy_head.linear.bias"])
+            elif "policy_head.mu_net.weight" in raw_state_dict and hasattr(agent.policy_head, "mu_net"):
+                old_w = raw_state_dict["policy_head.mu_net.weight"]
+                agent.policy_head.mu_net.weight[:, :256].copy_(old_w)
+                agent.policy_head.mu_net.weight[:, 256:].zero_()
+                agent.policy_head.mu_net.bias.copy_(raw_state_dict["policy_head.mu_net.bias"])
+                loaded_keys.extend(["policy_head.mu_net.weight", "policy_head.mu_net.bias"])
+
+            if "value_head.linear.weight" in raw_state_dict:
+                old_vw = raw_state_dict["value_head.linear.weight"]
+                agent.value_head.linear.weight[:, :256].copy_(old_vw)
+                agent.value_head.linear.weight[:, 256:].zero_()
+                agent.value_head.linear.bias.copy_(raw_state_dict["value_head.linear.bias"])
+                loaded_keys.extend(["value_head.linear.weight", "value_head.linear.bias"])
+
+        # Freeze options
+        if eff_freeze_trunk:
+            for param in agent.trunk.parameters():
+                param.requires_grad = False
+        else:
+            for param in agent.parameters():
+                param.requires_grad = True
+
+        print(f"\n{'='*72}")
+        print(f"🧬 [Expansão Arquitetural Net2Net Ativa]")
+        print(f"   Origem: {checkpoint_path} (Trunk Clássico 256D)")
+        print(f"   Destino: LeanResidualTrunk (512D Multi-Timescale)")
+        print(f"   -> {len(loaded_keys)} tensores migrados e expandidos com preservação matemática de reflexos.")
+        print(f"   -> Fast GRU, Percepção e Cabeças ativas com desempenho baseline preservado.")
+        print(f"   -> Tronco: {'CONGELADO' if eff_freeze_trunk else 'LIVRE PARA EXPANSÃO'}")
+        print(f"{'='*72}\n")
+
+        return {
+            "mode": "net2net_expansion",
+            "loaded_keys": loaded_keys,
+            "trunk_frozen": eff_freeze_trunk,
+            "total_params": len(loaded_keys),
+        }
 
     @staticmethod
     def inspect_checkpoint(checkpoint_path: str) -> Dict[str, Any]:
@@ -323,7 +437,23 @@ class KnowledgeTransferManager:
         except Exception as e:
             info["error"] = str(e)
 
+        info["trunk_type"] = KnowledgeTransferManager.detect_trunk_type(checkpoint_path)
         return info
+
+    @staticmethod
+    def detect_trunk_type(checkpoint_path: str) -> str:
+        """Inspects checkpoint state_dict to detect trunk architecture ('classic' or 'lean')."""
+        if not os.path.exists(checkpoint_path):
+            return "classic"
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            sd = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+            if isinstance(sd, dict):
+                if any(k.startswith("trunk.fast_gru.") or k.startswith("trunk.highway.") for k in sd.keys()):
+                    return "lean"
+        except Exception:
+            pass
+        return "classic"
 
     @staticmethod
     def validate_evaluation_compatibility(

@@ -224,3 +224,30 @@ def test_inspect_checkpoint_both_returns_and_successful_depth(tmp_path):
     assert meta["depth"] == 6
 
 
+def test_load_for_training_net2net_expansion(tmp_path):
+    """Ensure Net2Net architectural expansion from classic trunk (256D) to LeanResidualTrunk (512D) preserves decisions."""
+    cart_env = UniversalS1Wrapper(gym.make("CartPole-v1"))
+    source_agent = UniversalS1Agent(cart_env.env.observation_space, cart_env.action_space, trunk_type="classic")
+
+    ckpt_path = str(tmp_path / "classic_source.pt")
+    KnowledgeTransferManager.save_checkpoint(source_agent, ckpt_path, auto_sync_web=False)
+
+    # Create target agent with LeanResidualTrunk
+    target_agent = UniversalS1Agent(cart_env.env.observation_space, cart_env.action_space, trunk_type="lean")
+    assert target_agent.trunk.hidden_dim == 512
+
+    # Load for training with Net2Net automatic expansion
+    res = KnowledgeTransferManager.load_for_training(target_agent, ckpt_path)
+    assert res["mode"] == "net2net_expansion"
+    assert len(res["loaded_keys"]) > 0
+
+    # Verify input_norm was transferred
+    assert torch.allclose(target_agent.trunk.input_norm.weight, source_agent.trunk.input_norm.weight)
+    # Verify fast_gru was transferred from classic gru
+    assert torch.allclose(target_agent.trunk.fast_gru.weight_ih_l0, source_agent.trunk.gru.weight_ih_l0)
+    # Verify policy head first 256 dims match
+    assert torch.allclose(target_agent.policy_head.linear.weight[:, :256], source_agent.policy_head.linear.weight)
+    assert torch.allclose(target_agent.policy_head.linear.weight[:, 256:], torch.zeros_like(target_agent.policy_head.linear.weight[:, 256:]))
+
+
+

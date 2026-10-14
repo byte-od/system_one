@@ -9,7 +9,7 @@ from torch.distributions import Distribution
 
 from system1_engine.core.encoders import ImpalaVisualFrontEnd, VectorFrontEnd
 from system1_engine.core.heads import CategoricalPolicyHead, GaussianPolicyHead, ValueHead
-from system1_engine.core.trunk import System1Trunk
+from system1_engine.core.trunk import LeanResidualTrunk, System1Trunk
 
 
 @dataclass(frozen=True)
@@ -33,12 +33,12 @@ class UniversalS1Agent(nn.Module):
 
     Strict decoupling between:
       1. Front-end (Perception): VectorFrontEnd or ImpalaVisualFrontEnd
-      2. Trunk (Recurrent Reflexive Core): System1Trunk
+      2. Trunk (Recurrent Reflexive Core): System1Trunk or LeanResidualTrunk
       3. Heads (Decision & Value): PolicyHead and ValueHead
 
     Guarantees:
-      - Memory footprint: ~650k parameters (vector) or ~2.5M (visual).
-      - Inference latency: <= 0.8 ms on CPU for act_fast().
+      - Memory footprint: ~650k-1.6M parameters (vector) or ~2.5M (visual).
+      - Inference latency: <= 1.0 ms on CPU for act_fast().
       - Zero catastrophic forgetting via weight freezing on trunk.
     """
 
@@ -47,8 +47,9 @@ class UniversalS1Agent(nn.Module):
         obs_space: gym.spaces.Space,
         action_space: gym.spaces.Space,
         is_visual: Optional[bool] = None,
-        trunk: Optional[System1Trunk] = None,
+        trunk: Optional[nn.Module] = None,
         reward_fixed: bool = False,
+        trunk_type: str = "classic",
     ) -> None:
         super().__init__()
         if isinstance(obs_space, gym.spaces.Dict) and "obs" in obs_space.spaces:
@@ -85,23 +86,27 @@ class UniversalS1Agent(nn.Module):
         # 2. Universal Recurrent Trunk (Can be shared or transferred)
         if trunk is not None:
             self.trunk = trunk
+        elif str(trunk_type).lower() in ("lean", "lean_residual", "v2"):
+            self.trunk = LeanResidualTrunk(input_dim=337, fast_dim=256, slow_dim=256)
         else:
             self.trunk = System1Trunk(input_dim=337, hidden_dim=256, num_res_blocks=2)
+
+        trunk_hidden_dim = getattr(self.trunk, "hidden_dim", 256)
 
         # 3. Policy & Value Heads (Scenario-dependent)
         if isinstance(action_space, gym.spaces.Discrete):
             self.is_discrete = True
             self.policy_head: Union[CategoricalPolicyHead, GaussianPolicyHead] = (
-                CategoricalPolicyHead(in_features=256, n_actions=int(action_space.n))
+                CategoricalPolicyHead(in_features=trunk_hidden_dim, n_actions=int(action_space.n))
             )
         elif isinstance(action_space, gym.spaces.Box):
             self.is_discrete = False
             act_dim = int(np.prod(action_space.shape))
-            self.policy_head = GaussianPolicyHead(in_features=256, act_dim=act_dim)
+            self.policy_head = GaussianPolicyHead(in_features=trunk_hidden_dim, act_dim=act_dim)
         else:
             raise NotImplementedError(f"Unsupported action space: {type(action_space)}")
 
-        self.value_head = ValueHead(in_features=256)
+        self.value_head = ValueHead(in_features=trunk_hidden_dim)
 
         # Runtime hidden state for act_fast inference and homeostatic auto-calibration
         self.hx: Optional[torch.Tensor] = None
@@ -125,6 +130,13 @@ class UniversalS1Agent(nn.Module):
         self._reward_ema = 0.0
         self._stagnation_count = 0
         self._action_history = []
+
+    def get_initial_hx(self, batch_size: int = 1, device: Optional[torch.device] = None) -> torch.Tensor:
+        """Returns the canonical zero-initialized hidden state tensor for this agent."""
+        if hasattr(self.trunk, "get_initial_hx"):
+            return self.trunk.get_initial_hx(batch_size=batch_size, device=device or self.device)
+        trunk_hdim = getattr(self.trunk, "hidden_dim", 256)
+        return torch.zeros(1, batch_size, trunk_hdim, device=device or self.device)
 
     def extract_features(
         self,
