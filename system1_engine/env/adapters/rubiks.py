@@ -1033,7 +1033,7 @@ class VectorizedRubiksEnv(gym.Env):
 
     def __init__(
         self,
-        num_envs: int = 32,
+        num_envs: int = 64,
         is_macro: bool = False,
         render_mode: Optional[str] = "rgb_array",
         **env_kwargs,

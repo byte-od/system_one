@@ -79,7 +79,14 @@ class RecurrentPPOTrainer:
         # Optimize only parameters that require grad (respects frozen trunk)
         trainable_params = [p for p in self.agent.parameters() if p.requires_grad]
         assert len(trainable_params) > 0, "No trainable parameters found!"
-        self.optimizer = optim.Adam(trainable_params, lr=learning_rate, eps=1e-5)
+        opt_kwargs = {"lr": learning_rate, "eps": 1e-5}
+        if self.device.type in ("mps", "cuda"):
+            try:
+                self.optimizer = optim.Adam(trainable_params, **opt_kwargs, fused=True)
+            except Exception:
+                self.optimizer = optim.Adam(trainable_params, **opt_kwargs)
+        else:
+            self.optimizer = optim.Adam(trainable_params, **opt_kwargs)
         self.scheduler: Optional[optim.lr_scheduler.LRScheduler] = None
         self.best_state_dict: Optional[Dict[str, torch.Tensor]] = None
         self.best_mean_return: float = -float("inf")
@@ -347,29 +354,30 @@ class RecurrentPPOTrainer:
                 lat_us = (time.perf_counter_ns() - t0) / 1000.0
 
                 if self.tracker is not None:
-                    if self.agent.is_discrete:
-                        probs = dist.probs[0, 0]
-                        n_acts = probs.shape[-1]
-                        top_probs, _ = torch.topk(probs, k=min(2, n_acts))
-                        conf = float(top_probs[0].item())
-                        ent = float(-torch.sum(probs * torch.log(probs + 1e-8)).item())
-                        max_ent = float(np.log(n_acts)) if n_acts > 1 else 1.0
-                        unc = float(np.clip(ent / max_ent, 0.0, 1.0))
-                    else:
-                        std = dist.scale[0, 0].cpu().numpy()
-                        std = np.clip(std, a_min=1e-6, a_max=100.0)
-                        ent = float(0.5 * np.sum(1.0 + np.log(2.0 * np.pi * (std ** 2))))
-                        var = float(np.mean(std ** 2))
-                        unc = float(np.clip(2.0 / (1.0 + np.exp(-var / 0.5)) - 1.0, 0.0, 1.0))
-                        conf = float(np.clip(1.0 - unc, 0.0, 1.0))
+                    if step % 4 == 0 or step == S - 1:
+                        if self.agent.is_discrete:
+                            probs = dist.probs[0, 0]
+                            n_acts = probs.shape[-1]
+                            top_probs, _ = torch.topk(probs, k=min(2, n_acts))
+                            conf = float(top_probs[0].item())
+                            ent = float(-torch.sum(probs * torch.log(probs + 1e-8)).item())
+                            max_ent = float(np.log(n_acts)) if n_acts > 1 else 1.0
+                            unc = float(np.clip(ent / max_ent, 0.0, 1.0))
+                        else:
+                            std = dist.scale[0, 0].cpu().numpy()
+                            std = np.clip(std, a_min=1e-6, a_max=100.0)
+                            ent = float(0.5 * np.sum(1.0 + np.log(2.0 * np.pi * (std ** 2))))
+                            var = float(np.mean(std ** 2))
+                            unc = float(np.clip(2.0 / (1.0 + np.exp(-var / 0.5)) - 1.0, 0.0, 1.0))
+                            conf = float(np.clip(1.0 - unc, 0.0, 1.0))
 
-                    self.tracker.record_inference(
-                        latency_us=lat_us,
-                        uncertainty=unc,
-                        confidence=conf,
-                        entropy=ent,
-                        calibration=curr_scale,
-                    )
+                        self.tracker.record_inference(
+                            latency_us=lat_us,
+                            uncertainty=unc,
+                            confidence=conf,
+                            entropy=ent,
+                            calibration=curr_scale,
+                        )
 
                 # Environment step vetorizado
                 next_obs_dict, rewards, terminateds, truncateds, env_infos = self.env.step(env_action)

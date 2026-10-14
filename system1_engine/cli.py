@@ -62,7 +62,7 @@ def build_environment(
         from system1_engine.env.adapters.rubiks import VectorizedRubiksEnv
         is_macro = (env_id == "RubiksCubeMacro-v0")
         raw_env = VectorizedRubiksEnv(
-            num_envs=32,
+            num_envs=64,
             is_macro=is_macro,
             render_mode=render_mode,
             **extra_kwargs,

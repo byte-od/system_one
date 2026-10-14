@@ -249,7 +249,7 @@ def build_hud_env(
         from system1_engine.env.adapters.rubiks import VectorizedRubiksEnv
         is_macro = (env_id == "RubiksCubeMacro-v0")
         raw_env = VectorizedRubiksEnv(
-            num_envs=int(num_envs) if num_envs is not None else 32,
+            num_envs=int(num_envs) if num_envs is not None else 64,
             is_macro=is_macro,
             render_mode=gym_render_mode,
             **extra_kwargs,
@@ -355,7 +355,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         is_training=True,
         frame_skip=int(config.get("frame_skip", 4)),
         scramble_depth=scramble_depth,
-        num_envs=int(config.get("num_envs", 32)),
+        num_envs=int(config.get("num_envs", 64)),
     )
     trunk_type = config.get("trunk", "classic")
     if checkpoint_to_load and "trunk" not in config:
