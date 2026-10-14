@@ -800,12 +800,10 @@
       if (!term) return;
       const div = document.createElement('div');
       
-      if (line.includes('🏆') || line.includes('VITÓRIA') || line.includes('RESOLVIDO') || line.includes('PERFEITO') || line.includes('META ATINGIDA')) {
-        div.className = 'text-emerald-300 font-bold bg-emerald-950/70 px-2 py-1 rounded border border-emerald-500/70 my-1 shadow-md';
-      } else if (line.includes('❌') || line.includes('NÃO RESOLVIDO') || line.includes('Erro')) {
-        div.className = 'text-rose-400 font-semibold bg-rose-950/40 px-2 py-0.5 rounded border border-rose-800/40 my-0.5';
-      } else if (line.includes('⏱️') || line.includes('TEMPO') || line.includes('LIMITE')) {
-        div.className = 'text-amber-400 font-semibold bg-amber-950/40 px-2 py-0.5 rounded border border-amber-800/40 my-0.5';
+      if (line.includes('❌') || line.includes('Erro')) {
+        div.className = 'text-rose-400 font-semibold';
+      } else if (line.includes('🏆') || line.includes('RESOLVIDO') || line.includes('PERFEITO') || line.includes('META ATINGIDA')) {
+        div.className = 'text-emerald-400 font-semibold';
       } else if (line.includes('▶️') || line.includes('Iniciando') || line.includes('[INIT]')) {
         div.className = 'text-cyan-400 font-semibold';
       } else if (line.includes('🔥') || line.includes('HOMEOSTASE') || line.includes('Aquecendo')) {
@@ -1523,8 +1521,8 @@
 
         if (sim.isSolved()) {
           stopEvaluation();
-          document.getElementById('status-desc').innerText = "🏆 CUBO RESOLVIDO (VITÓRIA)!";
-          appendLog(`🏆 [VITÓRIA] Cubo 3x3 RESOLVIDO com sucesso em ${stepCount} passos reflexivos! (Score: ${curScore.toFixed(2)})`);
+          document.getElementById('status-desc').innerText = "🏆 CUBO RESOLVIDO COM SUCESSO!";
+          appendLog(`[SOLVED] 🏆 Cubo 3x3 totalmente resolvido em ${stepCount} passos reflexivos!`);
         }
       } else {
         const res = sim.step(decision.action);

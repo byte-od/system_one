@@ -2025,12 +2025,8 @@
       const term = document.getElementById('terminal-logs');
       const div = document.createElement('div');
       
-      if (line.includes('🏆') || line.includes('VITÓRIA') || line.includes('RESOLVIDO')) {
-        div.className = 'text-emerald-300 font-bold bg-emerald-950/70 px-2 py-1 rounded border border-emerald-500/70 my-1 shadow-md';
-      } else if (line.includes('❌') || line.includes('NÃO RESOLVIDO') || line.includes('Erro') || line.includes('Traceback')) {
-        div.className = 'text-rose-400 font-semibold bg-rose-950/40 px-2 py-0.5 rounded border border-rose-800/40 my-0.5';
-      } else if (line.includes('⏱️') || line.includes('TEMPO') || line.includes('LIMITE')) {
-        div.className = 'text-amber-400 font-semibold bg-amber-950/40 px-2 py-0.5 rounded border border-amber-800/40 my-0.5';
+      if (line.includes('❌') || line.includes('Erro') || line.includes('Traceback')) {
+        div.className = 'text-rose-400 font-semibold';
       } else if (line.includes('🏁') || line.includes('concluído') || line.includes('APROVADO')) {
         div.className = 'text-emerald-400 font-semibold';
       } else if (line.includes('▶️') || line.includes('Iniciando')) {
