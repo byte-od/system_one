@@ -186,9 +186,34 @@ def train_mode(args: argparse.Namespace) -> None:
             exploration_scale=train_calib,
         )
 
+        last_saved_step = [0]
+        best_saved_return = [-float("inf")]
+
         def train_callback(steps: int, mean_ret: float) -> None:
             if dashboard:
                 dashboard.update()
+            if args.save and (steps - last_saved_step[0] >= 4000 or (mean_ret > best_saved_return[0] and steps - last_saved_step[0] >= 1000)):
+                last_saved_step[0] = steps
+                best_saved_return[0] = max(best_saved_return[0], mean_ret)
+                best_ret = getattr(trainer, "best_mean_return", mean_ret)
+                successful_d = tracker.get_successful_depth() if tracker else None
+                extra_info = {
+                    "env_id": args.env,
+                    "final_return": float(mean_ret),
+                    "best_mean_return": float(best_ret),
+                    "steps": steps,
+                }
+                if tracker and tracker.metrics.curriculum_depth is not None:
+                    extra_info["curriculum_depth"] = tracker.metrics.curriculum_depth
+                    extra_info["successful_depth"] = successful_d if successful_d is not None else tracker.metrics.curriculum_depth
+                    extra_info["depth"] = extra_info["successful_depth"]
+                if tracker and tracker.metrics.curriculum_max_depth is not None:
+                    extra_info["curriculum_max_depth"] = tracker.metrics.curriculum_max_depth
+                KnowledgeTransferManager.save_checkpoint(
+                    agent=agent,
+                    checkpoint_path=args.save,
+                    extra_info=extra_info,
+                )
 
         if dashboard:
             with dashboard:
