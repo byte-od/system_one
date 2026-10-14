@@ -357,9 +357,16 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         scramble_depth=scramble_depth,
         num_envs=int(config.get("num_envs", 32)),
     )
+    trunk_type = config.get("trunk", "classic")
+    if checkpoint_to_load and "trunk" not in config:
+        detected = KnowledgeTransferManager.detect_trunk_type(checkpoint_to_load)
+        if detected == "lean":
+            trunk_type = "lean"
+
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
         action_space=env.action_space,
+        trunk_type=trunk_type,
     )
 
     if checkpoint_to_load:
@@ -590,9 +597,16 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
         frame_skip=int(config.get("frame_skip", 4)),
         scramble_depth=scramble_depth,
     )
+    trunk_type = config.get("trunk", "classic")
+    if load_path:
+        detected = KnowledgeTransferManager.detect_trunk_type(load_path)
+        if detected:
+            trunk_type = detected
+
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
         action_space=env.action_space,
+        trunk_type=trunk_type,
     ).to(device)
 
     eval_calib_cfg = config.get("eval_calibration", config.get("calibration"))
