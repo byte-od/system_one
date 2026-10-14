@@ -267,7 +267,7 @@
             <option value="Pendulum-v1">Pendulum-v1 (Vetor, Contínuo Box)</option>
             <option value="MountainCar-v0">MountainCar-v0 (Vetor, 2D)</option>
             <option value="Ant-v5">🐜 Ant-v5 (MuJoCo, 105D, 8 Ações Contínuas)</option>
-            <option value="RubiksCube-v0">⚡ Cerberus-v1: Cubo Mágico 3x3 (Atômico 1.6M)</option>
+            <option value="RubiksCube-v0" selected>⚡ Cerberus-v1: Cubo Mágico 3x3 (Atômico 1.6M)</option>
             <option value="RubiksCubeMacro-v0">Cubo Mágico: Macro-Ações (CFOP / 12 Algoritmos)</option>
             <option value="vizdoom">ViZDoom (Nativo / Visual IMPALA)</option>
             <option value="custom">Outro (Customizado Gymnasium...)</option>
@@ -360,7 +360,7 @@
               <button type="button" onclick="suggestCheckpointName(true)" class="badge-btn" title="Gera ou incrementa um nome de arquivo .pt contextualizado com o ambiente e cenário selecionados">🪄 Sugerir Nome</button>
             </div>
             <div id="save-input-container" class="flex flex-col gap-1">
-              <input type="text" id="cfg-save" placeholder="ex: s1_cartpole_trained.pt" value="s1_cartpole_trained.pt" class="hud-input" oninput="checkSaveConflict()" />
+              <input type="text" id="cfg-save" placeholder="ex: s1_cartpole_trained.pt" value="s1_rubikscube_v0_cerberus_v2.pt" class="hud-input" oninput="checkSaveConflict()" />
               <div id="save-status-msg" class="text-[10px] text-gray-500 font-mono"></div>
               <label class="flex items-center gap-1.5 cursor-pointer text-[10px] text-emerald-400 font-mono mt-0.5 select-none" title="Converte automaticamente para formato ONNX e sincroniza com web/models e o portfólio oficial">
                 <input type="checkbox" id="chk-auto-sync-web" checked class="w-3 h-3 rounded bg-gray-900 border-gray-700 text-emerald-500 focus:ring-0 cursor-pointer" />
@@ -524,18 +524,19 @@
                   </span>
                 </div>
                 <div class="flex gap-0.5">
+                  <button type="button" onclick="setTargetReturn(12.0)" class="badge-btn">12</button>
                   <button type="button" onclick="setTargetReturn(475.0)" class="badge-btn">475</button>
                   <button type="button" onclick="setTargetReturn(-100.0)" class="badge-btn">-100</button>
                 </div>
               </div>
-              <input type="number" id="cfg-target-return" value="475.0" step="10" class="hud-input" />
+              <input type="number" id="cfg-target-return" value="12.0" step="1" class="hud-input" />
             </div>
             <div>
               <div class="flex justify-between items-center mb-0.5">
                 <div class="flex items-center gap-1">
                   <span class="text-[10px] text-gray-400">LR (--lr)</span>
                   <span class="tooltip-wrap tooltip-left">
-                    <span class="tooltip-icon" title="Taxa de aprendizado (Learning Rate) do otimizador Adam (ex: 0.0007).">ⓘ</span>
+                    <span class="tooltip-icon" title="Taxa de aprendizado (Learning Rate) do otimizador Adam (ex: 0.0003).">ⓘ</span>
                     <span class="tooltip-bubble"><strong>--lr</strong>: Learning Rate do otimizador Adam.<br>Controla a magnitude de passo dos gradientes. Valores típicos: <em>0.0003</em> a <em>0.0007</em>.</span>
                   </span>
                 </div>
@@ -544,7 +545,7 @@
                   <button type="button" onclick="setLR('0.0007')" class="badge-btn">7e-4</button>
                 </div>
               </div>
-              <input type="text" id="cfg-lr" value="0.0007" class="hud-input" />
+              <input type="text" id="cfg-lr" value="0.0003" class="hud-input" />
             </div>
             <div>
               <div class="flex items-center gap-1 mb-0.5">
@@ -554,7 +555,7 @@
                   <span class="tooltip-bubble"><strong>--entropy-coef</strong>: Bônus de entropia da política.<br>Valores maiores (ex: 0.01) estimulam o agente a explorar ações variadas; valores menores (ex: 0.001) tornam a política mais determinística.</span>
                 </span>
               </div>
-              <input type="number" id="cfg-entropy" value="0.005" step="0.001" min="0" max="0.1" class="hud-input" />
+              <input type="number" id="cfg-entropy" value="0.003" step="0.001" min="0" max="0.1" class="hud-input" />
             </div>
             <div>
               <div class="flex justify-between items-center mb-0.5">
@@ -594,7 +595,7 @@
                     <span class="tooltip-bubble"><strong>--rollout-steps</strong>: Tamanho do buffer de coleta.<br>Número de timesteps executados e armazenados antes de rodar os gradientes do PPO (ex: 512, 1024, 2048, 4096).</span>
                   </span>
                 </div>
-                <input type="number" id="cfg-rollout-steps" value="1024" class="hud-input text-center" />
+                <input type="number" id="cfg-rollout-steps" value="2048" class="hud-input text-center" />
                 <div class="flex justify-center gap-0.5 mt-1 flex-wrap">
                   <button type="button" onclick="setRolloutSteps(512)" class="badge-btn" title="512 passos">512</button>
                   <button type="button" onclick="setRolloutSteps(1024)" class="badge-btn" title="1024 passos">1k</button>
@@ -610,7 +611,7 @@
                     <span class="tooltip-bubble"><strong>--chunk-length</strong>: Comprimento temporal (T) de cada chunk para BPTT recorrente. Permite que o estado oculto da rede aprenda dependências temporais (ex: 8, 16, 32, 64).</span>
                   </span>
                 </div>
-                <input type="number" id="cfg-chunk-length" value="16" class="hud-input text-center" />
+                <input type="number" id="cfg-chunk-length" value="32" class="hud-input text-center" />
                 <div class="flex justify-center gap-0.5 mt-1 flex-wrap">
                   <button type="button" onclick="setChunkLength(8)" class="badge-btn" title="Chunk T=8">8</button>
                   <button type="button" onclick="setChunkLength(16)" class="badge-btn" title="Chunk T=16">16</button>
@@ -1441,9 +1442,10 @@
         document.getElementById('cfg-rollout-steps').value = 1024;
       }
       else if (actualEnv === 'RubiksCube-v0') {
-        setTargetReturn(12.0); setEntropy(0.003); setSteps(40000);
+        setTargetReturn(12.0); setEntropy(0.003); setSteps(40000); setLR('0.0003');
         document.getElementById('cfg-chunk-length').value = 32;
         document.getElementById('cfg-rollout-steps').value = 2048;
+        document.getElementById('cfg-chunk-batch').value = 16;
       }
       else if (actualEnv === 'Ant-v5' || actualEnv === 'Ant-v4') {
         setTargetReturn(4000.0); setEntropy(0.005); setSteps(300000);
@@ -2352,7 +2354,15 @@
         transSel.innerHTML += `<option value="${ckpt.path}">${optText}</option>`;
       });
 
-      if (availableCheckpoints.includes(curLoad)) loadSel.value = curLoad;
+      if (availableCheckpoints.includes(curLoad)) {
+        loadSel.value = curLoad;
+      } else if (!curLoad && availableCheckpointsDetailed.length > 0) {
+        const curEnv = document.getElementById('cfg-env').value;
+        const matchingCkpt = availableCheckpointsDetailed.find(c => c.env_id === curEnv && (c.trunk_type === 'lean' || c.path.includes('cerberus'))) || availableCheckpointsDetailed.find(c => c.env_id === curEnv);
+        if (matchingCkpt) {
+          loadSel.value = matchingCkpt.path;
+        }
+      }
       if (availableCheckpoints.includes(curTrans)) transSel.value = curTrans;
 
       onLoadCheckpointChange();
@@ -2467,8 +2477,8 @@
         renderCheckpointDropdowns();
         renderCheckpointsTable();
         updateRunnerStatus(data.runner);
-        suggestCheckpointName();
         loadGymEnvironments();
+        onEnvChange();
 
         if (data.hardware) {
           const hw = data.hardware;
@@ -2520,11 +2530,11 @@
         render_mode: document.getElementById('cfg-render-mode').value,
         fps: parseFloat(document.getElementById('cfg-fps').value) || 0.0,
         steps: parseInt(document.getElementById('cfg-steps').value) || 40000,
-        target_return: parseFloat(document.getElementById('cfg-target-return').value) || 475.0,
-        lr: parseFloat(document.getElementById('cfg-lr').value) || 0.0007,
-        entropy_coef: parseFloat(document.getElementById('cfg-entropy').value) || 0.005,
-        rollout_steps: parseInt(document.getElementById('cfg-rollout-steps').value) || 1024,
-        chunk_length: parseInt(document.getElementById('cfg-chunk-length').value) || 16,
+        target_return: parseFloat(document.getElementById('cfg-target-return').value) || (actualEnv === 'RubiksCube-v0' ? 12.0 : 475.0),
+        lr: parseFloat(document.getElementById('cfg-lr').value) || 0.0003,
+        entropy_coef: parseFloat(document.getElementById('cfg-entropy').value) || (actualEnv === 'RubiksCube-v0' ? 0.003 : 0.005),
+        rollout_steps: parseInt(document.getElementById('cfg-rollout-steps').value) || 2048,
+        chunk_length: parseInt(document.getElementById('cfg-chunk-length').value) || 32,
         chunk_batch_size: parseInt(document.getElementById('cfg-chunk-batch').value) || 16,
         episodes: parseInt(document.getElementById('cfg-episodes').value) || 5,
         inference_mode: document.getElementById('cfg-inference-mode').value,
