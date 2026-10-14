@@ -240,7 +240,7 @@
           </div>
           <select id="select-demo" class="hud-input mb-1.5 font-mono" onchange="onDemoChange()">
             <option value="rubiks_macro">🧩 RubiksCubeMacro-v0 (CFOP / 12 Algoritmos)</option>
-            <option value="rubiks_atomic" selected>🎲 RubiksCube-v0 (Atômico - 12 Giros Simples)</option>
+            <option value="rubiks_atomic" selected>⚡ Cerberus-v1: RubiksCube-v0 (1.6M Multi-Timescale)</option>
             <option value="cartpole">⚖️ CartPole-v1 (Controle Clássico, 4D, 2 Ações)</option>
             <option value="acrobot">🤸 Acrobot-v1 (Braço Duplo Acrobático, 6D, 3 Ações)</option>
             <option value="mountaincar">⛰️ MountainCar-v0 (Controle de Inércia Não-Linear)</option>
@@ -251,7 +251,7 @@
           <!-- Atalhos Rápidos com Chips Coloridos -->
           <div class="flex flex-wrap gap-1 mb-1">
             <button type="button" onclick="quickSelectEnv('rubiks_macro')" class="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 hover:bg-amber-900 border border-amber-800 text-[9px] font-mono cursor-pointer transition">Rubiks-Macro</button>
-            <button type="button" onclick="quickSelectEnv('rubiks_atomic')" class="px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 hover:bg-purple-900 border border-purple-800 text-[9px] font-mono cursor-pointer transition">Rubiks-Atômico</button>
+            <button type="button" onclick="quickSelectEnv('rubiks_atomic')" class="px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 hover:bg-purple-900 border border-purple-800 text-[9px] font-mono cursor-pointer transition">⚡ Cerberus-v1</button>
             <button type="button" onclick="quickSelectEnv('cartpole')" class="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 hover:bg-cyan-900 border border-cyan-800 text-[9px] font-mono cursor-pointer transition">CartPole-v1</button>
             <button type="button" onclick="quickSelectEnv('acrobot')" class="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 hover:bg-cyan-900 border border-cyan-800 text-[9px] font-mono cursor-pointer transition">Acrobot-v1</button>
             <button type="button" onclick="quickSelectEnv('mountaincar')" class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 hover:bg-emerald-900 border border-emerald-800 text-[9px] font-mono cursor-pointer transition">MountainCar-v0</button>
@@ -615,15 +615,15 @@
       },
       rubiks_atomic: {
         key: "rubiks_atomic",
-        name: "🎲 RubiksCube-v0 (Atômico - 12 Giros Simples)",
+        name: "⚡ Cerberus-v1: RubiksCube-v0 (1.6M Multi-Timescale)",
         env_id: "RubiksCube-v0",
         file: "s1_rubiks_atomic.onnx",
         mode: "atomic",
         type: "rubiks",
-        size: "3.18 MB",
-        checkpoint_source: "s1_rubikscube_v0_trained_v1.pt",
-        checkpoint_version: "v1 (4M passos)",
-        description: "12 giros atômicos elementares (U, D, F, B, R, L) com física e permutação 3D exatas. Taxa de resolução reflexiva comprovada de até 100%."
+        size: "6.36 MB",
+        checkpoint_source: "s1_rubikscube_v0_cerberus_v1.pt",
+        checkpoint_version: "Cerberus-v1 (512D)",
+        description: "Cerberus-v1: Tronco recorrente de 1.6M parâmetros com Fast GRU + Slow GRU + Residual Highway. 12 giros atômicos, latência sub-milissegundo."
       },
       cartpole: {
         key: "cartpole",

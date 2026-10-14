@@ -37,7 +37,7 @@ def test_find_latest_trained_checkpoint(tmp_path):
         ckpt = find_latest_trained_checkpoint(env, project_root)
         if ckpt is not None:
             found_any = True
-            assert "trained" in os.path.basename(ckpt).lower(), f"Checkpoint {ckpt} não contém 'trained' no nome"
+            assert any(kw in os.path.basename(ckpt).lower() for kw in ("trained", "cerberus")), f"Checkpoint {ckpt} não contém 'trained' ou 'cerberus' no nome"
 
     if not found_any:
         dummy_ckpt = tmp_path / "s1_cartpole_trained.pt"

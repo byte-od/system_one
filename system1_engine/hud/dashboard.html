@@ -267,7 +267,7 @@
             <option value="Pendulum-v1">Pendulum-v1 (Vetor, Contínuo Box)</option>
             <option value="MountainCar-v0">MountainCar-v0 (Vetor, 2D)</option>
             <option value="Ant-v5">🐜 Ant-v5 (MuJoCo, 105D, 8 Ações Contínuas)</option>
-            <option value="RubiksCube-v0">Cubo Mágico: Atômico (12 Giros Simples)</option>
+            <option value="RubiksCube-v0">⚡ Cerberus-v1: Cubo Mágico 3x3 (Atômico 1.6M)</option>
             <option value="RubiksCubeMacro-v0">Cubo Mágico: Macro-Ações (CFOP / 12 Algoritmos)</option>
             <option value="vizdoom">ViZDoom (Nativo / Visual IMPALA)</option>
             <option value="custom">Outro (Customizado Gymnasium...)</option>
@@ -1441,9 +1441,9 @@
         document.getElementById('cfg-rollout-steps').value = 1024;
       }
       else if (actualEnv === 'RubiksCube-v0') {
-        setTargetReturn(10.0); setEntropy(0.01); setSteps(50000);
-        document.getElementById('cfg-chunk-length').value = 16;
-        document.getElementById('cfg-rollout-steps').value = 1024;
+        setTargetReturn(12.0); setEntropy(0.003); setSteps(40000);
+        document.getElementById('cfg-chunk-length').value = 32;
+        document.getElementById('cfg-rollout-steps').value = 2048;
       }
       else if (actualEnv === 'Ant-v5' || actualEnv === 'Ant-v4') {
         setTargetReturn(4000.0); setEntropy(0.005); setSteps(300000);
@@ -1554,7 +1554,9 @@
       const { envVal, envClean, scenarioClean } = getContextualEnvAndScenario();
       const suffix = 'trained';
 
-      if (envVal === 'vizdoom') {
+      if (envVal === 'RubiksCube-v0') {
+        return 's1_rubikscube_v0_cerberus';
+      } else if (envVal === 'vizdoom') {
         if (scenarioClean && scenarioClean !== 'vizdoom') {
           return `s1_vizdoom_${scenarioClean}_${suffix}`;
         }
@@ -1605,7 +1607,7 @@
           chosenName = `${baseStem}_v${nextVer}.pt`;
         } else {
           // Se estava com outro nome ou vazio, busca o primeiro nome livre para este ambiente/cenário
-          if (!isCheckpointTaken(`${baseStem}.pt`)) {
+          if (!isCheckpointTaken(`${baseStem}.pt`) && !isCheckpointTaken(`${baseStem}_v1.pt`)) {
             chosenName = `${baseStem}.pt`;
           } else {
             let ver = 2;
@@ -1626,7 +1628,7 @@
       } else {
         // Chamada automática ao mudar ambiente, cenário ou modo:
         // Sugere o primeiro nome livre para este ambiente/cenário
-        if (!isCheckpointTaken(`${baseStem}.pt`)) {
+        if (!isCheckpointTaken(`${baseStem}.pt`) && !isCheckpointTaken(`${baseStem}_v1.pt`)) {
           chosenName = `${baseStem}.pt`;
         } else {
           let ver = 2;
@@ -2339,12 +2341,13 @@
       availableCheckpointsDetailed.forEach(ckpt => {
         const depthVal = getCheckpointDepth(ckpt);
         const maxDepthVal = getCheckpointMaxDepth(ckpt);
+        const cerberusTag = (ckpt.trunk_type === 'lean' || (ckpt.path && ckpt.path.toLowerCase().includes('cerberus'))) ? ' [⚡ Cerberus]' : '';
         const envTag = ckpt.env_id ? ` [${ckpt.env_id}]` : '';
         const depthTag = depthVal ? ` [🎓 D${depthVal}${maxDepthVal ? '/' + maxDepthVal : ''}]` : '';
         const retText = formatCheckpointReturns(ckpt, false);
         const retTag = retText ? ` [${retText}]` : '';
         const dimTag = (ckpt.obs_dim && ckpt.act_dim) ? ` (${ckpt.obs_dim}D→${ckpt.act_dim}A)` : '';
-        const optText = `${ckpt.path}${envTag}${depthTag}${retTag}${dimTag} • ${ckpt.size_mb} MB`;
+        const optText = `${ckpt.path}${cerberusTag}${envTag}${depthTag}${retTag}${dimTag} • ${ckpt.size_mb} MB`;
         loadSel.innerHTML += `<option value="${ckpt.path}">${optText}</option>`;
         transSel.innerHTML += `<option value="${ckpt.path}">${optText}</option>`;
       });
@@ -2374,6 +2377,8 @@
         const depthVal = getCheckpointDepth(item);
         const maxDepthVal = getCheckpointMaxDepth(item);
         const reachedDepth = getCheckpointReachedDepth(item);
+        const isCerberus = item.trunk_type === 'lean' || (item.path && item.path.toLowerCase().includes('cerberus'));
+        const cerberusBadge = isCerberus ? `<span class="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 text-[9px] border border-amber-800 font-bold" title="Arquitetura Cerberus (Tronco LeanResidualTrunk 512D Multi-Timescale, 1.6M)">⚡ Cerberus</span>` : '';
         const div = document.createElement('div');
         div.className = 'flex items-center justify-between p-1.5 rounded bg-gray-900/70 border border-gray-800 text-xs';
         const envBadge = item.env_id ? `<span class="px-1 py-0.2 rounded bg-cyan-950 text-cyan-400 text-[9px] border border-cyan-800 font-bold">${item.env_id}</span>` : '';
@@ -2384,6 +2389,7 @@
         }
         const depthBadge = depthVal ? `<span class="px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 text-[9px] border border-purple-800 font-bold" title="${depthTitle}">🎓 D${depthVal}${maxDepthVal ? '/' + maxDepthVal : ''}</span>` : '';
         const dimBadge = (item.obs_dim && item.act_dim) ? `<span class="text-[9px] text-gray-400 font-mono">${item.obs_dim}D obs • ${item.act_dim} ações</span>` : '';
+        const trunkInfo = item.trunk_type ? `<span>•</span> <span class="font-mono text-cyan-400">${item.trunk_type === 'lean' ? 'Lean 512D (Cerberus)' : 'Classic 256D'}</span>` : '';
         
         let retBadge = '';
         const retText = formatCheckpointReturns(item, true);
@@ -2402,11 +2408,13 @@
           <div class="flex flex-col min-w-0 pr-2 gap-0.5">
             <div class="flex items-center gap-1.5 flex-wrap">
               <span class="font-bold text-gray-200 truncate font-mono text-[11px]">${item.path}</span>
+              ${cerberusBadge}
               ${envBadge}
               ${depthBadge}
             </div>
             <div class="flex items-center gap-2 text-[9px] text-gray-500 flex-wrap">
               <span>${item.size_mb} MB</span>
+              ${trunkInfo}
               ${dimBadge ? `<span>•</span> ${dimBadge}` : ''}
               ${retBadge ? `<span>•</span> ${retBadge}` : ''}
               <span>•</span>
@@ -2523,7 +2531,8 @@
         eval_action_mode: document.getElementById('cfg-eval-action-mode') ? document.getElementById('cfg-eval-action-mode').value : 'auto',
         eval_calibration: (document.getElementById('cfg-eval-calibration')?.value === 'auto' || document.getElementById('cfg-eval-action-mode')?.value === 'auto') ? 'auto' : (parseFloat(document.getElementById('cfg-eval-calibration')?.value) || 0.5),
         train_calibration: (document.getElementById('cfg-train-calibration')?.value === 'auto' || !document.getElementById('cfg-train-calibration')?.value) ? 'auto' : (parseFloat(document.getElementById('cfg-train-calibration')?.value) || 'auto'),
-        scramble_depth: document.getElementById('cfg-scramble-depth') ? (parseInt(document.getElementById('cfg-scramble-depth').value, 10) || null) : null
+        scramble_depth: document.getElementById('cfg-scramble-depth') ? (parseInt(document.getElementById('cfg-scramble-depth').value, 10) || null) : null,
+        trunk: (actualEnv === 'RubiksCube-v0' || (document.getElementById('cfg-load').value && availableCheckpointsDetailed.find(c => c.path === document.getElementById('cfg-load').value)?.trunk_type === 'lean') || (document.getElementById('cfg-transfer').value && availableCheckpointsDetailed.find(c => c.path === document.getElementById('cfg-transfer').value)?.trunk_type === 'lean')) ? 'lean' : 'classic'
       };
 
       if (activeMode === 'run' && payload.load) {

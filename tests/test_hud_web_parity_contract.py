@@ -94,10 +94,11 @@ def test_contract_manifest_and_models_parity():
 
 
 def test_contract_checkpoint_naming_convention():
-    """Garante que a convenção formal exige 'trained' no nome de todos os checkpoints."""
+    """Garante que a convenção formal exige 'trained' ou 'cerberus' no nome de todos os checkpoints."""
     # 1. Regra de validação formal do contrato
     assert HUDWebParityContract.validate_checkpoint_convention("s1_cartpole_trained.pt")
     assert HUDWebParityContract.validate_checkpoint_convention("s1_ant_v5_trained_v3.pt")
+    assert HUDWebParityContract.validate_checkpoint_convention("s1_rubikscube_v0_cerberus_v1.pt")
     assert not HUDWebParityContract.validate_checkpoint_convention("s1_cartpole.pt")
     assert not HUDWebParityContract.validate_checkpoint_convention("s1_cartpole_checkpoint.pt")
 
@@ -111,7 +112,7 @@ def test_contract_checkpoint_naming_convention():
     assert "active-ckpt-source" in web_html
     assert "Origem PyTorch (.pt)" in web_html
 
-    # 4. Manifesto de modelos web deve vincular checkpoints de origem contendo 'trained'
+    # 4. Manifesto de modelos web deve vincular checkpoints de origem contendo 'trained' ou 'cerberus'
     manifest_path = PROJECT_ROOT / "web" / "models" / "manifest.json"
     import json
     with open(manifest_path, "r", encoding="utf-8") as f:
@@ -119,5 +120,5 @@ def test_contract_checkpoint_naming_convention():
     for key, model_info in data.get("models", {}).items():
         source = model_info.get("checkpoint_source")
         assert source, f"Modelo {key} não declara checkpoint_source"
-        assert "trained" in source.lower(), f"Checkpoint de origem {source} para {key} não possui 'trained'"
+        assert any(kw in source.lower() for kw in ("trained", "cerberus")), f"Checkpoint de origem {source} para {key} não possui 'trained' ou 'cerberus'"
 

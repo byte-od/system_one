@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "updated_at": 1792012516.533757,
-  "updated_at_str": "14/10/2026 18:15:16",
+  "updated_at": 1792013950.219417,
+  "updated_at_str": "14/10/2026 18:39:10",
   "models": {
     "acrobot": {
       "key": "acrobot",
@@ -70,8 +70,8 @@
       "file": "s1_cartpole.onnx",
       "size_mb": 2.77,
       "size_bytes": 2909005,
-      "mtime": 1792012445.909148,
-      "mtime_str": "14/10/2026 18:14:05",
+      "mtime": 1792013937.3623254,
+      "mtime_str": "14/10/2026 18:38:57",
       "checkpoint_source": "s1_cartpole_v1_trained.pt",
       "checkpoint_version": "v1"
     },
@@ -113,22 +113,22 @@
     },
     "rubiks_atomic": {
       "key": "rubiks_atomic",
-      "name": "🎲 Cubo Mágico 3x3 (Atômico - 12 Giros)",
+      "name": "⚡ Cerberus-v1: Cubo Mágico 3x3 (1.6M Multi-Timescale)",
       "env_id": "RubiksCube-v0",
       "type": "rubiks",
       "mode": "atomic",
       "obs_dim": 324,
       "act_dim": 12,
       "discrete": true,
-      "description": "12 giros atômicos elementares com física e permutação 3D exatas. 100% de resolução reflexiva.",
+      "description": "Cerberus-v1: Tronco recorrente de 1.6M parâmetros com Fast GRU + Slow GRU + Residual Highway. 12 giros atômicos, latência sub-milissegundo.",
       "default": true,
       "file": "s1_rubiks_atomic.onnx",
       "size_mb": 6.36,
       "size_bytes": 6672655,
-      "mtime": 1792012516.463063,
-      "mtime_str": "14/10/2026 18:15:16",
-      "checkpoint_source": "s1_rubikscube_v0_trained_v20.pt",
-      "checkpoint_version": "v20"
+      "mtime": 1792013935.0665848,
+      "mtime_str": "14/10/2026 18:38:55",
+      "checkpoint_source": "s1_rubikscube_v0_cerberus_v1.pt",
+      "checkpoint_version": "v1"
     },
     "rubiks_macro": {
       "key": "rubiks_macro",

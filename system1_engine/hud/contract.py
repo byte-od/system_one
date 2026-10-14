@@ -35,9 +35,9 @@ class TelemetrySpec:
 @dataclass(frozen=True)
 class CheckpointSpec:
     """Convenção oficial de nomenclatura e auto-resolução de checkpoints do System 1."""
-    required_keyword: str = "trained"
-    pattern: str = r"^s1_.+_trained(?:_v\d+)?\.pt$"
-    description: str = "Checkpoints PyTorch (.pt) salvos e treinados devem conter 'trained' no nome."
+    required_keywords: tuple = ("trained", "cerberus")
+    pattern: str = r"^s1_.+_(?:trained|cerberus)(?:_v\d+)?\.pt$"
+    description: str = "Checkpoints PyTorch (.pt) salvos e treinados devem conter 'trained' ou linhagem canônica ('cerberus') no nome."
 
 
 class HUDWebParityContract:
@@ -126,7 +126,7 @@ class HUDWebParityContract:
 
     @classmethod
     def validate_checkpoint_convention(cls, checkpoint_filename: str) -> bool:
-        """Valida se o nome do arquivo de checkpoint segue a convenção de conter 'trained'."""
+        """Valida se o nome do arquivo de checkpoint segue a convenção de conter 'trained' ou 'cerberus'."""
         fn = Path(checkpoint_filename).name.lower()
-        return cls.CHECKPOINT.required_keyword in fn and fn.endswith(".pt")
+        return any(kw in fn for kw in cls.CHECKPOINT.required_keywords) and fn.endswith(".pt")
 

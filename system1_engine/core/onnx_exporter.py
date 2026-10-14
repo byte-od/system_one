@@ -232,14 +232,15 @@ def find_latest_trained_checkpoint(env_id: str, project_root: Optional[Path] = N
 
     def sort_key(p: Path):
         name = p.stem.lower()
-        has_trained = 1 if "trained" in name else 0
+        is_cerberus = 1 if "cerberus" in name else 0
+        has_trained = 1 if ("trained" in name or is_cerberus) else 0
         m = re.search(r"_v(\d+)$", name)
         ver = int(m.group(1)) if m else (1 if has_trained else 0)
         try:
             mtime = p.stat().st_mtime
         except OSError:
             mtime = 0.0
-        return (has_trained, ver, mtime)
+        return (is_cerberus, has_trained, ver, mtime)
 
     matching.sort(key=sort_key, reverse=True)
     return str(matching[0])
@@ -262,14 +263,14 @@ def generate_web_manifest(
     metadata_catalog = {
         "s1_rubiks_atomic.onnx": {
             "key": "rubiks_atomic",
-            "name": "🎲 Cubo Mágico 3x3 (Atômico - 12 Giros)",
+            "name": "⚡ Cerberus-v1: Cubo Mágico 3x3 (1.6M Multi-Timescale)",
             "env_id": "RubiksCube-v0",
             "type": "rubiks",
             "mode": "atomic",
             "obs_dim": 324,
             "act_dim": 12,
             "discrete": True,
-            "description": "12 giros atômicos elementares com física e permutação 3D exatas. 100% de resolução reflexiva.",
+            "description": "Cerberus-v1: Tronco recorrente de 1.6M parâmetros com Fast GRU + Slow GRU + Residual Highway. 12 giros atômicos, latência sub-milissegundo.",
             "default": True,
         },
         "s1_rubiks_macro.onnx": {
@@ -468,7 +469,13 @@ def export_checkpoint_to_onnx(
             return None
 
     wrapped_env = UniversalS1Wrapper(raw_env)
-    agent = UniversalS1Agent(obs_space=wrapped_env.observation_space, action_space=wrapped_env.action_space)
+    from system1_engine.transfer.manager import KnowledgeTransferManager
+    trunk_type = KnowledgeTransferManager.detect_trunk_type(checkpoint_path)
+    agent = UniversalS1Agent(
+        obs_space=wrapped_env.observation_space,
+        action_space=wrapped_env.action_space,
+        trunk_type=trunk_type,
+    )
 
     state_dict = ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt
     agent.load_state_dict(state_dict, strict=False)
