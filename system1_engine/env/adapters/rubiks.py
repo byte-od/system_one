@@ -611,7 +611,7 @@ class RubiksCubeEnv(gym.Env):
         min_depth: int = 1,
         max_depth: Optional[int] = None,
         target_success_rate: float = 0.90,
-        curriculum_window: int = 20,
+        curriculum_window: int = 64,
     ) -> None:
         super().__init__()
         self.render_mode = render_mode
@@ -623,7 +623,9 @@ class RubiksCubeEnv(gym.Env):
         self.target_success_rate = target_success_rate
         self.curriculum_window = curriculum_window
         self.current_depth = min_depth if curriculum else self.scramble_depth
+        self._episode_depth = self.current_depth
         self.recent_successes: deque[float] = deque(maxlen=curriculum_window)
+        self.frontier_successes: deque[float] = deque(maxlen=curriculum_window)
         self.curriculum_promotions: int = 0
         self.core = RubiksCubeCore()
 
@@ -654,22 +656,35 @@ class RubiksCubeEnv(gym.Env):
         if options and "scramble_depth" in options:
             depth = max(1, int(options["scramble_depth"]))
         elif self.curriculum:
-            if len(self.recent_successes) >= self.curriculum_window:
-                success_rate = float(np.mean(self.recent_successes))
+            eval_window = self.frontier_successes if len(self.frontier_successes) >= self.curriculum_window else self.recent_successes
+            if len(eval_window) >= self.curriculum_window:
+                success_rate = float(np.mean(eval_window))
                 can_promote = self.max_depth is None or self.current_depth < self.max_depth
                 if success_rate >= self.target_success_rate and can_promote:
                     old_d = self.current_depth
                     self.current_depth += 1
                     self.curriculum_promotions += 1
                     self.recent_successes.clear()
+                    self.frontier_successes.clear()
                     max_d_str = str(self.max_depth) if self.max_depth is not None else "∞"
                     print(
                         f"\n🚀 [CURRICULUM ATÔMICO] Sucesso {success_rate*100:.1f}% >= {self.target_success_rate*100:.0f}%! "
                         f"Profundidade promovida: {old_d} -> {self.current_depth}/{max_d_str}"
                     )
-            depth = self.current_depth
+            # Mixed Replay Curriculum:
+            # 50% de probabilidade no nível de fronteira (current_depth)
+            # 50% distribuído aleatoriamente entre os níveis consolidados (min_depth .. current_depth - 1)
+            if self.current_depth > self.min_depth:
+                if self.rng.random() < 0.50:
+                    depth = self.current_depth
+                else:
+                    depth = int(self.rng.integers(self.min_depth, self.current_depth))
+            else:
+                depth = self.current_depth
         else:
             depth = self.scramble_depth
+
+        self._episode_depth = depth
 
         if options and "view_mode" in options:
             self.set_view_mode(options["view_mode"])
@@ -683,12 +698,15 @@ class RubiksCubeEnv(gym.Env):
             "aligned_stickers": self.core.get_aligned_count(),
             "score": self._prev_score,
             "is_solved": self.core.is_solved(),
-            "current_depth": depth,
+            "current_depth": self.current_depth if self.curriculum else depth,
+            "scramble_depth": depth,
             "max_depth": self.max_depth,
             "curriculum": self.curriculum,
             "curriculum_promotions": self.curriculum_promotions,
             "curriculum_success_rate": (
-                float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
+                float(np.mean(self.frontier_successes)) if len(self.frontier_successes) > 0 else (
+                    float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
+                )
             ),
         }
         return obs, info
@@ -714,11 +732,13 @@ class RubiksCubeEnv(gym.Env):
             reward += 10.0
 
         terminated = is_solved
-        eff_max_steps = min(self.max_steps, max(12, self.current_depth * 4)) if self.curriculum else self.max_steps
+        eff_max_steps = min(self.max_steps, max(12, getattr(self, "_episode_depth", self.current_depth) * 4)) if self.curriculum else self.max_steps
         truncated = self._steps >= eff_max_steps
 
         if (terminated or truncated) and self.curriculum:
             self.recent_successes.append(1.0 if is_solved else 0.0)
+            if getattr(self, "_episode_depth", self.current_depth) == self.current_depth:
+                self.frontier_successes.append(1.0 if is_solved else 0.0)
 
         obs = self.core.get_one_hot()
         info = {
@@ -727,11 +747,14 @@ class RubiksCubeEnv(gym.Env):
             "is_solved": is_solved,
             "action_name": action_name,
             "current_depth": self.current_depth if self.curriculum else self.scramble_depth,
+            "scramble_depth": getattr(self, "_episode_depth", self.current_depth),
             "max_depth": self.max_depth,
             "curriculum": self.curriculum,
             "curriculum_promotions": self.curriculum_promotions,
             "curriculum_success_rate": (
-                float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
+                float(np.mean(self.frontier_successes)) if len(self.frontier_successes) > 0 else (
+                    float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
+                )
             ),
         }
         return obs, reward, terminated, truncated, info
@@ -766,6 +789,8 @@ class RubiksCubeEnv(gym.Env):
         new_env._last_action_name = self._last_action_name
         new_env._prev_score = self._prev_score
         new_env._last_scramble_moves = list(getattr(self, "_last_scramble_moves", []))
+        new_env._episode_depth = getattr(self, "_episode_depth", self.current_depth)
+        new_env.frontier_successes = deque(self.frontier_successes, maxlen=self.curriculum_window)
         return new_env
 
 
@@ -798,7 +823,7 @@ class RubiksCubeMacroEnv(gym.Env):
         min_depth: int = 1,
         max_depth: Optional[int] = None,
         target_success_rate: float = 0.90,
-        curriculum_window: int = 20,
+        curriculum_window: int = 64,
     ) -> None:
         super().__init__()
         self.render_mode = render_mode
@@ -810,7 +835,9 @@ class RubiksCubeMacroEnv(gym.Env):
         self.target_success_rate = target_success_rate
         self.curriculum_window = curriculum_window
         self.current_depth = min_depth if curriculum else self.scramble_depth
+        self._episode_depth = self.current_depth
         self.recent_successes: deque[float] = deque(maxlen=curriculum_window)
+        self.frontier_successes: deque[float] = deque(maxlen=curriculum_window)
         self.curriculum_promotions: int = 0
         self.core = RubiksCubeCore()
 
@@ -841,22 +868,35 @@ class RubiksCubeMacroEnv(gym.Env):
         if options and "scramble_depth" in options:
             depth = max(1, int(options["scramble_depth"]))
         elif self.curriculum:
-            if len(self.recent_successes) >= self.curriculum_window:
-                success_rate = float(np.mean(self.recent_successes))
+            eval_window = self.frontier_successes if len(self.frontier_successes) >= self.curriculum_window else self.recent_successes
+            if len(eval_window) >= self.curriculum_window:
+                success_rate = float(np.mean(eval_window))
                 can_promote = self.max_depth is None or self.current_depth < self.max_depth
                 if success_rate >= self.target_success_rate and can_promote:
                     old_d = self.current_depth
                     self.current_depth += 1
                     self.curriculum_promotions += 1
                     self.recent_successes.clear()
+                    self.frontier_successes.clear()
                     max_d_str = str(self.max_depth) if self.max_depth is not None else "∞"
                     print(
                         f"\n🚀 [CURRICULUM MACRO] Sucesso {success_rate*100:.1f}% >= {self.target_success_rate*100:.0f}%! "
                         f"Profundidade promovida: {old_d} -> {self.current_depth}/{max_d_str}"
                     )
-            depth = self.current_depth
+            # Mixed Replay Curriculum:
+            # 50% de probabilidade no nível de fronteira (current_depth)
+            # 50% distribuído aleatoriamente entre os níveis consolidados (min_depth .. current_depth - 1)
+            if self.current_depth > self.min_depth:
+                if self.rng.random() < 0.50:
+                    depth = self.current_depth
+                else:
+                    depth = int(self.rng.integers(self.min_depth, self.current_depth))
+            else:
+                depth = self.current_depth
         else:
             depth = self.scramble_depth
+
+        self._episode_depth = depth
 
         if options and "view_mode" in options:
             self.set_view_mode(options["view_mode"])
@@ -870,12 +910,15 @@ class RubiksCubeMacroEnv(gym.Env):
             "aligned_stickers": self.core.get_aligned_count(),
             "score": self._prev_score,
             "is_solved": self.core.is_solved(),
-            "current_depth": depth,
+            "current_depth": self.current_depth if self.curriculum else depth,
+            "scramble_depth": depth,
             "max_depth": self.max_depth,
             "curriculum": self.curriculum,
             "curriculum_promotions": self.curriculum_promotions,
             "curriculum_success_rate": (
-                float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
+                float(np.mean(self.frontier_successes)) if len(self.frontier_successes) > 0 else (
+                    float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
+                )
             ),
         }
         return obs, info
@@ -898,11 +941,13 @@ class RubiksCubeMacroEnv(gym.Env):
             reward += 15.0
 
         terminated = is_solved
-        eff_max_steps = min(self.max_steps, max(12, self.current_depth * 4)) if self.curriculum else self.max_steps
+        eff_max_steps = min(self.max_steps, max(12, getattr(self, "_episode_depth", self.current_depth) * 4)) if self.curriculum else self.max_steps
         truncated = self._steps >= eff_max_steps
 
         if (terminated or truncated) and self.curriculum:
             self.recent_successes.append(1.0 if is_solved else 0.0)
+            if getattr(self, "_episode_depth", self.current_depth) == self.current_depth:
+                self.frontier_successes.append(1.0 if is_solved else 0.0)
 
         obs = self.core.get_one_hot()
         info = {
@@ -911,11 +956,14 @@ class RubiksCubeMacroEnv(gym.Env):
             "is_solved": is_solved,
             "action_name": macro_name,
             "current_depth": self.current_depth if self.curriculum else self.scramble_depth,
+            "scramble_depth": getattr(self, "_episode_depth", self.current_depth),
             "max_depth": self.max_depth,
             "curriculum": self.curriculum,
             "curriculum_promotions": self.curriculum_promotions,
             "curriculum_success_rate": (
-                float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
+                float(np.mean(self.frontier_successes)) if len(self.frontier_successes) > 0 else (
+                    float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
+                )
             ),
         }
         return obs, reward, terminated, truncated, info
@@ -950,6 +998,8 @@ class RubiksCubeMacroEnv(gym.Env):
         new_env._last_action_name = self._last_action_name
         new_env._prev_score = self._prev_score
         new_env._last_scramble_moves = list(getattr(self, "_last_scramble_moves", []))
+        new_env._episode_depth = getattr(self, "_episode_depth", self.current_depth)
+        new_env.frontier_successes = deque(self.frontier_successes, maxlen=self.curriculum_window)
         return new_env
 
 
@@ -998,8 +1048,11 @@ class VectorizedRubiksEnv(gym.Env):
         ]
         if len(self.envs) > 1:
             shared_successes = self.envs[0].recent_successes
+            shared_frontier = getattr(self.envs[0], "frontier_successes", None)
             for env in self.envs[1:]:
                 env.recent_successes = shared_successes
+                if shared_frontier is not None:
+                    env.frontier_successes = shared_frontier
 
         self.action_space = self.envs[0].action_space
         self.observation_space = self.envs[0].observation_space

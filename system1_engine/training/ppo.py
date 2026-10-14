@@ -81,6 +81,8 @@ class RecurrentPPOTrainer:
         assert len(trainable_params) > 0, "No trainable parameters found!"
         self.optimizer = optim.Adam(trainable_params, lr=learning_rate, eps=1e-5)
         self.scheduler: Optional[optim.lr_scheduler.LRScheduler] = None
+        self.best_state_dict: Optional[Dict[str, torch.Tensor]] = None
+        self.best_mean_return: float = -float("inf")
 
         # Rollout buffer
         is_discrete = isinstance(env.action_space, gym.spaces.Discrete)
@@ -929,8 +931,12 @@ class RecurrentPPOTrainer:
             metrics = self.train_epoch()
 
             if len(self.episode_returns) > 0:
-                best_mean_return = max(best_mean_return, mean_return)
-                self.best_mean_return = best_mean_return
+                if mean_return > best_mean_return:
+                    best_mean_return = mean_return
+                    self.best_mean_return = best_mean_return
+                    self.best_state_dict = {
+                        k: v.cpu().clone() for k, v in self.agent.state_dict().items()
+                    }
                 if self.tracker is not None:
                     self.tracker.metrics.best_mean_return = best_mean_return
 
@@ -980,6 +986,11 @@ class RecurrentPPOTrainer:
                         f"({mean_return:.2f} at {self.total_steps} steps)"
                     )
                 break
+
+        if getattr(self, "best_state_dict", None) is not None:
+            self.agent.load_state_dict(self.best_state_dict)
+            if verbose:
+                print(f"\n🏆 [Best State Dict Restored] Modelo restaurado no ápice de performance (Melhor Retorno: {best_mean_return:.2f})")
 
         self.best_mean_return = best_mean_return
         self.final_return = float(np.mean(self.episode_returns)) if len(self.episode_returns) > 0 else 0.0

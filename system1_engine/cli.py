@@ -184,6 +184,7 @@ def train_mode(args: argparse.Namespace) -> None:
             tracker=tracker,
             device=device,
             exploration_scale=train_calib,
+            hindsight_replay=getattr(args, "hindsight_replay", True),
         )
 
         last_saved_step = [0]
@@ -233,6 +234,8 @@ def train_mode(args: argparse.Namespace) -> None:
             )
 
         if args.save:
+            if getattr(trainer, "best_state_dict", None) is not None:
+                agent.load_state_dict(trainer.best_state_dict)
             best_ret = getattr(trainer, "best_mean_return", None)
             if best_ret is None and tracker and tracker.metrics.best_mean_return is not None:
                 best_ret = tracker.metrics.best_mean_return
@@ -517,7 +520,13 @@ def main() -> None:
         default=None,
         help="Freeze trunk parameters during transfer or warm-start (default: True for cross-domain, False for warm-start)",
     )
-    parser.add_argument("--entropy-coef", type=float, default=0.005, help="Entropy coefficient for PPO exploration (default: 0.005)")
+    parser.add_argument("--entropy-coef", type=float, default=0.003, help="Entropy coefficient for PPO exploration (default: 0.003)")
+    parser.add_argument(
+        "--hindsight-replay",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Habilita Hindsight Experience Replay (HER) On-Policy para quebra de platôs de recompensa esparsa (padrão: True)",
+    )
     parser.add_argument(
         "--calibration",
         "--eval-calibration",
@@ -535,16 +544,16 @@ def main() -> None:
         help="Escala de exploração / calibração durante o treino PPO: 'auto' (homeostase dinâmica e auto-correção) ou float [0.05 a 1.0] (padrão: auto)",
     )
     parser.add_argument("--episodes", type=int, default=5, help="Number of episodes for run mode")
-    parser.add_argument("--lr", type=float, default=7e-4, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate (default: 3e-4)")
     parser.add_argument(
         "--target-return",
         type=float,
         default=475.0,
         help="Target moving average return to stop training early",
     )
-    parser.add_argument("--rollout-steps", type=int, default=1024, help="Rollout steps per PPO iteration")
-    parser.add_argument("--chunk-length", type=int, default=16, help="Chunk sequence length for BPTT")
-    parser.add_argument("--chunk-batch-size", type=int, default=16, help="Chunk batch size")
+    parser.add_argument("--rollout-steps", type=int, default=2048, help="Rollout steps per PPO iteration (default: 2048)")
+    parser.add_argument("--chunk-length", type=int, default=32, help="Chunk sequence length for BPTT (default: 32)")
+    parser.add_argument("--chunk-batch-size", type=int, default=16, help="Chunk batch size (default: 16)")
     parser.add_argument(
         "--live-stats",
         action="store_true",
