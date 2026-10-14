@@ -186,6 +186,9 @@
       <span class="px-2 py-0.5 rounded text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-800 font-bold tracking-widest uppercase">
         OPERATIONAL CONTROL HUD
       </span>
+      <div id="hud-model-badge" class="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-950/80 border border-amber-500/70 text-amber-300 font-mono text-[11px] font-bold shadow-sm" title="Modelo ativo no motor System 1">
+        <span>⚡ Modelo:</span> <span id="hud-model-name" class="text-white">Cerberus-v1</span>
+      </div>
       <a href="/web/" target="_blank" rel="noopener noreferrer" class="ml-2 px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white border border-cyan-400/50 shadow flex items-center gap-1.5 transition" title="Abrir HUD Web Interativo no Navegador (ONNX WebAssembly)">
         <span>🌐</span> HUD Web (ONNX) ↗
       </a>
@@ -763,7 +766,7 @@
         <div class="relative bg-black rounded overflow-hidden aspect-[4/3] flex items-center justify-center border border-gray-800/80">
           <img id="game-feed" src="/video_feed" alt="System 1 Game Viewport" class="w-full h-full object-contain" onerror="handleVideoFeedError()" />
           <div id="video-overlay" class="absolute bottom-2 left-2 right-2 flex justify-between items-center px-2 py-1 rounded bg-black/60 backdrop-blur-sm text-[10px] font-mono text-gray-400 pointer-events-none">
-            <span id="overlay-env">CartPole-v1</span>
+            <span id="overlay-env" class="text-cyan-400 font-bold">⚡ Cerberus-v1 (RubiksCube-v0)</span>
             <span id="overlay-fps">50.0 FPS</span>
           </div>
         </div>
@@ -1403,7 +1406,13 @@
       const customSug = document.getElementById('custom-env-suggestions');
       if (customSug) customSug.classList.toggle('hidden', env !== 'custom');
       document.getElementById('group-vizdoom-scenario').classList.toggle('hidden', env !== 'vizdoom');
-      document.getElementById('overlay-env').innerText = actualEnv || 'Custom';
+      const isCerberus = actualEnv === 'RubiksCube-v0';
+      const modelName = isCerberus ? 'Cerberus-v1' : actualEnv;
+      document.getElementById('overlay-env').innerText = isCerberus ? '⚡ Cerberus-v1 (RubiksCube-v0)' : (actualEnv || 'Custom');
+      const modelBadgeEl = document.getElementById('hud-model-name');
+      if (modelBadgeEl) {
+        modelBadgeEl.innerText = modelName;
+      }
       
       const isRubiks = actualEnv.toLowerCase().includes('rubik');
       const rubiksCtrl = document.getElementById('rubiks-view-controls');
@@ -1670,6 +1679,8 @@
       }
       const item = availableCheckpointsDetailed.find(c => c.path === val);
       if (item) {
+        const isCerberus = item.trunk_type === 'lean' || (item.path && item.path.toLowerCase().includes('cerberus'));
+        const modelLabel = isCerberus ? 'Modelo: ⚡ Cerberus-v1 (Lean 512D) • ' : (item.trunk_type === 'classic' ? 'Modelo: Classic 256D • ' : '');
         const depthVal = getCheckpointDepth(item);
         const maxDepthVal = getCheckpointMaxDepth(item);
         const reachedVal = getCheckpointReachedDepth(item);
@@ -1681,7 +1692,15 @@
         }
         const retStr = formatCheckpointReturns(item, false);
         const retInfo = retStr ? ` • ${retStr}` : '';
-        metaEl.innerText = `Tamanho: ${item.size_mb} MB${envInfo}${dimInfo}${depthInfo}${retInfo} • Modificado em: ${item.mtime}`;
+        metaEl.innerText = `${modelLabel}Tamanho: ${item.size_mb} MB${envInfo}${dimInfo}${depthInfo}${retInfo} • Modificado em: ${item.mtime}`;
+
+        const modelBadgeEl = document.getElementById('hud-model-name');
+        if (modelBadgeEl) {
+          modelBadgeEl.innerText = isCerberus ? 'Cerberus-v1' : (item.env_id || 'Ativo');
+        }
+        if (isCerberus) {
+          document.getElementById('overlay-env').innerText = `⚡ Cerberus-v1 (${item.env_id || 'RubiksCube-v0'})`;
+        }
       } else {
         metaEl.innerText = `Arquivo selecionado: ${val}`;
       }
@@ -1805,7 +1824,9 @@
       }
       const retStr = formatCheckpointReturns(item, true);
       const retInfo = retStr ? ` • ${retStr}` : '';
-      if (metaEl) metaEl.innerText = `${envInfo}${dimInfo}${depthInfo}${retInfo}`;
+      const isCerberus = item.trunk_type === 'lean' || (item.path && item.path.toLowerCase().includes('cerberus'));
+      const modelTag = isCerberus ? '⚡ Modelo: Cerberus-v1 • ' : '';
+      if (metaEl) metaEl.innerText = `${modelTag}${envInfo}${dimInfo}${depthInfo}${retInfo}`;
 
       const currentEnv = document.getElementById('cfg-env').value;
       const actualEnv = currentEnv === 'custom' ? (document.getElementById('cfg-custom-env').value || '') : currentEnv;
@@ -2343,7 +2364,7 @@
       availableCheckpointsDetailed.forEach(ckpt => {
         const depthVal = getCheckpointDepth(ckpt);
         const maxDepthVal = getCheckpointMaxDepth(ckpt);
-        const cerberusTag = (ckpt.trunk_type === 'lean' || (ckpt.path && ckpt.path.toLowerCase().includes('cerberus'))) ? ' [⚡ Cerberus]' : '';
+        const cerberusTag = (ckpt.trunk_type === 'lean' || (ckpt.path && ckpt.path.toLowerCase().includes('cerberus'))) ? ' [⚡ Cerberus-v1]' : '';
         const envTag = ckpt.env_id ? ` [${ckpt.env_id}]` : '';
         const depthTag = depthVal ? ` [🎓 D${depthVal}${maxDepthVal ? '/' + maxDepthVal : ''}]` : '';
         const retText = formatCheckpointReturns(ckpt, false);
@@ -2388,7 +2409,7 @@
         const maxDepthVal = getCheckpointMaxDepth(item);
         const reachedDepth = getCheckpointReachedDepth(item);
         const isCerberus = item.trunk_type === 'lean' || (item.path && item.path.toLowerCase().includes('cerberus'));
-        const cerberusBadge = isCerberus ? `<span class="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 text-[9px] border border-amber-800 font-bold" title="Arquitetura Cerberus (Tronco LeanResidualTrunk 512D Multi-Timescale, 1.6M)">⚡ Cerberus</span>` : '';
+        const cerberusBadge = isCerberus ? `<span class="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 text-[9px] border border-amber-800 font-bold" title="Arquitetura Cerberus-v1 (Tronco LeanResidualTrunk 512D Multi-Timescale, 1.6M)">⚡ Cerberus-v1</span>` : '';
         const div = document.createElement('div');
         div.className = 'flex items-center justify-between p-1.5 rounded bg-gray-900/70 border border-gray-800 text-xs';
         const envBadge = item.env_id ? `<span class="px-1 py-0.2 rounded bg-cyan-950 text-cyan-400 text-[9px] border border-cyan-800 font-bold">${item.env_id}</span>` : '';
