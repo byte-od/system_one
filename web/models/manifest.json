@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "updated_at": 1792005367.527957,
-  "updated_at_str": "14/10/2026 16:16:07",
+  "updated_at": 1792012516.533757,
+  "updated_at_str": "14/10/2026 18:15:16",
   "models": {
     "acrobot": {
       "key": "acrobot",
@@ -70,8 +70,8 @@
       "file": "s1_cartpole.onnx",
       "size_mb": 2.77,
       "size_bytes": 2909005,
-      "mtime": 1792005354.0138035,
-      "mtime_str": "14/10/2026 16:15:54",
+      "mtime": 1792012445.909148,
+      "mtime_str": "14/10/2026 18:14:05",
       "checkpoint_source": "s1_cartpole_v1_trained.pt",
       "checkpoint_version": "v1"
     },
@@ -123,10 +123,10 @@
       "description": "12 giros atômicos elementares com física e permutação 3D exatas. 100% de resolução reflexiva.",
       "default": true,
       "file": "s1_rubiks_atomic.onnx",
-      "size_mb": 3.18,
-      "size_bytes": 3336041,
-      "mtime": 1792005351.7038875,
-      "mtime_str": "14/10/2026 16:15:51",
+      "size_mb": 6.36,
+      "size_bytes": 6672655,
+      "mtime": 1792012516.463063,
+      "mtime_str": "14/10/2026 18:15:16",
       "checkpoint_source": "s1_rubikscube_v0_trained_v20.pt",
       "checkpoint_version": "v20"
     },
