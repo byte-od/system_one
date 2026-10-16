@@ -424,6 +424,9 @@
             </button>
           </div>
           <div class="flex items-center gap-1">
+            <button type="button" id="btn-cube-anim" onclick="toggleCubeAnimation()" class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-600 text-white border border-indigo-400 shadow-sm transition cursor-pointer" title="Ativar/Desativar rotação gradual suave das fatias (110ms)">
+              <span id="cube-anim-icon">✨</span> Giro Suave
+            </button>
             <button type="button" id="btn-cube-autorotate" onclick="toggleCubeAutoRotate()" class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 border border-indigo-700/60 shadow-sm transition cursor-pointer" title="Ativar/Desativar rotação contínua automática quando ocioso">
               <span id="autorotate-icon">🔄</span> Auto-Giro
             </button>
@@ -434,7 +437,7 @@
         </div>
 
         <!-- Área de Renderização (Three.js 3D WebGL ou Canvas 2D) -->
-        <div class="relative bg-black rounded overflow-hidden aspect-[4/3] flex items-center justify-center border border-gray-800/80">
+        <div id="viewport-frame" class="relative bg-black rounded overflow-hidden aspect-[4/3] flex items-center justify-center border border-gray-800/80 transition-all duration-300">
           <canvas id="viewport-canvas" width="480" height="320" class="w-full h-full object-contain hidden"></canvas>
           <div id="rubiks-3d-container" class="w-full h-full relative cursor-grab active:cursor-grabbing select-none flex items-center justify-center">
             <div class="absolute bottom-2 left-2 text-[10px] font-mono text-gray-400 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded pointer-events-none border border-gray-800/80 flex items-center gap-1 z-10">
@@ -464,9 +467,14 @@
             <span class="text-[10px] font-bold text-cyan-300 flex items-center gap-1">
               <span>🎮</span> Giros Manuais (Teclado Físico & Virtual):
             </span>
-            <span class="text-[9px] font-mono text-gray-400">
-              Shift = Inverso (<kbd class="px-1 bg-gray-800 rounded text-cyan-400">U'</kbd>)
-            </span>
+            <div class="flex items-center gap-1.5">
+              <button type="button" id="btn-agent-hint" onclick="requestAgentHint()" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-600/80 shadow-sm transition active:scale-95 cursor-pointer flex items-center gap-1" title="Pedir sugestão do próximo movimento ao agente neural (Tecla H)">
+                <span>💡</span> Sugestão IA <kbd class="px-1 bg-black/50 rounded text-amber-200 text-[9px]">H</kbd>
+              </button>
+              <span class="text-[9px] font-mono text-gray-400">
+                Shift = Inverso (<kbd class="px-1 bg-gray-800 rounded text-cyan-400">U'</kbd>)
+              </span>
+            </div>
           </div>
           <!-- 6 Pares de Ações Atômicas com cores oficiais -->
           <div class="grid grid-cols-6 gap-1">
@@ -492,7 +500,7 @@
             <button id="btn-move-L_prime" onclick="applyManualMove('L_prime')" class="py-1 px-1 rounded bg-orange-950/40 hover:bg-orange-950/80 border border-orange-600/80 text-orange-400/80 font-mono font-bold text-[11px] transition active:scale-95 cursor-pointer" title="Giro Esquerda Anti-horário (Shift+L)">L'</button>
           </div>
           <div class="flex items-center justify-between text-[9px] text-gray-400 font-mono pt-0.5">
-            <span>💡 Teclas: <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">U</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">D</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">F</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">B</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">R</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">L</kbd></span>
+            <span>💡 Teclas: <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">U</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">D</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">F</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">B</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">R</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">L</kbd> • <kbd class="px-1 bg-gray-800 text-amber-300 rounded font-bold">H</kbd> = Dica IA</span>
             <span>Espaço = Passo IA • Esc = Reset</span>
           </div>
         </div>
@@ -926,6 +934,7 @@
           for (let z = -1; z <= 1; z++) {
             const cubie = new THREE.Mesh(cubieGeo, cubieMat);
             cubie.position.set(x, y, z);
+            cubie.userData = { origPos: cubie.position.clone(), origRot: cubie.rotation.clone() };
             cubeGroup.add(cubie);
           }
         }
@@ -970,6 +979,7 @@
         const mesh = new THREE.Mesh(stickerGeo, mat);
         mesh.position.set(def.pos[0], def.pos[1], def.pos[2]);
         mesh.rotation.set(def.rot[0], def.rot[1], def.rot[2]);
+        mesh.userData = { origPos: mesh.position.clone(), origRot: mesh.rotation.clone() };
         cubeGroup.add(mesh);
         stickerMeshes[def.slot] = mesh;
       }
@@ -1013,6 +1023,7 @@
     }
 
     function resetCubeCamera() {
+      finishSliceAnimation();
       if (cubeGroup) {
         cubeGroup.rotation.x = 0.45;
         cubeGroup.rotation.y = -0.55;
@@ -1044,6 +1055,100 @@
       }
     }
 
+    let isCubeAnimationEnabled = true;
+    let currentSliceTween = null;
+
+    function toggleCubeAnimation() {
+      isCubeAnimationEnabled = !isCubeAnimationEnabled;
+      const btn = document.getElementById('btn-cube-anim');
+      const icon = document.getElementById('cube-anim-icon');
+      if (btn) {
+        if (isCubeAnimationEnabled) {
+          btn.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400 shadow-sm transition cursor-pointer';
+          if (icon) icon.innerText = '✨';
+        } else {
+          btn.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-gray-900 hover:bg-gray-800 text-gray-400 border border-gray-700 shadow-sm transition cursor-pointer';
+          if (icon) icon.innerText = '⚡';
+        }
+      }
+      appendLog(`[VIEW] ✨ Animação gradual de fatias (110ms) ${isCubeAnimationEnabled ? 'ativada' : 'desativada'}.`);
+    }
+
+    const SLICE_MOVE_SPECS = {
+      "U": { axis: 'y', target: -Math.PI / 2, filter: (p) => p.y > 0.4 },
+      "U_prime": { axis: 'y', target: Math.PI / 2, filter: (p) => p.y > 0.4 },
+      "D": { axis: 'y', target: Math.PI / 2, filter: (p) => p.y < -0.4 },
+      "D_prime": { axis: 'y', target: -Math.PI / 2, filter: (p) => p.y < -0.4 },
+      "F": { axis: 'z', target: -Math.PI / 2, filter: (p) => p.z > 0.4 },
+      "F_prime": { axis: 'z', target: Math.PI / 2, filter: (p) => p.z > 0.4 },
+      "B": { axis: 'z', target: Math.PI / 2, filter: (p) => p.z < -0.4 },
+      "B_prime": { axis: 'z', target: -Math.PI / 2, filter: (p) => p.z < -0.4 },
+      "R": { axis: 'x', target: -Math.PI / 2, filter: (p) => p.x > 0.4 },
+      "R_prime": { axis: 'x', target: Math.PI / 2, filter: (p) => p.x > 0.4 },
+      "L": { axis: 'x', target: Math.PI / 2, filter: (p) => p.x < -0.4 },
+      "L_prime": { axis: 'x', target: -Math.PI / 2, filter: (p) => p.x < -0.4 },
+    };
+
+    function animateSliceTurn(moveName, onComplete, duration = 110) {
+      if (!isCubeAnimationEnabled || duration <= 0 || !isThreeInitialized || webCubeViewMode !== '3d') {
+        if (onComplete) onComplete();
+        return;
+      }
+
+      finishSliceAnimation();
+
+      const spec = SLICE_MOVE_SPECS[moveName];
+      if (!spec || !cubeGroup) {
+        if (onComplete) onComplete();
+        return;
+      }
+
+      const pivot = new THREE.Group();
+      cubeGroup.add(pivot);
+
+      const matched = [];
+      cubeGroup.children.forEach((child) => {
+        if (child !== pivot && child.userData && child.userData.origPos) {
+          if (spec.filter(child.userData.origPos)) {
+            matched.push(child);
+          }
+        }
+      });
+
+      matched.forEach((m) => pivot.add(m));
+
+      currentSliceTween = {
+        pivot: pivot,
+        axis: spec.axis,
+        targetAngle: spec.target,
+        duration: duration,
+        startTime: performance.now(),
+        onComplete: onComplete
+      };
+    }
+
+    function finishSliceAnimation() {
+      if (!currentSliceTween) return;
+      const tween = currentSliceTween;
+      currentSliceTween = null;
+
+      if (tween.pivot && cubeGroup) {
+        const children = [...tween.pivot.children];
+        children.forEach((obj) => {
+          cubeGroup.add(obj);
+          if (obj.userData && obj.userData.origPos) {
+            obj.position.copy(obj.userData.origPos);
+            obj.rotation.copy(obj.userData.origRot);
+          }
+        });
+        cubeGroup.remove(tween.pivot);
+      }
+
+      if (tween.onComplete) {
+        tween.onComplete();
+      }
+    }
+
     const THREE_CUBE_PALETTE = {
       0: 0xF8FAFC, // U: Branco
       1: 0xFACC15, // D: Amarelo
@@ -1067,7 +1172,16 @@
     function threeAnimationLoop() {
       requestAnimationFrame(threeAnimationLoop);
       if (isThreeInitialized && threeRenderer && threeScene && threeCamera) {
-        if (cubeAutoRotate && !isPointerDragging && cubeGroup) {
+        if (currentSliceTween) {
+          const now = performance.now();
+          const elapsed = now - currentSliceTween.startTime;
+          const progress = Math.min(1.0, elapsed / currentSliceTween.duration);
+          const ease = 1 - (1 - progress) * (1 - progress);
+          currentSliceTween.pivot.rotation[currentSliceTween.axis] = currentSliceTween.targetAngle * ease;
+          if (progress >= 1.0) {
+            finishSliceAnimation();
+          }
+        } else if (cubeAutoRotate && !isPointerDragging && cubeGroup) {
           cubeGroup.rotation.y += 0.003;
         }
         threeRenderer.render(threeScene, threeCamera);
@@ -1075,6 +1189,7 @@
     }
 
     function setWebCubeViewMode(mode) {
+      finishSliceAnimation();
       webCubeViewMode = mode;
       const btn3d = document.getElementById('btn-cube-view-3d');
       const btn2d = document.getElementById('btn-cube-view-2d');
@@ -1471,6 +1586,7 @@
     }
 
     function scrambleEnv() {
+      finishSliceAnimation();
       const cfg = MODELS[activeDemo] || MODELS["rubiks_atomic"];
       if (cfg.type === "rubiks" || activeDemo.startsWith("rubiks")) {
         const depth = getScrambleDepth();
@@ -1492,6 +1608,7 @@
     }
 
     function resetEnv() {
+      finishSliceAnimation();
       sim.reset();
       lastScore = sim.getScore ? sim.getScore() : 0.0;
       lastReward = 0.0;
@@ -1512,6 +1629,8 @@
     // =====================================================================
     // CONTROLES DE JOGO MANUAL & ATALHOS DE TECLADO (INTERACTIVE PLAY)
     // =====================================================================
+    let currentHintTimeout = null;
+
     function applyManualMove(moveName) {
       const cfg = MODELS[activeDemo] || MODELS["rubiks_atomic"];
       const isRubiks = cfg.type === "rubiks" || activeDemo.startsWith("rubiks");
@@ -1521,6 +1640,14 @@
       }
 
       pulseMoveButton(moveName);
+
+      if (currentHintTimeout) {
+        clearTimeout(currentHintTimeout);
+        currentHintTimeout = null;
+        document.querySelectorAll('#interactive-move-pad button').forEach(b => {
+          b.classList.remove('ring-4', 'ring-amber-400', 'animate-pulse', 'shadow-lg', 'shadow-amber-950');
+        });
+      }
 
       if (isRunning) {
         stopEvaluation();
@@ -1560,8 +1687,12 @@
       if (retKpi) retKpi.innerText = curScore.toFixed(2);
 
       const statusDesc = document.getElementById('status-desc');
-      if (webCubeViewMode === '3d') {
-        updateCube3D(sim.state);
+      if (webCubeViewMode === '3d' && isCubeAnimationEnabled) {
+        animateSliceTurn(moveName, () => {
+          updateCube3D(sim.state);
+        }, 110);
+      } else {
+        if (webCubeViewMode === '3d') updateCube3D(sim.state);
       }
       sim.render(canvas);
 
@@ -1587,6 +1718,82 @@
       }
     }
 
+    async function requestAgentHint() {
+      const cfg = MODELS[activeDemo] || MODELS["rubiks_atomic"];
+      const isRubiks = cfg.type === "rubiks" || activeDemo.startsWith("rubiks");
+      if (!isRubiks || !sim) {
+        appendLog("[HINT] 💡 Sugestões estão disponíveis apenas para o simulador do Cubo Mágico.");
+        return;
+      }
+      if (!agent) {
+        alert("Aguarde o carregamento do modelo ONNX...");
+        return;
+      }
+
+      finishSliceAnimation();
+
+      const obs = sim.getOneHot ? sim.getOneHot() : sim.getState();
+      const decision = await agent.actWithConfidence(obs, lastReward, {
+        calibration: 0.0 // Modo determinístico / máxima convicção para dica
+      });
+
+      const actIdx = decision.action;
+      const actName = (System1 && System1.RubiksCubeSim && System1.RubiksCubeSim.ATOMIC_MOVES)
+        ? (System1.RubiksCubeSim.ATOMIC_MOVES[actIdx] || `Giro ${actIdx}`)
+        : `Giro ${actIdx}`;
+
+      highlightHintButton(actName);
+      updateConfidenceAura(decision.confidence, decision.uncertainty);
+
+      const statusDesc = document.getElementById('status-desc');
+      if (statusDesc) {
+        statusDesc.innerText = `💡 Sugestão IA: ${actName} (Confiança: ${(decision.confidence * 100).toFixed(1)}%)`;
+      }
+      appendLog(`[HINT] 💡 Agente neural sugere giro: ${actName} | Confiança: ${(decision.confidence * 100).toFixed(1)}% | Incerteza: ${(decision.uncertainty * 100).toFixed(1)}% | Latência: ${decision.latencyMs.toFixed(2)}ms`);
+    }
+
+    function highlightHintButton(moveName) {
+      if (currentHintTimeout) {
+        clearTimeout(currentHintTimeout);
+        currentHintTimeout = null;
+      }
+
+      document.querySelectorAll('#interactive-move-pad button').forEach(b => {
+        b.classList.remove('ring-4', 'ring-amber-400', 'animate-pulse', 'shadow-lg', 'shadow-amber-950');
+      });
+
+      const btn = document.getElementById(`btn-move-${moveName}`);
+      if (btn) {
+        btn.classList.add('ring-4', 'ring-amber-400', 'animate-pulse', 'shadow-lg', 'shadow-amber-950');
+        currentHintTimeout = setTimeout(() => {
+          btn.classList.remove('ring-4', 'ring-amber-400', 'animate-pulse', 'shadow-lg', 'shadow-amber-950');
+          currentHintTimeout = null;
+        }, 4000);
+      }
+    }
+
+    function updateConfidenceAura(confidence, uncertainty) {
+      const frame = document.getElementById('viewport-frame');
+      if (!frame) return;
+      frame.classList.remove(
+        'border-gray-800/80',
+        'border-emerald-500/70',
+        'border-cyan-500/70',
+        'border-amber-500/70',
+        'shadow-[0_0_20px_rgba(16,185,129,0.35)]',
+        'shadow-[0_0_15px_rgba(6,182,212,0.25)]',
+        'shadow-[0_0_20px_rgba(245,158,11,0.35)]'
+      );
+
+      if (confidence >= 0.80) {
+        frame.classList.add('border-emerald-500/70', 'shadow-[0_0_20px_rgba(16,185,129,0.35)]');
+      } else if (confidence >= 0.45) {
+        frame.classList.add('border-cyan-500/70', 'shadow-[0_0_15px_rgba(6,182,212,0.25)]');
+      } else {
+        frame.classList.add('border-amber-500/70', 'shadow-[0_0_20px_rgba(245,158,11,0.35)]');
+      }
+    }
+
     // Atalhos de teclado físicos globais
     window.addEventListener('keydown', (e) => {
       const tag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
@@ -1608,6 +1815,12 @@
       }
 
       const lower = key.toLowerCase();
+      if (lower === 'h') {
+        e.preventDefault();
+        requestAgentHint();
+        return;
+      }
+
       const moveMap = {
         'u': 'U',
         'd': 'D',
@@ -1751,8 +1964,17 @@
         appendLog(`[PASSO ${String(stepCount).padStart(4, '0')}] Ação: ${actName} | Lat: ${decision.latencyMs.toFixed(2)}ms | Conf: ${(decision.confidence * 100).toFixed(1)}% | Incerteza: ${(decision.uncertainty * 100).toFixed(1)}% ${calibTag}`);
       }
 
+      updateConfidenceAura(decision.confidence, decision.uncertainty);
+
       if (isRubiks && webCubeViewMode === '3d') {
-        updateCube3D(sim.state);
+        const animDuration = (!isRunning) ? 100 : (isCubeAnimationEnabled ? 70 : 0);
+        if (animDuration > 0 && cfg.mode !== "macro") {
+          animateSliceTurn(actName, () => {
+            updateCube3D(sim.state);
+          }, animDuration);
+        } else {
+          updateCube3D(sim.state);
+        }
       }
       sim.render(canvas);
     }
