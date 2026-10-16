@@ -263,14 +263,14 @@ def generate_web_manifest(
     metadata_catalog = {
         "s1_rubiks_atomic.onnx": {
             "key": "rubiks_atomic",
-            "name": "⚡ A.U.R.A: Cubo Mágico 3x3 (1.6M Multi-Timescale)",
+            "name": "⚡ Cubo Mágico 3x3 (Atômico 1.6M)",
             "env_id": "RubiksCube-v0",
             "type": "rubiks",
             "mode": "atomic",
             "obs_dim": 324,
             "act_dim": 12,
             "discrete": True,
-            "description": "A.U.R.A: Tronco recorrente de 1.6M parâmetros com Fast GRU + Slow GRU + Residual Highway. 12 giros atômicos, latência sub-milissegundo.",
+            "description": "Tronco recorrente de 1.6M parâmetros com Fast GRU + Slow GRU + Residual Highway. 12 giros atômicos, latência sub-milissegundo.",
             "default": True,
         },
         "s1_rubiks_macro.onnx": {
@@ -380,17 +380,11 @@ def generate_web_manifest(
                 source_ckpt = os.path.basename(found)
             else:
                 clean_env_id = target_env.lower().replace("-", "_")
-                if target_env == "RubiksCube-v0" or filename == "s1_rubiks_atomic.onnx":
-                    source_ckpt = "s1_rubikscube_v0_aura.pt"
-                else:
-                    source_ckpt = f"s1_{clean_env_id}_trained.pt"
+                source_ckpt = f"s1_{clean_env_id}_trained.pt"
         if source_ckpt:
             meta["checkpoint_source"] = source_ckpt
             m_ver = re.search(r"_v(\d+)$", Path(source_ckpt).stem)
-            if "aura" in source_ckpt.lower():
-                meta["checkpoint_version"] = f"A.U.R.A{' v' + m_ver.group(1) if m_ver else ''}"
-            else:
-                meta["checkpoint_version"] = f"v{m_ver.group(1)}" if m_ver else "v1"
+            meta["checkpoint_version"] = f"v{m_ver.group(1)}" if m_ver else "v1"
 
         key = meta.get("key", onnx_path.stem)
         models_dict[key] = meta

@@ -100,6 +100,7 @@ def test_contract_checkpoint_naming_convention():
     assert HUDWebParityContract.validate_checkpoint_convention("s1_ant_v5_trained_v3.pt")
     assert HUDWebParityContract.validate_checkpoint_convention("s1_rubikscube_v0_cerberus_v1.pt")
     assert HUDWebParityContract.validate_checkpoint_convention("s1_rubikscube_v0_aura.pt")
+    assert HUDWebParityContract.validate_checkpoint_convention("s1_rubikscube_v0_trained.pt")
     assert not HUDWebParityContract.validate_checkpoint_convention("s1_cartpole.pt")
     assert not HUDWebParityContract.validate_checkpoint_convention("s1_cartpole_checkpoint.pt")
 

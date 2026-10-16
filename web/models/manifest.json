@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "updated_at": 1792160481.451437,
-  "updated_at_str": "16/10/2026 11:21:21",
+  "updated_at": 1792161261.0442739,
+  "updated_at_str": "16/10/2026 11:34:21",
   "models": {
     "acrobot": {
       "key": "acrobot",
@@ -70,8 +70,8 @@
       "file": "s1_cartpole.onnx",
       "size_mb": 2.77,
       "size_bytes": 2909005,
-      "mtime": 1792160392.1968048,
-      "mtime_str": "16/10/2026 11:19:52",
+      "mtime": 1792161246.9918504,
+      "mtime_str": "16/10/2026 11:34:06",
       "checkpoint_source": "s1_cartpole_v1_trained.pt",
       "checkpoint_version": "v1"
     },
@@ -113,22 +113,22 @@
     },
     "rubiks_atomic": {
       "key": "rubiks_atomic",
-      "name": "⚡ A.U.R.A: Cubo Mágico 3x3 (1.6M Multi-Timescale)",
+      "name": "⚡ Cubo Mágico 3x3 (Atômico 1.6M)",
       "env_id": "RubiksCube-v0",
       "type": "rubiks",
       "mode": "atomic",
       "obs_dim": 324,
       "act_dim": 12,
       "discrete": true,
-      "description": "A.U.R.A: Tronco recorrente de 1.6M parâmetros com Fast GRU + Slow GRU + Residual Highway. 12 giros atômicos, latência sub-milissegundo.",
+      "description": "Tronco recorrente de 1.6M parâmetros com Fast GRU + Slow GRU + Residual Highway. 12 giros atômicos, latência sub-milissegundo.",
       "default": true,
       "file": "s1_rubiks_atomic.onnx",
       "size_mb": 6.36,
       "size_bytes": 6672655,
       "mtime": 1792158620.7387702,
       "mtime_str": "16/10/2026 10:50:20",
-      "checkpoint_source": "s1_rubikscube_v0_aura.pt",
-      "checkpoint_version": "A.U.R.A"
+      "checkpoint_source": "s1_rubikscube_v0_trained.pt",
+      "checkpoint_version": "v1"
     },
     "rubiks_macro": {
       "key": "rubiks_macro",

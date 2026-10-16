@@ -139,13 +139,13 @@
   <header class="card p-3 mb-4 flex flex-wrap justify-between items-center gap-4 border-b border-gray-800">
     <div class="flex items-center gap-3">
       <span class="text-2xl font-black tracking-wider text-cyan-400 flex items-center gap-2">
-        <span>⚡</span> SYSTEM 1 ENGINE
+        <span>⚡</span> A.U.R.A
       </span>
       <span class="px-2 py-0.5 rounded text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-800 font-bold tracking-widest uppercase">
-        WEB RUNTIME HUD • LIVE EVALUATION (WASM SIMD)
+        SYSTEM 1 ENGINE • LIVE EVALUATION (WASM SIMD)
       </span>
       <div id="web-model-badge" class="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-950/80 border border-amber-500/70 text-amber-300 font-mono text-[11px] font-bold shadow-sm" title="Modelo ativo no Web Hub">
-        <span>⚡ Modelo:</span> <span id="web-model-name" class="text-white">A.U.R.A</span>
+        <span>⚡ Modelo:</span> <span id="web-model-name" class="text-white">RubiksCube-v0</span>
       </div>
       <span id="daemon-indicator" class="hidden px-2 py-0.5 rounded text-[10px] bg-emerald-950/80 border border-emerald-500/60 text-emerald-300 font-bold tracking-wider animate-pulse">
         ⚡ DAEMON LOCAL 8050
@@ -222,7 +222,7 @@
               <span>⚡</span> Avaliar Macro (CFOP)
             </button>
             <button type="button" onclick="quickSelectEnv('rubiks_atomic')" class="py-1.5 px-2 text-[10px] font-bold rounded bg-purple-700 hover:bg-purple-600 text-white border border-purple-400 transition flex items-center justify-center gap-1 cursor-pointer shadow-sm">
-              <span>⚡</span> Avaliar A.U.R.A
+              <span>⚡</span> Avaliar Atômico
             </button>
           </div>
         </div>
@@ -243,7 +243,7 @@
           </div>
           <select id="select-demo" class="hud-input mb-1.5 font-mono" onchange="onDemoChange()">
             <option value="rubiks_macro">🧩 RubiksCubeMacro-v0 (CFOP / 12 Algoritmos)</option>
-            <option value="rubiks_atomic" selected>⚡ A.U.R.A: RubiksCube-v0 (1.6M Multi-Timescale)</option>
+            <option value="rubiks_atomic" selected>⚡ RubiksCube-v0 (Atômico 1.6M)</option>
             <option value="cartpole">⚖️ CartPole-v1 (Controle Clássico, 4D, 2 Ações)</option>
             <option value="acrobot">🤸 Acrobot-v1 (Braço Duplo Acrobático, 6D, 3 Ações)</option>
             <option value="mountaincar">⛰️ MountainCar-v0 (Controle de Inércia Não-Linear)</option>
@@ -254,7 +254,7 @@
           <!-- Atalhos Rápidos com Chips Coloridos -->
           <div class="flex flex-wrap gap-1 mb-1">
             <button type="button" onclick="quickSelectEnv('rubiks_macro')" class="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 hover:bg-amber-900 border border-amber-800 text-[9px] font-mono cursor-pointer transition">Rubiks-Macro</button>
-            <button type="button" onclick="quickSelectEnv('rubiks_atomic')" class="px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 hover:bg-purple-900 border border-purple-800 text-[9px] font-mono cursor-pointer transition">⚡ A.U.R.A</button>
+            <button type="button" onclick="quickSelectEnv('rubiks_atomic')" class="px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 hover:bg-purple-900 border border-purple-800 text-[9px] font-mono cursor-pointer transition">Rubiks-Atômico</button>
             <button type="button" onclick="quickSelectEnv('cartpole')" class="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 hover:bg-cyan-900 border border-cyan-800 text-[9px] font-mono cursor-pointer transition">CartPole-v1</button>
             <button type="button" onclick="quickSelectEnv('acrobot')" class="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 hover:bg-cyan-900 border border-cyan-800 text-[9px] font-mono cursor-pointer transition">Acrobot-v1</button>
             <button type="button" onclick="quickSelectEnv('mountaincar')" class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 hover:bg-emerald-900 border border-emerald-800 text-[9px] font-mono cursor-pointer transition">MountainCar-v0</button>
@@ -449,7 +449,7 @@
             <span>Carregando pesos ONNX via Wasm SIMD...</span>
           </div>
           <div id="video-overlay" class="absolute bottom-2 right-2 flex items-center gap-2 px-2 py-1 rounded bg-black/60 backdrop-blur-sm text-[10px] font-mono text-gray-400 pointer-events-none z-10">
-            <span id="overlay-env" class="text-cyan-400 font-bold">⚡ A.U.R.A (RubiksCube-v0)</span>
+            <span id="overlay-env" class="text-cyan-400 font-bold">RubiksCube-v0</span>
             <span>•</span>
             <span id="overlay-fps" class="text-green-400">60.0 FPS</span>
           </div>
@@ -541,11 +541,11 @@
         <div class="bg-[#050811] p-2.5 rounded border border-gray-900 font-mono text-[11px] flex flex-col gap-1.5">
           <div class="flex items-center justify-between">
             <span class="text-gray-400">Nome do Modelo:</span>
-            <span id="active-ckpt-model" class="font-bold text-amber-300">⚡ A.U.R.A</span>
+            <span id="active-ckpt-model" class="font-bold text-amber-300">⚡ Cubo Mágico 3x3 (Atômico)</span>
           </div>
           <div class="flex items-center justify-between">
             <span class="text-gray-400">Origem PyTorch (.pt):</span>
-            <span id="active-ckpt-source" class="font-bold text-emerald-400 truncate max-w-[190px]">s1_rubikscube_v0_aura.pt</span>
+            <span id="active-ckpt-source" class="font-bold text-emerald-400 truncate max-w-[190px]">s1_rubikscube_v0_trained.pt</span>
           </div>
           <div class="flex items-center justify-between">
             <span class="text-gray-400">Arquivo ONNX:</span>
@@ -553,7 +553,7 @@
           </div>
           <div class="flex items-center justify-between">
             <span class="text-gray-400">Atualizado em:</span>
-            <span id="active-ckpt-mtime" class="text-gray-200">16/10/2026 10:50 (A.U.R.A)</span>
+            <span id="active-ckpt-mtime" class="text-gray-200">16/10/2026 11:20 (Atômico 1.6M)</span>
           </div>
           <div class="flex items-center justify-between">
             <span class="text-gray-400">Dimensões & Arquitetura:</span>
@@ -665,16 +665,16 @@
       },
       rubiks_atomic: {
         key: "rubiks_atomic",
-        name: "⚡ A.U.R.A: RubiksCube-v0 (1.6M Multi-Timescale)",
-        model_name: "A.U.R.A",
+        name: "⚡ Cubo Mágico 3x3 (1.6M Multi-Timescale)",
+        model_name: "RubiksCube-v0",
         env_id: "RubiksCube-v0",
         file: "s1_rubiks_atomic.onnx",
         mode: "atomic",
         type: "rubiks",
         size: "6.36 MB",
-        checkpoint_source: "s1_rubikscube_v0_aura.pt",
-        checkpoint_version: "A.U.R.A (512D)",
-        description: "A.U.R.A: Tronco recorrente de 1.6M parâmetros com Fast GRU + Slow GRU + Residual Highway. 12 giros atômicos, latência sub-milissegundo."
+        checkpoint_source: "s1_rubikscube_v0_trained.pt",
+        checkpoint_version: "v1 (512D)",
+        description: "Tronco recorrente de 1.6M parâmetros com Fast GRU + Slow GRU + Residual Highway. 12 giros atômicos, latência sub-milissegundo."
       },
       cartpole: {
         key: "cartpole",
@@ -1354,18 +1354,18 @@
       const sizeEl = document.getElementById('active-ckpt-size');
       const modelEl = document.getElementById('active-ckpt-model');
 
-      const isAura = demoKey === "rubiks_atomic" || (cfg.file && (cfg.file.includes("aura") || cfg.file.includes("cerberus"))) || (cfg.name && (cfg.name.includes("A.U.R.A") || cfg.name.includes("Cerberus")));
+      const isAtomic = demoKey === "rubiks_atomic";
 
       if (modelEl) {
-        modelEl.innerText = isAura ? "⚡ A.U.R.A" : (cfg.model_name || cfg.name || demoKey);
-        modelEl.className = isAura ? "font-bold text-amber-300" : "font-bold text-cyan-300";
+        modelEl.innerText = isAtomic ? "⚡ Cubo Mágico (Atômico)" : (cfg.model_name || cfg.name || demoKey);
+        modelEl.className = isAtomic ? "font-bold text-amber-300" : "font-bold text-cyan-300";
       }
       if (sourceEl) sourceEl.innerText = cfg.checkpoint_source || `${cfg.file.replace('.onnx', '')}_trained.pt`;
       if (fileEl) fileEl.innerText = cfg.file;
       if (mtimeEl) mtimeEl.innerText = cfg.mtime;
       if (sizeEl) sizeEl.innerText = cfg.size;
       if (dimsEl) {
-        if (isAura) {
+        if (isAtomic) {
           dimsEl.innerText = "324D obs • 12 ações • LeanTrunk 512D (1.6M)";
         } else if (cfg.obs_dim && cfg.act_dim) {
           dimsEl.innerText = `${cfg.obs_dim}D obs • ${cfg.act_dim} ações • GRU 256`;
@@ -1390,12 +1390,12 @@
       if (cfg.description) {
         document.getElementById('model-desc-text').innerText = cfg.description;
       }
-      const isAura = demoKey === "rubiks_atomic" || (cfg.file && (cfg.file.includes("aura") || cfg.file.includes("cerberus"))) || (cfg.name && (cfg.name.includes("A.U.R.A") || cfg.name.includes("Cerberus")));
-      const overlayText = isAura ? `⚡ A.U.R.A (${cfg.env_id})` : (cfg.env_id || cfg.name);
+      const isAtomic = demoKey === "rubiks_atomic";
+      const overlayText = isAtomic ? (cfg.env_id || "RubiksCube-v0") : (cfg.env_id || cfg.name);
       document.getElementById('overlay-env').innerText = overlayText;
       const webModelEl = document.getElementById('web-model-name');
       if (webModelEl) {
-        webModelEl.innerText = isAura ? "A.U.R.A" : (cfg.env_id || cfg.name);
+        webModelEl.innerText = isAtomic ? "RubiksCube-v0" : (cfg.env_id || cfg.name);
       }
 
       updateActiveCheckpointCard(demoKey);
