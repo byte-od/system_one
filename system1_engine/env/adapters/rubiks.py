@@ -642,8 +642,24 @@ class RubiksCubeEnv(gym.Env):
         self._prev_score = 0.0
         self.rng = np.random.default_rng()
 
+    @property
+    def inverse_action_map(self) -> Dict[int, int]:
+        return {i: i ^ 1 for i in range(12)}
+
     def set_view_mode(self, mode: str) -> None:
         self.view_mode = str(mode).lower()
+
+    def set_curriculum_depth(self, depth: int) -> int:
+        """Define a profundidade curricular atual (Warm-Start), preservando min_depth."""
+        clamped = max(self.min_depth, int(depth))
+        if self.max_depth is not None:
+            clamped = min(clamped, int(self.max_depth))
+        self.current_depth = clamped
+        self._episode_depth = clamped
+        self.curriculum_promotions = max(0, clamped - self.min_depth)
+        self.recent_successes.clear()
+        self.frontier_successes.clear()
+        return self.current_depth
 
     def reset(
         self,
@@ -859,8 +875,24 @@ class RubiksCubeMacroEnv(gym.Env):
         self._prev_score = 0.0
         self.rng = np.random.default_rng()
 
+    @property
+    def inverse_action_map(self) -> Dict[int, int]:
+        return {i: i ^ 1 for i in range(12)}
+
     def set_view_mode(self, mode: str) -> None:
         self.view_mode = str(mode).lower()
+
+    def set_curriculum_depth(self, depth: int) -> int:
+        """Define a profundidade curricular atual (Warm-Start), preservando min_depth."""
+        clamped = max(self.min_depth, int(depth))
+        if self.max_depth is not None:
+            clamped = min(clamped, int(self.max_depth))
+        self.current_depth = clamped
+        self._episode_depth = clamped
+        self.curriculum_promotions = max(0, clamped - self.min_depth)
+        self.recent_successes.clear()
+        self.frontier_successes.clear()
+        return self.current_depth
 
     def reset(
         self,
@@ -1104,10 +1136,31 @@ class VectorizedRubiksEnv(gym.Env):
     def action_descriptions(self) -> List[str]:
         return self.envs[0].action_descriptions
 
+    @property
+    def inverse_action_map(self) -> Dict[int, int]:
+        return self.envs[0].inverse_action_map
+
+    @property
+    def mixed_replay_rate(self) -> float:
+        return self.envs[0].mixed_replay_rate
+
+    @mixed_replay_rate.setter
+    def mixed_replay_rate(self, val: float) -> None:
+        v = max(0.0, min(1.0, float(val)))
+        for env in self.envs:
+            env.mixed_replay_rate = v
+
     def set_view_mode(self, mode: str) -> None:
         self.view_mode = str(mode).lower()
         for env in self.envs:
             env.set_view_mode(mode)
+
+    def set_curriculum_depth(self, depth: int) -> int:
+        """Define e sincroniza a profundidade curricular atual em todos os sub-ambientes."""
+        target_d = self.envs[0].set_curriculum_depth(depth)
+        for env in self.envs[1:]:
+            env.set_curriculum_depth(target_d)
+        return target_d
 
     def reset(
         self,

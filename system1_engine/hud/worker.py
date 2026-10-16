@@ -334,7 +334,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     save_path = config.get("save")
     load_path = config.get("load")
     transfer_from = config.get("transfer_from")
-    checkpoint_to_load = load_path or transfer_from
+    checkpoint_to_load = transfer_from or load_path
     freeze_trunk_cfg = config.get("freeze_trunk")
     force_trunk_only = bool(config.get("force_trunk_only", False))
 
@@ -448,11 +448,49 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         sil_max_per_depth=sil_max_per_depth,
     )
 
+    raw_env = getattr(env, "unwrapped", env)
+    if (
+        checkpoint_to_load
+        and res.get("mode") in ("warm_start", "net2net_expansion")
+        and hasattr(raw_env, "set_curriculum_depth")
+        and getattr(raw_env, "curriculum", False)
+    ):
+        ckpt_info = KnowledgeTransferManager.inspect_checkpoint(checkpoint_to_load)
+        ckpt_succ_d = ckpt_info.get("successful_depth")
+        ckpt_curr_d = ckpt_info.get("curriculum_depth") or ckpt_info.get("depth")
+        ckpt_max_d = max(int(ckpt_succ_d or 1), int(ckpt_curr_d or 1))
+        resume_d = int(ckpt_succ_d or ckpt_curr_d or 1)
+        if ckpt_max_d > 1:
+            raw_env.set_curriculum_depth(resume_d)
+            trainer.best_state_depth = raw_env.current_depth
+            trainer._rollout_tracked_depth = raw_env.current_depth
+            tracker.metrics.curriculum_depth = raw_env.current_depth
+            tracker.metrics.curriculum_promotions = raw_env.curriculum_promotions
+            if sil_enabled:
+                n_warm = trainer.warmup_sil_buffer(
+                    up_to_depth=ckpt_max_d,
+                    episodes_per_depth=32,
+                    calibrate_curriculum=True,
+                )
+                rates_str = ", ".join(
+                    f"D{d}:{sr*100:.0f}%"
+                    for d, sr in sorted(getattr(trainer, "last_warmup_solve_rates", {}).items())
+                )
+                print(
+                    f"🔥 [Warm-Start Curricular & SIL] Retomando diretamente em D{raw_env.current_depth} "
+                    f"(Promoções consolidadas: {raw_env.curriculum_promotions}) | "
+                    f"SIL pré-aquecido com {n_warm} trajetórias âncoras ({rates_str})"
+                )
+            else:
+                print(
+                    f"🔥 [Warm-Start Curricular] Retomando diretamente na Profundidade D{raw_env.current_depth} "
+                    f"(Promoções consolidadas: {raw_env.curriculum_promotions})"
+                )
 
     explainer = GradCAMExplainer(agent)
 
     last_ckpt_step = 0
-    last_ckpt_promotions = 0
+    last_ckpt_promotions = int(getattr(raw_env, "curriculum_promotions", 0))
     best_saved_mean_return = -float("inf")
 
     def _persist_checkpoint(reason: str = "") -> None:

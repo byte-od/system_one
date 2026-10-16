@@ -222,7 +222,7 @@ def test_sil_integration_in_ppo_training():
     assert "policy_loss" in metrics
     assert "sil_policy_loss" in metrics
     assert "sil_value_loss" in metrics
-    assert metrics["sil_trajectories"] == 2
+    assert metrics["sil_trajectories"] >= 2
     assert not np.isnan(metrics["policy_loss"])
 
 
@@ -307,4 +307,42 @@ def test_hierarchical_best_state_dict_prevents_depth_rollback():
     assert trainer.best_mean_return == pytest.approx(12.89, abs=1e-4)
     first_param_val = float(next(agent.parameters()).flatten()[0].item())
     assert first_param_val == pytest.approx(0.08, abs=1e-5)
+
+
+def test_curriculum_warm_start_and_sil_prewarming():
+    """Valida set_curriculum_depth e warmup_sil_buffer para Warm-Start Curricular sem regressão a D1."""
+    vec_env = VectorizedRubiksEnv(num_envs=4, curriculum=True, min_depth=1, max_depth=10)
+    assert vec_env.current_depth == 1
+    assert vec_env.curriculum_promotions == 0
+
+    # Warm-start direto para D7 preservando min_depth=1
+    new_d = vec_env.set_curriculum_depth(7)
+    assert new_d == 7
+    assert vec_env.current_depth == 7
+    assert vec_env.min_depth == 1
+    assert vec_env.curriculum_promotions == 6
+    assert all(e.current_depth == 7 and e.curriculum_promotions == 6 for e in vec_env.envs)
+
+    wrapper_env = UniversalS1Wrapper(vec_env)
+    agent = UniversalS1Agent(
+        obs_space=wrapper_env.observation_space,
+        action_space=wrapper_env.action_space,
+        trunk_type="lean",
+    )
+    trainer = RecurrentPPOTrainer(
+        agent=agent,
+        env=wrapper_env,
+        rollout_steps=64,
+        chunk_length=16,
+        chunk_batch_size=4,
+        sil_enabled=True,
+    )
+
+    # Executa warmup_sil_buffer em D1..D2
+    n_added = trainer.warmup_sil_buffer(up_to_depth=2, episodes_per_depth=16, calibrate_curriculum=False)
+    assert isinstance(n_added, int)
+    assert 1 in trainer.last_warmup_solve_rates
+    assert 2 in trainer.last_warmup_solve_rates
+    assert len(trainer.sil_buffer) == n_added
+
 

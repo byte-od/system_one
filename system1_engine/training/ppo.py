@@ -235,6 +235,270 @@ class RecurrentPPOTrainer:
             return int(raw_env.current_level)
         return 0
 
+    def warmup_sil_buffer(
+        self,
+        up_to_depth: int = 1,
+        episodes_per_depth: int = 32,
+        calibrate_curriculum: bool = True,
+    ) -> int:
+        """Pré-aquece o buffer SIL estratificado com trajetórias âncoras (níveis 1..up_to_depth) diretamente em self.env.
+
+        Totalmente agnóstico de domínio (suporta ambientes vetorizados ou singulares, discretos ou contínuos).
+        Se calibrate_curriculum=True e o agente demonstrar domínio consolidado (>=78% no nível 1),
+        calibra automaticamente a fronteira curricular inicial para o primeiro nível com sucesso <78%.
+        """
+        if not self.sil_enabled or up_to_depth < 1:
+            return 0
+
+        raw_env = getattr(self.env, "unwrapped", self.env)
+        has_curriculum_setter = hasattr(raw_env, "set_curriculum_depth")
+        orig_depth = self._get_current_curriculum_depth()
+        orig_mixed_rate = getattr(raw_env, "mixed_replay_rate", None)
+        inv_map: Optional[Dict[int, int]] = getattr(raw_env, "inverse_action_map", None)
+
+        max_d_target = max(1, int(up_to_depth)) if has_curriculum_setter else 1
+        if getattr(raw_env, "max_depth", None) is not None:
+            max_d_target = min(max_d_target, int(raw_env.max_depth))
+
+        if orig_mixed_rate is not None:
+            try:
+                raw_env.mixed_replay_rate = 0.0
+            except Exception:
+                pass
+
+        self.agent.eval()
+        self.last_warmup_solve_rates: Dict[int, float] = {}
+        added_total = 0
+
+        try:
+            with torch.inference_mode():
+                for d in range(1, max_d_target + 1):
+                    if has_curriculum_setter:
+                        raw_env.set_curriculum_depth(d)
+                    max_ep_steps = min(getattr(raw_env, "max_steps", 40), max(20, d * 6))
+
+                    if self.is_vectorized:
+                        E = self.num_envs
+                        active_quota = min(E, max(1, int(episodes_per_depth)))
+                        obs_dict, _ = self.env.reset(seed=1000 + d * 100)
+                        hx = torch.zeros((1, E, self.trunk_hidden_dim), dtype=torch.float32, device=self.device)
+
+                        ep_active = np.zeros(E, dtype=bool)
+                        ep_active[:active_quota] = True
+                        ep_solved = np.zeros(active_quota, dtype=bool)
+                        trajs: List[List[Dict[str, Any]]] = [[] for _ in range(active_quota)]
+                        recent_acts: List[deque[int]] = [deque(maxlen=6) for _ in range(active_quota)]
+
+                        for _step_idx in range(max_ep_steps):
+                            if not np.any(ep_active):
+                                break
+
+                            input_dict = self._prepare_vec_rollout_input(obs_dict)
+                            dist, _, next_hx = self.agent.forward(input_dict, hx=hx, dones=None)
+
+                            if self.agent.is_discrete:
+                                logits_sq = dist.logits[:, 0, :]
+                                probs = torch.softmax(logits_sq, dim=-1)
+                                sampled_probs = torch.softmax(logits_sq / 1.04, dim=-1)
+                                rand_draws = torch.rand(E, device=self.device)
+                                greedy_acts = torch.argmax(probs, dim=-1)
+                                stoch_acts = torch.multinomial(sampled_probs, num_samples=1).squeeze(-1)
+                                raw_acts = torch.where(rand_draws < 0.08, stoch_acts, greedy_acts)
+                                if E > 1:
+                                    raw_acts[0] = greedy_acts[0]
+
+                                env_action = raw_acts.cpu().numpy()
+                                for e in range(active_quota):
+                                    if not ep_active[e]:
+                                        continue
+                                    conf_e = float(probs[e, greedy_acts[e]].item())
+                                    avoid_e = set()
+                                    r_acts = recent_acts[e]
+                                    if inv_map is not None and len(r_acts) >= 1 and conf_e < 0.96:
+                                        inv_last = inv_map.get(r_acts[-1])
+                                        if inv_last is not None:
+                                            avoid_e.add(inv_last)
+                                    if len(r_acts) >= 3:
+                                        if r_acts[-1] == r_acts[-3]:
+                                            avoid_e.add(r_acts[-2])
+                                        elif r_acts[-1] == r_acts[-2] == r_acts[-3]:
+                                            avoid_e.add(r_acts[-1])
+                                        if inv_map is not None and conf_e < 0.95:
+                                            inv_a1 = inv_map.get(r_acts[-3])
+                                            inv_a2 = inv_map.get(r_acts[-2])
+                                            if inv_a1 is not None and inv_a2 is not None and r_acts[-1] == inv_a1:
+                                                avoid_e.add(inv_a2)
+                                    if int(env_action[e]) in avoid_e:
+                                        top_idxs = torch.argsort(probs[e], descending=True)
+                                        for alt_idx in top_idxs:
+                                            alt_a = int(alt_idx.item())
+                                            if alt_a not in avoid_e:
+                                                env_action[e] = alt_a
+                                                break
+                            else:
+                                env_action = dist.mean.squeeze(1).cpu().numpy()
+
+                            next_obs_dict, rewards, terminateds, truncateds, infos = self.env.step(env_action)
+
+                            for e in range(active_quota):
+                                if not ep_active[e]:
+                                    continue
+                                rew_flt = float(rewards[e])
+                                delta_v = (
+                                    obs_dict["delta_obs"][e].copy()
+                                    if not self.env.is_visual and obs_dict.get("delta_obs") is not None
+                                    else None
+                                )
+                                prev_act_v = int(obs_dict["prev_action"][e]) if self.agent.is_discrete else obs_dict["prev_action"][e].copy()
+                                act_v = int(env_action[e]) if self.agent.is_discrete else env_action[e].copy()
+                                trajs[e].append(
+                                    {
+                                        "obs": obs_dict["obs"][e].copy(),
+                                        "delta_obs": delta_v,
+                                        "prev_action": prev_act_v,
+                                        "prev_reward": float(obs_dict["prev_reward"][e]),
+                                        "action": act_v,
+                                        "reward": rew_flt,
+                                    }
+                                )
+                                if self.agent.is_discrete:
+                                    recent_acts[e].append(int(act_v))
+                                if terminateds[e] or truncateds[e]:
+                                    ep_active[e] = False
+                                    info_e = infos[e] if isinstance(infos, (list, tuple)) and e < len(infos) else {}
+                                    is_win = (
+                                        bool(info_e.get("is_solved", info_e.get("is_success", False)))
+                                        or (bool(terminateds[e]) and rew_flt >= 5.0)
+                                    )
+                                    if is_win and len(trajs[e]) > 0:
+                                        ep_solved[e] = True
+                                        t_steps = trajs[e]
+                                        T_traj = len(t_steps)
+                                        traj_obs = np.array([s["obs"] for s in t_steps], dtype=np.float32)
+                                        has_delta = any(s["delta_obs"] is not None for s in t_steps)
+                                        traj_delta = np.array([s["delta_obs"] for s in t_steps], dtype=np.float32) if has_delta else None
+                                        traj_prev_act = np.array([s["prev_action"] for s in t_steps])
+                                        traj_prev_rew = np.array([s["prev_reward"] for s in t_steps], dtype=np.float32)
+                                        traj_act = np.array([s["action"] for s in t_steps])
+                                        traj_returns = np.zeros(T_traj, dtype=np.float32)
+                                        running_r = 0.0
+                                        for t_idx in reversed(range(T_traj)):
+                                            running_r = t_steps[t_idx]["reward"] + self.gamma * running_r
+                                            traj_returns[t_idx] = running_r
+
+                                        self.sil_buffer.add(
+                                            SuccessfulTrajectory(
+                                                obs=traj_obs,
+                                                delta_obs=traj_delta,
+                                                prev_actions=traj_prev_act,
+                                                prev_rewards=traj_prev_rew,
+                                                actions=traj_act,
+                                                returns=traj_returns,
+                                                depth=d,
+                                                length=T_traj,
+                                            )
+                                        )
+                                        added_total += 1
+
+                            obs_dict = next_obs_dict
+                            hx = next_hx
+
+                        self.last_warmup_solve_rates[d] = float(np.mean(ep_solved))
+                    else:
+                        n_eps = max(1, int(episodes_per_depth))
+                        ep_solved_single = np.zeros(n_eps, dtype=bool)
+                        for ep_i in range(n_eps):
+                            obs_dict, _ = self.env.reset(seed=1000 + d * 100 + ep_i)
+                            self.agent.reset_memory()
+                            t_steps: List[Dict[str, Any]] = []
+                            for _step_idx in range(max_ep_steps):
+                                act = self.agent.act_fast(
+                                    obs_dict,
+                                    deterministic=(ep_i == 0),
+                                    calibration=0.0 if ep_i == 0 else 0.08,
+                                    quality_filter=True,
+                                )
+                                next_obs_dict, rew, term, trunc, info = self.env.step(act)
+                                delta_v = (
+                                    obs_dict["delta_obs"].copy()
+                                    if not self.env.is_visual and obs_dict.get("delta_obs") is not None
+                                    else None
+                                )
+                                t_steps.append(
+                                    {
+                                        "obs": obs_dict["obs"].copy(),
+                                        "delta_obs": delta_v,
+                                        "prev_action": int(obs_dict["prev_action"]) if self.agent.is_discrete else np.asarray(obs_dict["prev_action"]).copy(),
+                                        "prev_reward": float(obs_dict["prev_reward"]),
+                                        "action": int(act) if self.agent.is_discrete else np.asarray(act).copy(),
+                                        "reward": float(rew),
+                                    }
+                                )
+                                obs_dict = next_obs_dict
+                                if term or trunc:
+                                    is_win = (
+                                        bool(info.get("is_solved", info.get("is_success", False)))
+                                        or (bool(term) and float(rew) >= 5.0)
+                                    )
+                                    if is_win and len(t_steps) > 0:
+                                        ep_solved_single[ep_i] = True
+                                        T_traj = len(t_steps)
+                                        traj_obs = np.array([s["obs"] for s in t_steps], dtype=np.float32)
+                                        has_delta = any(s["delta_obs"] is not None for s in t_steps)
+                                        traj_delta = np.array([s["delta_obs"] for s in t_steps], dtype=np.float32) if has_delta else None
+                                        traj_prev_act = np.array([s["prev_action"] for s in t_steps])
+                                        traj_prev_rew = np.array([s["prev_reward"] for s in t_steps], dtype=np.float32)
+                                        traj_act = np.array([s["action"] for s in t_steps])
+                                        traj_returns = np.zeros(T_traj, dtype=np.float32)
+                                        running_r = 0.0
+                                        for t_idx in reversed(range(T_traj)):
+                                            running_r = t_steps[t_idx]["reward"] + self.gamma * running_r
+                                            traj_returns[t_idx] = running_r
+                                        self.sil_buffer.add(
+                                            SuccessfulTrajectory(
+                                                obs=traj_obs,
+                                                delta_obs=traj_delta,
+                                                prev_actions=traj_prev_act,
+                                                prev_rewards=traj_prev_rew,
+                                                actions=traj_act,
+                                                returns=traj_returns,
+                                                depth=d,
+                                                length=T_traj,
+                                            )
+                                        )
+                                        added_total += 1
+                                    break
+                        self.last_warmup_solve_rates[d] = float(np.mean(ep_solved_single))
+        finally:
+            if orig_mixed_rate is not None:
+                try:
+                    raw_env.mixed_replay_rate = orig_mixed_rate
+                except Exception:
+                    pass
+
+        if has_curriculum_setter:
+            target_final_d = orig_depth if orig_depth >= 1 else max_d_target
+            if calibrate_curriculum and getattr(raw_env, "curriculum", False):
+                if self.last_warmup_solve_rates.get(1, 0.0) >= 0.78:
+                    target_final_d = max_d_target
+                    for d in range(1, max_d_target + 1):
+                        if self.last_warmup_solve_rates.get(d, 0.0) < 0.78:
+                            target_final_d = d
+                            break
+            raw_env.set_curriculum_depth(target_final_d)
+            self.best_state_depth = raw_env.current_depth
+            self._rollout_tracked_depth = raw_env.current_depth
+
+        self.env.reset()
+
+        if self.tracker is not None:
+            self.tracker.record_sil_step(sil_trajectories=len(self.sil_buffer))
+            if hasattr(raw_env, "current_depth") and getattr(raw_env, "curriculum", False):
+                self.tracker.metrics.curriculum_depth = int(raw_env.current_depth)
+                self.tracker.metrics.curriculum_promotions = int(getattr(raw_env, "curriculum_promotions", 0))
+
+        return added_total
+
     def _prepare_rollout_input(self, obs_dict: Dict[str, Any]) -> Dict[str, Any]:
         """Copia os dados do dicionário de observação diretamente para os tensores pré-alocados."""
         self._buf_obs[0, 0].copy_(torch.as_tensor(obs_dict["obs"], dtype=torch.float32))
@@ -330,21 +594,22 @@ class RecurrentPPOTrainer:
                     num_acts = logits.shape[-1]
                     penalized_logits = logits.clone()
 
-                    # Vectorized Action Quality Filter & Inverse Move Pruning (Melhoria 3)
-                    if num_acts == 12:
+                    # Vectorized Action Quality Filter & Generic Reversible Move Pruning
+                    raw_env = getattr(self.env, "unwrapped", self.env)
+                    inv_map: Optional[Dict[int, int]] = getattr(raw_env, "inverse_action_map", None)
+                    if inv_map is not None:
                         for e in range(E):
                             e_hist = self._vec_recent_actions[e]
                             if len(e_hist) >= 1:
-                                last_a = e_hist[-1]
-                                inv_a = (last_a + 1) if (last_a % 2 == 0) else (last_a - 1)
-                                penalized_logits[e, 0, inv_a] -= 4.0
+                                inv_a = inv_map.get(e_hist[-1])
+                                if inv_a is not None:
+                                    penalized_logits[e, 0, inv_a] -= 4.0
                             if len(e_hist) >= 3:
                                 if e_hist[-1] == e_hist[-3]:
                                     penalized_logits[e, 0, e_hist[-2]] -= 3.0
-                                a1, a2, a3 = e_hist[-3], e_hist[-2], e_hist[-1]
-                                inv_a1 = (a1 + 1) if (a1 % 2 == 0) else (a1 - 1)
-                                inv_a2 = (a2 + 1) if (a2 % 2 == 0) else (a2 - 1)
-                                if a3 == inv_a1:
+                                inv_a1 = inv_map.get(e_hist[-3])
+                                inv_a2 = inv_map.get(e_hist[-2])
+                                if inv_a1 is not None and inv_a2 is not None and e_hist[-1] == inv_a1:
                                     penalized_logits[e, 0, inv_a2] -= 4.0
                     else:
                         for e in range(E):
