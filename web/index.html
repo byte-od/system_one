@@ -169,7 +169,7 @@
     <!-- Quick KPIs Instantâneos -->
     <div class="flex flex-wrap gap-4 text-xs bg-gray-900/80 px-4 py-1.5 rounded border border-gray-800">
       <div>FPS Simulação: <span id="kpi-fps" class="font-bold text-green-400">60.0</span></div>
-      <div>Passos: <span id="kpi-steps" class="font-bold text-yellow-400">0</span></div>
+      <div>Passos: <span id="kpi-steps" class="font-bold text-yellow-400">0.0%</span></div>
       <div>Pico / Score: <span id="kpi-return" class="font-bold text-cyan-400" title="Maior pontuação alcançada">0.00</span></div>
       <div>Latência P50: <span id="kpi-latency" class="font-bold text-pink-400">0.18 ms</span></div>
       <div>Confiança: <span id="kpi-confidence" class="font-bold text-emerald-400">--%</span></div>
@@ -268,19 +268,7 @@
           <div class="flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">
             <span>Configuração de Decisão & Ação</span>
           </div>
-          <div>
-            <div class="flex items-center gap-1.5 mb-1">
-              <label class="text-[10px] text-gray-400 font-semibold">Modo de Decisão do Agente</label>
-              <span class="tooltip-wrap">
-                <span class="tooltip-icon" title="Estratégia de inferência: act_with_confidence (telemetria completa e gating) ou act_fast (modo reflexo direto puro ~180µs).">ⓘ</span>
-                <span class="tooltip-bubble"><strong>Modo de Decisão</strong>:<br>• <strong>act_with_confidence()</strong>: Calcula entropia de Shannon, confiança percentual e alimenta telemetria completa.<br>• <strong>act_fast()</strong>: Modo reflexo amortizado sem gating.</span>
-              </span>
-            </div>
-            <select id="cfg-inference-mode" class="hud-input">
-              <option value="confidence">act_with_confidence() — Gating de Incerteza & Telemetria Completa</option>
-              <option value="fast">act_fast() — Modo Reflexo Ultrarrápido Puro (~180 µs)</option>
-            </select>
-          </div>
+
           <div>
             <div class="flex items-center gap-1.5 mb-1">
               <label class="text-[10px] text-gray-400 font-semibold">Perfil de Ação na Avaliação</label>
@@ -814,7 +802,16 @@
         div.className = 'text-gray-300';
       }
 
-      div.textContent = line;
+      const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
+      if (cleanLine.includes('win: true') || cleanLine.includes('win: false')) {
+        div.className = 'text-gray-300 font-mono';
+        const safe = cleanLine.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        div.innerHTML = safe
+          .replace('win: true', 'win: <span class="text-emerald-400 font-bold">true</span>')
+          .replace('win: false', 'win: <span class="text-rose-400 font-bold">false</span>');
+      } else {
+        div.textContent = cleanLine;
+      }
       term.appendChild(div);
 
       if (document.getElementById('chk-autoscroll').checked) {
@@ -1262,7 +1259,7 @@
 
       stepCount = 0;
       peakScore = 0.0;
-      document.getElementById('kpi-steps').innerText = "0";
+      document.getElementById('kpi-steps').innerText = "0.0%";
       document.getElementById('kpi-return').innerText = "0.00";
 
       if (isRubiks) {
@@ -1413,7 +1410,7 @@
       window.visitedStates = [sim.getStateHash ? sim.getStateHash() : ""];
       actionHistory = [];
       stepCount = 0;
-      document.getElementById('kpi-steps').innerText = "0";
+      document.getElementById('kpi-steps').innerText = "0.0%";
       if (webCubeViewMode === '3d') {
         updateCube3D(sim.state);
       }
@@ -1434,7 +1431,10 @@
       const obs = isRubiks ? sim.getOneHot() : sim.getState();
 
       stepCount++;
-      document.getElementById('kpi-steps').innerText = stepCount.toLocaleString();
+      const maxSteps = isRubiks ? 40 : 500;
+      const stepPct = Math.min(100.0, (stepCount / maxSteps) * 100);
+      document.getElementById('kpi-steps').innerText = `${stepPct.toFixed(1)}%`;
+      document.getElementById('kpi-steps').title = `${stepCount.toLocaleString()} / ${maxSteps} passos (${stepPct.toFixed(1)}%)`;
 
       // Prevenção de ciclos apenas sob estagnação persistente no modo auto (e nunca inibe o estado resolvido)
       const avoidList = [];

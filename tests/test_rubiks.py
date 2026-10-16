@@ -413,3 +413,24 @@ class TestRubiksSystemOneIntegration:
         obs, infos = vec_env.reset()
         assert all(info["current_depth"] == 1 for info in infos)
 
+    def test_rubiks_build_hud_env_mixed_replay_rate_and_config(self):
+        """Valida que build_hud_env aceita config e mixed_replay_rate sem erros de escopo."""
+        from system1_engine.hud.worker import build_hud_env
+
+        # 1. Com config contendo mixed_replay_rate=0.0
+        env1 = build_hud_env("RubiksCube-v0", is_training=True, config={"mixed_replay_rate": 0.0})
+        assert env1.env.unwrapped.envs[0].mixed_replay_rate == 0.0
+
+        # 2. Com config contendo mixed_replay_rate=0.05
+        env2 = build_hud_env("RubiksCube-v0", is_training=True, config={"mixed_replay_rate": 0.05})
+        assert env2.env.unwrapped.envs[0].mixed_replay_rate == 0.05
+
+        # 3. Com mixed_replay_rate direto
+        env3 = build_hud_env("RubiksCube-v0", is_training=True, mixed_replay_rate=0.08)
+        assert env3.env.unwrapped.envs[0].mixed_replay_rate == 0.08
+
+        # 4. Com mixed_replay booleano legado (False -> 0.0)
+        env4 = build_hud_env("RubiksCube-v0", is_training=True, config={"mixed_replay": False})
+        assert env4.env.unwrapped.envs[0].mixed_replay_rate == 0.0
+
+

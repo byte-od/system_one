@@ -1,3 +1,4 @@
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 import numpy as np
@@ -282,3 +283,188 @@ class RecurrentRolloutBuffer:
                 dones=tensor_dones,
                 hx=tensor_hx,
             )
+
+
+@dataclass
+class SuccessfulTrajectory:
+    """Trajetória completa de um episódio vitorioso/resolvido."""
+    obs: np.ndarray                  # [T, obs_dim]
+    delta_obs: Optional[np.ndarray]  # [T, obs_dim] ou None
+    prev_actions: np.ndarray         # [T, ...]
+    prev_rewards: np.ndarray         # [T]
+    actions: np.ndarray              # [T, ...]
+    returns: np.ndarray              # [T] retornos descontados reais
+    depth: int                       # Profundidade curricular ou do scramble
+    length: int                      # Duração T em passos
+
+
+class SuccessReplayBuffer:
+    """Buffer estratificado por profundidade de trajetórias completas bem-sucedidas para Self-Imitation Learning (SIL).
+
+    Preserva trajetórias vitoriosas onde o agente atingiu o objetivo (ex: cubo resolvido),
+    organizadas em estratos por profundidade curricular (D1..D10+) para eliminar esquecimento
+    catastrófico e despejo cruzado (cross-depth eviction).
+    
+    A amostragem equilibra trajetórias da fronteira ativa (reforço imediato) com trajetórias
+    âncoras de níveis anteriores (regularização contra regressão).
+    """
+
+    def __init__(
+        self,
+        max_trajectories: int = 5120,
+        max_per_depth: int = 512,
+        is_visual: bool = False,
+        is_discrete: bool = True,
+        obs_shape: Tuple[int, ...] = (4,),
+        action_shape: Tuple[int, ...] = (),
+        device: torch.device = torch.device("cpu"),
+        hidden_dim: int = 512,
+    ) -> None:
+        self.max_trajectories = max(2, int(max_trajectories))
+        self.max_per_depth = max(1, min(int(max_per_depth), self.max_trajectories))
+        self.is_visual = is_visual
+        self.is_discrete = is_discrete
+        self.obs_shape = obs_shape
+        self.action_shape = action_shape
+        self.device = device
+        self.hidden_dim = hidden_dim
+        self._depth_buffers: Dict[int, List[SuccessfulTrajectory]] = defaultdict(list)
+
+    @property
+    def trajectories(self) -> List[SuccessfulTrajectory]:
+        """Retorna uma lista plana de todas as trajetórias armazenadas em todas as profundidades ordenadas."""
+        all_trajs: List[SuccessfulTrajectory] = []
+        for depth in sorted(self._depth_buffers.keys()):
+            all_trajs.extend(self._depth_buffers[depth])
+        return all_trajs
+
+    @trajectories.setter
+    def trajectories(self, trajs: List[SuccessfulTrajectory]) -> None:
+        self.clear()
+        for t in trajs:
+            self.add(t)
+
+    def clear(self) -> None:
+        """Limpa todos os estratos do buffer."""
+        self._depth_buffers.clear()
+
+    def get_depth_distribution(self) -> Dict[int, int]:
+        """Retorna a contagem de trajetórias armazenadas por profundidade."""
+        return {d: len(trajs) for d, trajs in sorted(self._depth_buffers.items()) if len(trajs) > 0}
+
+    def __len__(self) -> int:
+        return sum(len(b) for b in self._depth_buffers.values())
+
+    def add(self, trajectory: SuccessfulTrajectory) -> None:
+        """Adiciona uma trajetória de vitória ao estrato correspondente, garantindo isolamento entre profundidades."""
+        depth = int(getattr(trajectory, "depth", 1))
+        d_buf = self._depth_buffers[depth]
+
+        # Quota local por profundidade (FIFO intra-estrato para evitar saturação de um único nível)
+        if len(d_buf) >= self.max_per_depth:
+            d_buf.pop(0)
+        d_buf.append(trajectory)
+
+        # Limite global: se o total exceder max_trajectories, descarte a trajetória mais antiga do nível mais baixo
+        while len(self) > self.max_trajectories:
+            non_empty_depths = [d for d in sorted(self._depth_buffers.keys()) if len(self._depth_buffers[d]) > 0]
+            if not non_empty_depths:
+                break
+            min_d = non_empty_depths[0]
+            self._depth_buffers[min_d].pop(0)
+            if len(self._depth_buffers[min_d]) == 0:
+                del self._depth_buffers[min_d]
+
+    def sample_batch(
+        self,
+        batch_size: int = 8,
+        target_depth: Optional[int] = None,
+    ) -> Optional[Dict[str, torch.Tensor]]:
+        """Amostra um mini-lote padronizado de trajetórias vitoriosas com balanceamento fronteira/âncora e máscara temporal."""
+        if len(self) == 0:
+            return None
+
+        total_available = len(self)
+        k = min(batch_size, total_available)
+        if k <= 0:
+            return None
+
+        if target_depth is None:
+            all_trajs = self.trajectories
+            sampled_indices = np.random.choice(len(all_trajs), size=k, replace=(k > len(all_trajs)))
+            sampled_trajs = [all_trajs[i] for i in sampled_indices]
+        else:
+            frontier_min_depth = max(1, target_depth - 1)
+            frontier = [t for t in self.trajectories if t.depth >= frontier_min_depth]
+            anchors = [t for t in self.trajectories if t.depth < frontier_min_depth]
+
+            if len(frontier) > 0 and len(anchors) > 0:
+                # Dual sampling: 50% fronteira ativa / 50% âncoras fundacionais
+                n_frontier = max(1, k // 2)
+                n_anchor = k - n_frontier
+                f_indices = np.random.choice(len(frontier), size=n_frontier, replace=(n_frontier > len(frontier)))
+                a_indices = np.random.choice(len(anchors), size=n_anchor, replace=(n_anchor > len(anchors)))
+                sampled_trajs = [frontier[i] for i in f_indices] + [anchors[j] for j in a_indices]
+            elif len(frontier) > 0:
+                f_indices = np.random.choice(len(frontier), size=k, replace=(k > len(frontier)))
+                sampled_trajs = [frontier[i] for i in f_indices]
+            else:
+                a_indices = np.random.choice(len(anchors), size=k, replace=(k > len(anchors)))
+                sampled_trajs = [anchors[j] for j in a_indices]
+
+        max_len = max(t.length for t in sampled_trajs)
+
+        # Prealocação de tensores padronizados com zeros
+        b_obs = np.zeros((k, max_len, *self.obs_shape), dtype=np.float32)
+        has_delta = any(t.delta_obs is not None for t in sampled_trajs)
+        b_delta = np.zeros((k, max_len, *self.obs_shape), dtype=np.float32) if has_delta else None
+
+        act_dtype = np.int64 if self.is_discrete else np.float32
+        b_prev_act = np.zeros((k, max_len, *self.action_shape), dtype=act_dtype)
+        b_prev_rew = np.zeros((k, max_len, 1), dtype=np.float32)
+        b_act = np.zeros((k, max_len, *self.action_shape), dtype=act_dtype)
+        b_ret = np.zeros((k, max_len), dtype=np.float32)
+        b_mask = np.zeros((k, max_len), dtype=np.float32)
+
+        for i, t in enumerate(sampled_trajs):
+            L = t.length
+            b_obs[i, :L] = t.obs
+            if has_delta and t.delta_obs is not None:
+                b_delta[i, :L] = t.delta_obs
+            b_prev_act[i, :L] = t.prev_actions
+            b_prev_rew[i, :L, 0] = t.prev_rewards
+            b_act[i, :L] = t.actions
+            b_ret[i, :L] = t.returns
+            b_mask[i, :L] = 1.0
+
+        tensor_obs = torch.tensor(b_obs, dtype=torch.float32, device=self.device)
+        tensor_delta = torch.tensor(b_delta, dtype=torch.float32, device=self.device) if has_delta else None
+        tensor_prev_act = torch.tensor(
+            b_prev_act,
+            dtype=torch.long if self.is_discrete else torch.float32,
+            device=self.device,
+        )
+        if self.is_discrete and tensor_prev_act.dim() == 2:
+            tensor_prev_act = tensor_prev_act.unsqueeze(-1)
+
+        tensor_prev_rew = torch.tensor(b_prev_rew, dtype=torch.float32, device=self.device)
+        tensor_act = torch.tensor(
+            b_act,
+            dtype=torch.long if self.is_discrete else torch.float32,
+            device=self.device,
+        )
+        tensor_ret = torch.tensor(b_ret, dtype=torch.float32, device=self.device)
+        tensor_mask = torch.tensor(b_mask, dtype=torch.float32, device=self.device)
+        tensor_hx = torch.zeros(1, k, self.hidden_dim, device=self.device, dtype=torch.float32)
+
+        return {
+            "obs": tensor_obs,
+            "delta_obs": tensor_delta,
+            "prev_actions": tensor_prev_act,
+            "prev_rewards": tensor_prev_rew,
+            "actions": tensor_act,
+            "returns": tensor_ret,
+            "mask": tensor_mask,
+            "hx": tensor_hx,
+            "dones": None,
+        }

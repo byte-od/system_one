@@ -10,7 +10,11 @@ import torch.optim as optim
 from system1_engine.core.agent import UniversalS1Agent
 from system1_engine.env.wrapper import UniversalS1Wrapper
 from system1_engine.telemetry.tracker import LiveStatsTracker
-from system1_engine.training.buffer import RecurrentRolloutBuffer
+from system1_engine.training.buffer import (
+    RecurrentRolloutBuffer,
+    SuccessReplayBuffer,
+    SuccessfulTrajectory,
+)
 
 
 class RecurrentPPOTrainer:
@@ -37,6 +41,12 @@ class RecurrentPPOTrainer:
         hindsight_replay: bool = False,
         hindsight_bonus: float = 2.0,
         hindsight_min_gain: float = 0.02,
+        sil_enabled: bool = True,
+        sil_coef: float = 0.10,
+        sil_batch_size: int = 8,
+        sil_max_trajectories: int = 5120,
+        sil_max_per_depth: int = 512,
+        sil_min_samples: int = 8,
     ) -> None:
         self.agent = agent.to(device)
         self.env = env
@@ -56,6 +66,14 @@ class RecurrentPPOTrainer:
         self.hindsight_replay = bool(hindsight_replay)
         self.hindsight_bonus = float(hindsight_bonus)
         self.hindsight_min_gain = float(hindsight_min_gain)
+
+        # Self-Imitation Learning (SIL)
+        self.sil_enabled = bool(sil_enabled)
+        self.sil_coef = float(sil_coef)
+        self.sil_batch_size = max(2, int(sil_batch_size))
+        self.sil_min_samples = max(2, int(sil_min_samples))
+        self.sil_max_trajectories = max(2, int(sil_max_trajectories))
+        self.sil_max_per_depth = max(1, int(sil_max_per_depth))
 
         # Suporte a exploração automática / homeostática no treino PPO (sem limite artificial, 0 à 1)
         self._min_adaptive_scale = 0.08
@@ -116,6 +134,20 @@ class RecurrentPPOTrainer:
             device=self.device,
             hidden_dim=self.trunk_hidden_dim,
         )
+
+        # Buffer estratificado por profundidade de trajetórias completas resolvidas para Self-Imitation Learning
+        self.sil_buffer = SuccessReplayBuffer(
+            max_trajectories=self.sil_max_trajectories,
+            max_per_depth=self.sil_max_per_depth,
+            is_visual=env.is_visual,
+            is_discrete=is_discrete,
+            obs_shape=obs_shape,
+            action_shape=act_shape,
+            device=self.device,
+            hidden_dim=self.trunk_hidden_dim,
+        )
+        self._active_vec_trajectories: List[List[Dict[str, Any]]] = [[] for _ in range(self.num_envs)]
+        self._active_single_trajectory: List[Dict[str, Any]] = []
 
         # Buffers de tensores pré-alocados no dispositivo para eliminar overhead de heap e alocações repetidas
         self._buf_obs = torch.zeros((1, 1, *obs_shape), dtype=torch.float32, device=self.device)
@@ -188,6 +220,20 @@ class RecurrentPPOTrainer:
         self.episode_returns: deque[float] = deque(maxlen=20)
         self.curr_ep_return: float = 0.0
         self.total_steps: int = 0
+        self.best_state_depth: int = self._get_current_curriculum_depth()
+        self.best_depth_mean_return: float = -float("inf")
+        self._rollout_tracked_depth: int = self.best_state_depth
+
+    def _get_current_curriculum_depth(self) -> int:
+        """Retorna a profundidade ou nível curricular atual do ambiente (0 se não aplicável)."""
+        raw_env = getattr(self.env, "unwrapped", self.env)
+        if hasattr(raw_env, "current_depth") and raw_env.current_depth is not None:
+            return int(raw_env.current_depth)
+        if hasattr(self.env, "current_depth") and self.env.current_depth is not None:
+            return int(self.env.current_depth)
+        if hasattr(raw_env, "current_level") and raw_env.current_level is not None:
+            return int(raw_env.current_level)
+        return 0
 
     def _prepare_rollout_input(self, obs_dict: Dict[str, Any]) -> Dict[str, Any]:
         """Copia os dados do dicionário de observação diretamente para os tensores pré-alocados."""
@@ -292,8 +338,14 @@ class RecurrentPPOTrainer:
                                 last_a = e_hist[-1]
                                 inv_a = (last_a + 1) if (last_a % 2 == 0) else (last_a - 1)
                                 penalized_logits[e, 0, inv_a] -= 4.0
-                            if len(e_hist) >= 3 and e_hist[-1] == e_hist[-3]:
-                                penalized_logits[e, 0, e_hist[-2]] -= 3.0
+                            if len(e_hist) >= 3:
+                                if e_hist[-1] == e_hist[-3]:
+                                    penalized_logits[e, 0, e_hist[-2]] -= 3.0
+                                a1, a2, a3 = e_hist[-3], e_hist[-2], e_hist[-1]
+                                inv_a1 = (a1 + 1) if (a1 % 2 == 0) else (a1 - 1)
+                                inv_a2 = (a2 + 1) if (a2 % 2 == 0) else (a2 - 1)
+                                if a3 == inv_a1:
+                                    penalized_logits[e, 0, inv_a2] -= 4.0
                     else:
                         for e in range(E):
                             e_hist = self._vec_recent_actions[e]
@@ -385,6 +437,29 @@ class RecurrentPPOTrainer:
                 if stored_env_infos is not None:
                     stored_env_infos.append(env_infos)
 
+                if self.sil_enabled:
+                    for e in range(E):
+                        delta_v = (
+                            current_obs_dict["delta_obs"][e].copy()
+                            if "delta_obs" in current_obs_dict and current_obs_dict["delta_obs"] is not None
+                            else None
+                        )
+                        prev_act_v = current_obs_dict["prev_action"][e]
+                        if hasattr(prev_act_v, "copy"):
+                            prev_act_v = prev_act_v.copy()
+                        act_v = env_action[e]
+                        if hasattr(act_v, "copy"):
+                            act_v = act_v.copy()
+                        self._active_vec_trajectories[e].append({
+                            "obs": current_obs_dict["obs"][e].copy(),
+                            "delta_obs": delta_v,
+                            "prev_action": prev_act_v,
+                            "prev_reward": float(current_obs_dict["prev_reward"][e]),
+                            "action": act_v,
+                            "reward": float(rewards[e]),
+                        })
+                        if len(self._active_vec_trajectories[e]) > 200:
+                            self._active_vec_trajectories[e].pop(0)
 
                 if self.tracker is not None:
                     primary_info = env_infos[0] if isinstance(env_infos, list) and len(env_infos) > 0 else {}
@@ -416,6 +491,50 @@ class RecurrentPPOTrainer:
                         self.episode_returns.append(float(curr_ep_returns[d_i]))
                         curr_ep_returns[d_i] = 0.0
                         self._vec_recent_actions[d_i].clear()
+                        d_info = env_infos[d_i] if isinstance(env_infos, (list, tuple)) and d_i < len(env_infos) else {}
+                        new_d = self._get_current_curriculum_depth()
+                        if (isinstance(d_info, dict) and d_info.get("curriculum_promoted", False)) or new_d > self._rollout_tracked_depth:
+                            self._rollout_tracked_depth = max(self._rollout_tracked_depth, new_d)
+                            self.episode_returns.clear()
+
+                        if self.sil_enabled:
+                            is_solved = bool(d_info.get("is_solved", False)) if isinstance(d_info, dict) else False
+                            is_win = is_solved or (bool(terminateds[d_i]) and float(rewards[d_i]) >= 5.0)
+                            traj_steps = self._active_vec_trajectories[d_i]
+                            if is_win and len(traj_steps) > 0:
+                                T_traj = len(traj_steps)
+                                traj_obs = np.array([s["obs"] for s in traj_steps], dtype=np.float32)
+                                has_delta = any(s["delta_obs"] is not None for s in traj_steps)
+                                traj_delta = (
+                                    np.array([s["delta_obs"] for s in traj_steps], dtype=np.float32)
+                                    if has_delta
+                                    else None
+                                )
+                                traj_prev_act = np.array([s["prev_action"] for s in traj_steps])
+                                traj_prev_rew = np.array([s["prev_reward"] for s in traj_steps], dtype=np.float32)
+                                traj_act = np.array([s["action"] for s in traj_steps])
+                                traj_rews = [s["reward"] for s in traj_steps]
+                                traj_returns = np.zeros(T_traj, dtype=np.float32)
+                                running_r = 0.0
+                                for t_idx in reversed(range(T_traj)):
+                                    running_r = traj_rews[t_idx] + self.gamma * running_r
+                                    traj_returns[t_idx] = running_r
+
+                                cur_d = int(d_info.get("scramble_depth", d_info.get("current_depth", 1))) if isinstance(d_info, dict) else 1
+                                self.sil_buffer.add(
+                                    SuccessfulTrajectory(
+                                        obs=traj_obs,
+                                        delta_obs=traj_delta,
+                                        prev_actions=traj_prev_act,
+                                        prev_rewards=traj_prev_rew,
+                                        actions=traj_act,
+                                        returns=traj_returns,
+                                        depth=cur_d,
+                                        length=T_traj,
+                                    )
+                                )
+                            self._active_vec_trajectories[d_i].clear()
+
                     next_hx[:, done_indices, :] = 0.0
                     ep_starts = dones.copy()
                 else:
@@ -667,8 +786,23 @@ class RecurrentPPOTrainer:
 
                 if self.agent.is_discrete:
                     logits = dist.logits
-                    # Quebra de ciclos (Cycle Breaking) sob estagnação no modo automático
-                    if self.is_auto_exploration and self._stagnation_count >= 3 and len(self._recent_actions) >= 3:
+                    num_acts = logits.shape[-1]
+                    if num_acts == 12:
+                        penalized_logits = logits.clone()
+                        if len(self._recent_actions) >= 1:
+                            last_a = self._recent_actions[-1]
+                            inv_a = (last_a + 1) if (last_a % 2 == 0) else (last_a - 1)
+                            penalized_logits[..., inv_a] -= 4.0
+                        if len(self._recent_actions) >= 3:
+                            if self._recent_actions[-1] == self._recent_actions[-3]:
+                                penalized_logits[..., self._recent_actions[-2]] -= 3.0
+                            a1, a2, a3 = self._recent_actions[-3], self._recent_actions[-2], self._recent_actions[-1]
+                            inv_a1 = (a1 + 1) if (a1 % 2 == 0) else (a1 - 1)
+                            inv_a2 = (a2 + 1) if (a2 % 2 == 0) else (a2 - 1)
+                            if a3 == inv_a1:
+                                penalized_logits[..., inv_a2] -= 4.0
+                        logits = penalized_logits
+                    elif self.is_auto_exploration and self._stagnation_count >= 3 and len(self._recent_actions) >= 3:
                         if self._recent_actions[-1] == self._recent_actions[-3]:
                             avoid_act = self._recent_actions[-2]
                             penalized_logits = logits.clone()
@@ -734,6 +868,28 @@ class RecurrentPPOTrainer:
                 if stored_step_infos is not None:
                     stored_step_infos.append(env_info)
 
+                if self.sil_enabled:
+                    delta_v = (
+                        current_obs_dict["delta_obs"].copy()
+                        if "delta_obs" in current_obs_dict and current_obs_dict["delta_obs"] is not None
+                        else None
+                    )
+                    prev_act_v = current_obs_dict["prev_action"]
+                    if hasattr(prev_act_v, "copy"):
+                        prev_act_v = prev_act_v.copy()
+                    act_v = env_action
+                    if hasattr(act_v, "copy"):
+                        act_v = act_v.copy()
+                    self._active_single_trajectory.append({
+                        "obs": current_obs_dict["obs"].copy(),
+                        "delta_obs": delta_v,
+                        "prev_action": prev_act_v,
+                        "prev_reward": float(current_obs_dict["prev_reward"]),
+                        "action": act_v,
+                        "reward": float(reward),
+                    })
+                    if len(self._active_single_trajectory) > 200:
+                        self._active_single_trajectory.pop(0)
 
                 if self.tracker is not None:
                     self.tracker.record_env_step(reward=reward, done=done, info=env_info)
@@ -759,7 +915,50 @@ class RecurrentPPOTrainer:
                 if done:
                     self.episode_returns.append(self.curr_ep_return)
                     self.curr_ep_return = 0.0
+
+                    if self.sil_enabled:
+                        is_solved = bool(env_info.get("is_solved", False)) if isinstance(env_info, dict) else False
+                        is_win = is_solved or (bool(terminated) and float(reward) >= 5.0)
+                        traj_steps = self._active_single_trajectory
+                        if is_win and len(traj_steps) > 0:
+                            T_traj = len(traj_steps)
+                            traj_obs = np.array([s["obs"] for s in traj_steps], dtype=np.float32)
+                            has_delta = any(s["delta_obs"] is not None for s in traj_steps)
+                            traj_delta = (
+                                np.array([s["delta_obs"] for s in traj_steps], dtype=np.float32)
+                                if has_delta
+                                else None
+                            )
+                            traj_prev_act = np.array([s["prev_action"] for s in traj_steps])
+                            traj_prev_rew = np.array([s["prev_reward"] for s in traj_steps], dtype=np.float32)
+                            traj_act = np.array([s["action"] for s in traj_steps])
+                            traj_rews = [s["reward"] for s in traj_steps]
+                            traj_returns = np.zeros(T_traj, dtype=np.float32)
+                            running_r = 0.0
+                            for t_idx in reversed(range(T_traj)):
+                                running_r = traj_rews[t_idx] + self.gamma * running_r
+                                traj_returns[t_idx] = running_r
+
+                            cur_d = int(env_info.get("scramble_depth", env_info.get("current_depth", 1))) if isinstance(env_info, dict) else 1
+                            self.sil_buffer.add(
+                                SuccessfulTrajectory(
+                                    obs=traj_obs,
+                                    delta_obs=traj_delta,
+                                    prev_actions=traj_prev_act,
+                                    prev_rewards=traj_prev_rew,
+                                    actions=traj_act,
+                                    returns=traj_returns,
+                                    depth=cur_d,
+                                    length=T_traj,
+                                )
+                            )
+                        self._active_single_trajectory.clear()
+
                     current_obs_dict, _ = self.env.reset()
+                    new_d = self._get_current_curriculum_depth()
+                    if new_d > self._rollout_tracked_depth:
+                        self._rollout_tracked_depth = new_d
+                        self.episode_returns.clear()
                     current_hx = None
                     episode_start = True
                 else:
@@ -897,6 +1096,59 @@ class RecurrentPPOTrainer:
                 total_ent_loss += entropy_loss.item()
                 n_updates += 1
 
+        # Self-Imitation Learning (SIL) update step
+        sil_p_loss = 0.0
+        sil_v_loss = 0.0
+        if self.sil_enabled and len(self.sil_buffer) >= self.sil_min_samples:
+            raw_env = getattr(self.env, "unwrapped", self.env)
+            target_depth = getattr(raw_env, "current_depth", getattr(self.env, "current_depth", None))
+            sil_batch = self.sil_buffer.sample_batch(
+                batch_size=self.sil_batch_size,
+                target_depth=target_depth,
+            )
+            if sil_batch is not None:
+                sil_in = {
+                    "obs": sil_batch["obs"],
+                    "prev_action": sil_batch["prev_actions"],
+                    "prev_reward": sil_batch["prev_rewards"],
+                }
+                if not self.agent.is_visual and sil_batch["delta_obs"] is not None:
+                    sil_in["delta_obs"] = sil_batch["delta_obs"]
+
+                sil_dist, sil_val, _ = self.agent(sil_in, hx=sil_batch["hx"], dones=sil_batch["dones"])
+                sil_val_sq = sil_val.squeeze(-1)
+                sil_ret = sil_batch["returns"]
+                sil_mask = sil_batch["mask"]
+
+                # SIL advantage: positive surprise (R - V)_+
+                sil_adv = torch.clamp(sil_ret - sil_val_sq.detach(), min=0.0)
+
+                if self.agent.is_discrete:
+                    sil_logp = sil_dist.log_prob(sil_batch["actions"])
+                else:
+                    sil_logp = sil_dist.log_prob(sil_batch["actions"]).sum(dim=-1)
+
+                denom = sil_mask.sum().clamp(min=1.0)
+                sil_policy_loss = -(sil_logp * sil_adv * sil_mask).sum() / denom
+                sil_val_loss = 0.5 * (torch.clamp(sil_ret - sil_val_sq, min=0.0) ** 2 * sil_mask).sum() / denom
+
+                sil_loss = self.sil_coef * (sil_policy_loss + 0.5 * sil_val_loss)
+
+                self.optimizer.zero_grad()
+                sil_loss.backward()
+                nn.utils.clip_grad_norm_(self.agent.parameters(), self.max_grad_norm)
+                self.optimizer.step()
+
+                sil_p_loss = float(sil_policy_loss.item())
+                sil_v_loss = float(sil_val_loss.item())
+
+        if self.tracker is not None:
+            self.tracker.record_sil_step(
+                sil_trajectories=len(self.sil_buffer),
+                sil_policy_loss=sil_p_loss,
+                sil_value_loss=sil_v_loss,
+            )
+
         if self.scheduler is not None:
             self.scheduler.step()
 
@@ -904,6 +1156,9 @@ class RecurrentPPOTrainer:
             "policy_loss": total_policy_loss / max(1, n_updates),
             "value_loss": total_val_loss / max(1, n_updates),
             "entropy_loss": total_ent_loss / max(1, n_updates),
+            "sil_policy_loss": sil_p_loss,
+            "sil_value_loss": sil_v_loss,
+            "sil_trajectories": len(self.sil_buffer),
         }
 
     def train(
@@ -929,6 +1184,11 @@ class RecurrentPPOTrainer:
         )
 
         best_mean_return = -float("inf")
+        best_depth_mean_return = -float("inf")
+        best_state_depth = self._get_current_curriculum_depth()
+        self.best_state_depth = best_state_depth
+        self.best_depth_mean_return = best_depth_mean_return
+        self._rollout_tracked_depth = best_state_depth
         iteration = 0
 
         while self.total_steps < max_steps:
@@ -938,10 +1198,26 @@ class RecurrentPPOTrainer:
             )
             metrics = self.train_epoch()
 
+            cur_depth = self._get_current_curriculum_depth()
+            if cur_depth > best_state_depth:
+                # Promoção curricular: o novo nível mais profundo tem precedência hierárquica absoluta!
+                # Ancora imediatamente os pesos recém-promovidos para evitar rollback para níveis anteriores.
+                best_state_depth = cur_depth
+                self.best_state_depth = best_state_depth
+                best_depth_mean_return = max(0.0, mean_return) if len(self.episode_returns) >= 5 else 0.0
+                self.best_depth_mean_return = best_depth_mean_return
+                self.best_state_dict = {
+                    k: v.cpu().clone() for k, v in self.agent.state_dict().items()
+                }
+
             if len(self.episode_returns) > 0:
                 if mean_return > best_mean_return:
                     best_mean_return = mean_return
                     self.best_mean_return = best_mean_return
+                if cur_depth >= best_state_depth and mean_return > best_depth_mean_return:
+                    best_depth_mean_return = mean_return
+                    self.best_depth_mean_return = best_depth_mean_return
+                    self.best_state_depth = cur_depth
                     self.best_state_dict = {
                         k: v.cpu().clone() for k, v in self.agent.state_dict().items()
                     }
@@ -998,7 +1274,14 @@ class RecurrentPPOTrainer:
         if getattr(self, "best_state_dict", None) is not None:
             self.agent.load_state_dict(self.best_state_dict)
             if verbose:
-                print(f"\n🏆 [Best State Dict Restored] Modelo restaurado no ápice de performance (Melhor Retorno: {best_mean_return:.2f})")
+                restored_ret = best_depth_mean_return if best_depth_mean_return > -float("inf") else best_mean_return
+                if best_state_depth > 0:
+                    print(
+                        f"\n🏆 [Best State Dict Restored] Modelo restaurado no ápice da Profundidade D{best_state_depth} "
+                        f"(Melhor Retorno no Nível: {restored_ret:.2f} | Pico Global: {best_mean_return:.2f})"
+                    )
+                else:
+                    print(f"\n🏆 [Best State Dict Restored] Modelo restaurado no ápice de performance (Melhor Retorno: {best_mean_return:.2f})")
 
         self.best_mean_return = best_mean_return
         self.final_return = float(np.mean(self.episode_returns)) if len(self.episode_returns) > 0 else 0.0

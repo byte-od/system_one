@@ -23,6 +23,7 @@ class PhaseMetrics:
     episode_returns: deque = field(default_factory=lambda: deque(maxlen=100))
     episode_lengths: deque = field(default_factory=lambda: deque(maxlen=100))
     total_steps: int = 0
+    target_steps: Optional[int] = None
     best_return: Optional[float] = None
     best_mean_return: Optional[float] = None
 
@@ -32,6 +33,11 @@ class PhaseMetrics:
     grad_norms: Dict[str, float] = field(default_factory=dict)
     clip_fractions: deque = field(default_factory=lambda: deque(maxlen=100))
     learning_rate: float = 0.0
+
+    # Métricas de Self-Imitation Learning (SIL)
+    sil_trajectories: int = 0
+    sil_policy_losses: deque = field(default_factory=lambda: deque(maxlen=100))
+    sil_value_losses: deque = field(default_factory=lambda: deque(maxlen=100))
 
     # Métricas de Currículo (Progresso Dinâmico)
     curriculum_depth: Optional[int] = None
@@ -157,6 +163,20 @@ class LiveStatsTracker:
         m.grad_norms = dict(grad_norms)
         m.learning_rate = lr
 
+    def record_sil_step(
+        self,
+        sil_trajectories: int,
+        sil_policy_loss: float = 0.0,
+        sil_value_loss: float = 0.0,
+    ) -> None:
+        """Registra o progresso e perdas do Self-Imitation Learning (SIL)."""
+        m = self.metrics
+        m.sil_trajectories = int(sil_trajectories)
+        if sil_policy_loss != 0.0:
+            m.sil_policy_losses.append(sil_policy_loss)
+        if sil_value_loss != 0.0:
+            m.sil_value_losses.append(sil_value_loss)
+
     def snapshot(self) -> Dict[str, Any]:
         """Extrai um resumo numérico instantâneo de todas as três fases."""
         m = self.metrics
@@ -174,6 +194,7 @@ class LiveStatsTracker:
             "best_return": float(m.best_return) if m.best_return is not None else 0.0,
             "best_mean_return": float(m.best_mean_return) if m.best_mean_return is not None else 0.0,
             "total_steps": m.total_steps,
+            "target_steps": m.target_steps,
             "episodes_completed": len(m.episode_returns),
             "current_episode_return": m.current_episode_return,
             "curriculum_depth": m.curriculum_depth,
@@ -183,12 +204,15 @@ class LiveStatsTracker:
             "curriculum_depth_best_return": float(m.curriculum_depth_best_return) if m.curriculum_depth_best_return is not None else None,
             "successful_depth": self.get_successful_depth(),
             "best_return_depth": m.best_return_depth,
-            # Fase 3: Otimização PPO
+            # Fase 3: Otimização PPO & SIL
             "policy_loss": m.policy_losses[-1] if m.policy_losses else 0.0,
             "value_loss": m.value_losses[-1] if m.value_losses else 0.0,
             "clip_frac": m.clip_fractions[-1] if m.clip_fractions else 0.0,
             "lr": m.learning_rate,
             "grad_norms": dict(m.grad_norms),
+            "sil_trajectories": m.sil_trajectories,
+            "sil_policy_loss": m.sil_policy_losses[-1] if m.sil_policy_losses else 0.0,
+            "sil_value_loss": m.sil_value_losses[-1] if m.sil_value_losses else 0.0,
             # Estado do Ciclo de Vida
             "is_completed": m.is_completed,
         }

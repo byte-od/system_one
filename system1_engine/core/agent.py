@@ -421,12 +421,20 @@ class UniversalS1Agent(nn.Module):
 
             # Filtro de Qualidade de Ação (Action Quality Filter)
             # Em cubo atômico (12 ações), o movimento imediatamente inverso (ex: U -> U')
-            # anula o passo anterior e desperdiça tempo. Evita reversão direta se não houver convicção quase total
-            if (quality_filter or (is_auto_calib and self._stagnation_count >= 2)) and len(hist) >= 1 and probs.shape[0] == 12:
-                last_act = hist[-1]
-                inv_act = (last_act + 1) if (last_act % 2 == 0) else (last_act - 1)
-                if confidence < 0.96:
-                    avoid_set.add(inv_act)
+            # anula o passo anterior e desperdiça tempo. Evita reversão direta se não houver convicção quase total.
+            # Também detecta e quebra o comutador de 4 passos [a1, a2, inv(a1)] -> inv(a2) que preserva a identidade [F, B'] = I.
+            if (quality_filter or (is_auto_calib and self._stagnation_count >= 2)) and probs.shape[0] == 12:
+                if len(hist) >= 1:
+                    last_act = hist[-1]
+                    inv_act = (last_act + 1) if (last_act % 2 == 0) else (last_act - 1)
+                    if confidence < 0.96:
+                        avoid_set.add(inv_act)
+                if len(hist) >= 3:
+                    a1, a2, a3 = hist[-3], hist[-2], hist[-1]
+                    inv_a1 = (a1 + 1) if (a1 % 2 == 0) else (a1 - 1)
+                    inv_a2 = (a2 + 1) if (a2 % 2 == 0) else (a2 - 1)
+                    if a3 == inv_a1 and confidence < 0.95:
+                        avoid_set.add(inv_a2)
 
             if is_deterministic_mode:
                 action = best_action

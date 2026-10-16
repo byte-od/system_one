@@ -1,7 +1,7 @@
 import argparse
 import sys
 import time
-from typing import Optional
+from typing import Optional, Any, Dict
 import gymnasium as gym
 import numpy as np
 import torch
@@ -22,6 +22,9 @@ def build_environment(
     is_training: bool = False,
     frame_skip: Optional[int] = None,
     scramble_depth: Optional[int] = None,
+    mixed_replay_rate: Optional[float] = None,
+    args: Optional[Any] = None,
+    **kwargs: Any,
 ) -> UniversalS1Wrapper:
     """Instancia o ambiente apropriado (Gymnasium padrão ou Adaptador Nativo ViZDoom) no Modo Puro Universal."""
     env_lower = env_id.lower().replace("_", "-")
@@ -53,6 +56,10 @@ def build_environment(
                 extra_kwargs["scramble_depth"] = int(scramble_depth)
             else:
                 extra_kwargs["max_depth"] = None
+            if mixed_replay_rate is not None:
+                extra_kwargs["mixed_replay_rate"] = float(mixed_replay_rate)
+            elif args is not None and getattr(args, "mixed_replay_rate", None) is not None:
+                extra_kwargs["mixed_replay_rate"] = float(args.mixed_replay_rate)
         else:
             extra_kwargs["curriculum"] = False
             if scramble_depth is not None and int(scramble_depth) > 0:
@@ -125,6 +132,7 @@ def train_mode(args: argparse.Namespace) -> None:
         is_training=True,
         frame_skip=getattr(args, "frame_skip", None),
         scramble_depth=getattr(args, "scramble_depth", None),
+        args=args,
     )
 
     trunk_type = getattr(args, "trunk", "classic")
@@ -173,6 +181,11 @@ def train_mode(args: argparse.Namespace) -> None:
             except (ValueError, TypeError):
                 train_calib = "auto"
 
+        sil_enabled = getattr(args, "sil", True)
+        sil_coef = float(getattr(args, "sil_coef", 0.10))
+        sil_max_trajectories = int(getattr(args, "sil_max_trajectories", 5120))
+        sil_max_per_depth = int(getattr(args, "sil_max_per_depth", 512))
+
         trainer = RecurrentPPOTrainer(
             agent=agent,
             env=env,
@@ -185,6 +198,10 @@ def train_mode(args: argparse.Namespace) -> None:
             device=device,
             exploration_scale=train_calib,
             hindsight_replay=getattr(args, "hindsight_replay", True),
+            sil_enabled=sil_enabled,
+            sil_coef=sil_coef,
+            sil_max_trajectories=sil_max_trajectories,
+            sil_max_per_depth=sil_max_per_depth,
         )
 
         last_saved_step = [0]
@@ -424,7 +441,7 @@ def run_mode(args: argparse.Namespace) -> None:
                         pass
 
                 if not args.live_stats:
-                    win_str = "true" if win else "false"
+                    win_str = "\033[92mtrue\033[0m" if win else "\033[91mfalse\033[0m"
                     print(f"Episode {ep + 1}/{args.episodes} | Return: {ep_reward:.1f} | Steps: {steps} | win: {win_str}")
 
         if dashboard:
@@ -556,6 +573,36 @@ def main() -> None:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Habilita Hindsight Experience Replay (HER) On-Policy para quebra de platôs de recompensa esparsa (padrão: True)",
+    )
+    parser.add_argument(
+        "--sil",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Habilita Self-Imitation Learning (SIL) Replay Buffer para reforço de vantagens de vitória (padrão: True)",
+    )
+    parser.add_argument(
+        "--sil-coef",
+        type=float,
+        default=0.10,
+        help="Coeficiente de perda para atualizações de Self-Imitation Learning (padrão: 0.10)",
+    )
+    parser.add_argument(
+        "--sil-max-trajectories",
+        type=int,
+        default=5120,
+        help="Capacidade máxima global de trajetórias no buffer de Self-Imitation Learning (padrão: 5120)",
+    )
+    parser.add_argument(
+        "--sil-max-per-depth",
+        type=int,
+        default=512,
+        help="Capacidade máxima por profundidade no buffer estratificado de SIL (padrão: 512)",
+    )
+    parser.add_argument(
+        "--mixed-replay-rate",
+        type=float,
+        default=0.05,
+        help="Taxa de mixed replay no currículo do Cubo Mágico (padrão: 0.05 = 5%% replay / 95%% fronteira; 0.0 desativa completamente)",
     )
     parser.add_argument(
         "--calibration",

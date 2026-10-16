@@ -612,6 +612,7 @@ class RubiksCubeEnv(gym.Env):
         max_depth: Optional[int] = None,
         target_success_rate: float = 0.90,
         curriculum_window: int = 64,
+        mixed_replay_rate: float = 0.05,
     ) -> None:
         super().__init__()
         self.render_mode = render_mode
@@ -622,6 +623,7 @@ class RubiksCubeEnv(gym.Env):
         self.max_depth = max_depth
         self.target_success_rate = target_success_rate
         self.curriculum_window = curriculum_window
+        self.mixed_replay_rate = max(0.0, min(1.0, float(mixed_replay_rate)))
         self.current_depth = min_depth if curriculum else self.scramble_depth
         self._episode_depth = self.current_depth
         self.recent_successes: deque[float] = deque(maxlen=curriculum_window)
@@ -672,13 +674,15 @@ class RubiksCubeEnv(gym.Env):
                         f"Profundidade promovida: {old_d} -> {self.current_depth}/{max_d_str}"
                     )
             # Mixed Replay Curriculum:
-            # 50% de probabilidade no nível de fronteira (current_depth)
-            # 50% distribuído aleatoriamente entre os níveis consolidados (min_depth .. current_depth - 1)
-            if self.current_depth > self.min_depth:
-                if self.rng.random() < 0.50:
+            # Concentra 95% a 100% de probabilidade na fronteira atual (current_depth).
+            # Se mixed_replay_rate > 0 (ex: 0.05), apenas uma fração residual (5%) visita níveis
+            # imediatamente anteriores, eliminando o desperdício de gradientes em níveis rasos (D1..D4).
+            if self.current_depth > self.min_depth and self.mixed_replay_rate > 0.0:
+                if self.rng.random() >= self.mixed_replay_rate:
                     depth = self.current_depth
                 else:
-                    depth = int(self.rng.integers(self.min_depth, self.current_depth))
+                    low_depth = max(self.min_depth, self.current_depth - 2)
+                    depth = int(self.rng.integers(low_depth, self.current_depth))
             else:
                 depth = self.current_depth
         else:
@@ -732,7 +736,7 @@ class RubiksCubeEnv(gym.Env):
             reward += 10.0
 
         terminated = is_solved
-        eff_max_steps = min(self.max_steps, max(12, getattr(self, "_episode_depth", self.current_depth) * 4)) if self.curriculum else self.max_steps
+        eff_max_steps = min(self.max_steps, max(15, getattr(self, "_episode_depth", self.current_depth) * 5)) if self.curriculum else self.max_steps
         truncated = self._steps >= eff_max_steps
 
         if (terminated or truncated) and self.curriculum:
@@ -779,6 +783,7 @@ class RubiksCubeEnv(gym.Env):
             max_depth=self.max_depth,
             target_success_rate=self.target_success_rate,
             curriculum_window=self.curriculum_window,
+            mixed_replay_rate=self.mixed_replay_rate,
         )
         new_env.reset()
         new_env.core.reset()
@@ -824,6 +829,7 @@ class RubiksCubeMacroEnv(gym.Env):
         max_depth: Optional[int] = None,
         target_success_rate: float = 0.90,
         curriculum_window: int = 64,
+        mixed_replay_rate: float = 0.05,
     ) -> None:
         super().__init__()
         self.render_mode = render_mode
@@ -834,6 +840,7 @@ class RubiksCubeMacroEnv(gym.Env):
         self.max_depth = max_depth
         self.target_success_rate = target_success_rate
         self.curriculum_window = curriculum_window
+        self.mixed_replay_rate = max(0.0, min(1.0, float(mixed_replay_rate)))
         self.current_depth = min_depth if curriculum else self.scramble_depth
         self._episode_depth = self.current_depth
         self.recent_successes: deque[float] = deque(maxlen=curriculum_window)
@@ -884,13 +891,15 @@ class RubiksCubeMacroEnv(gym.Env):
                         f"Profundidade promovida: {old_d} -> {self.current_depth}/{max_d_str}"
                     )
             # Mixed Replay Curriculum:
-            # 50% de probabilidade no nível de fronteira (current_depth)
-            # 50% distribuído aleatoriamente entre os níveis consolidados (min_depth .. current_depth - 1)
-            if self.current_depth > self.min_depth:
-                if self.rng.random() < 0.50:
+            # Concentra 95% a 100% de probabilidade na fronteira atual (current_depth).
+            # Se mixed_replay_rate > 0 (ex: 0.05), apenas uma fração residual (5%) visita níveis
+            # imediatamente anteriores, eliminando o desperdício de gradientes em níveis rasos (D1..D4).
+            if self.current_depth > self.min_depth and self.mixed_replay_rate > 0.0:
+                if self.rng.random() >= self.mixed_replay_rate:
                     depth = self.current_depth
                 else:
-                    depth = int(self.rng.integers(self.min_depth, self.current_depth))
+                    low_depth = max(self.min_depth, self.current_depth - 2)
+                    depth = int(self.rng.integers(low_depth, self.current_depth))
             else:
                 depth = self.current_depth
         else:
@@ -941,7 +950,7 @@ class RubiksCubeMacroEnv(gym.Env):
             reward += 15.0
 
         terminated = is_solved
-        eff_max_steps = min(self.max_steps, max(12, getattr(self, "_episode_depth", self.current_depth) * 4)) if self.curriculum else self.max_steps
+        eff_max_steps = min(self.max_steps, max(15, getattr(self, "_episode_depth", self.current_depth) * 5)) if self.curriculum else self.max_steps
         truncated = self._steps >= eff_max_steps
 
         if (terminated or truncated) and self.curriculum:
@@ -988,6 +997,7 @@ class RubiksCubeMacroEnv(gym.Env):
             max_depth=self.max_depth,
             target_success_rate=self.target_success_rate,
             curriculum_window=self.curriculum_window,
+            mixed_replay_rate=self.mixed_replay_rate,
         )
         new_env.reset()
         new_env.core.reset()
@@ -1128,9 +1138,12 @@ class VectorizedRubiksEnv(gym.Env):
         info_list = []
 
         shared_depth = self.envs[0].current_depth
+        shared_promos = max(e.curriculum_promotions for e in self.envs)
         for env in self.envs:
             if env.curriculum and env.current_depth != shared_depth:
                 env.current_depth = shared_depth
+            if env.curriculum and env.curriculum_promotions != shared_promos:
+                env.curriculum_promotions = shared_promos
 
         for i, env in enumerate(self.envs):
             act_i = int(act_arr[i])
@@ -1141,8 +1154,15 @@ class VectorizedRubiksEnv(gym.Env):
                 info["reset_info"] = reset_info
                 if env.curriculum and env.current_depth != shared_depth:
                     shared_depth = env.current_depth
+                    shared_promos = max(shared_promos + 1, env.curriculum_promotions)
                     for other in self.envs:
                         other.current_depth = shared_depth
+                        other.curriculum_promotions = shared_promos
+                        other.recent_successes.clear()
+                        other.frontier_successes.clear()
+                    info["current_depth"] = shared_depth
+                    info["curriculum_promotions"] = shared_promos
+                    info["curriculum_promoted"] = True
 
             next_obs_list.append(obs)
             rewards[i] = rew

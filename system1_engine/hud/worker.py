@@ -201,6 +201,9 @@ def build_hud_env(
     frame_skip: Optional[int] = None,
     scramble_depth: Optional[int] = None,
     num_envs: Optional[int] = None,
+    mixed_replay_rate: Optional[float] = None,
+    config: Optional[Dict[str, Any]] = None,
+    **kwargs: Any,
 ) -> UniversalS1Wrapper:
     """Instancia o ambiente com suporte a renderização in-browser (rgb_array), janela ou headless no Modo Puro Universal."""
     env_lower = env_id.lower().replace("_", "-")
@@ -240,6 +243,13 @@ def build_hud_env(
                 extra_kwargs["scramble_depth"] = int(scramble_depth)
             else:
                 extra_kwargs["max_depth"] = None
+            if mixed_replay_rate is not None:
+                extra_kwargs["mixed_replay_rate"] = float(mixed_replay_rate)
+            elif config is not None:
+                if "mixed_replay_rate" in config:
+                    extra_kwargs["mixed_replay_rate"] = float(config["mixed_replay_rate"])
+                elif "mixed_replay" in config:
+                    extra_kwargs["mixed_replay_rate"] = 0.0 if not config["mixed_replay"] else 0.05
         else:
             extra_kwargs["curriculum"] = False
             if scramble_depth is not None and int(scramble_depth) > 0:
@@ -311,7 +321,8 @@ def resolve_compute_device(device_pref: str = "auto", is_training: bool = True) 
 
 def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     env_id = config.get("env", "CartPole-v1")
-    render_mode = config.get("render_mode", "in_browser")
+    # Diretriz S1: Treino deve ser sempre headless (100% de capacidade do hardware sem renderização)
+    render_mode = "none"
     device_pref = config.get("device", "auto")
     steps = int(config.get("steps", 40000))
     lr = float(config.get("lr", 7e-4))
@@ -356,6 +367,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         frame_skip=int(config.get("frame_skip", 4)),
         scramble_depth=scramble_depth,
         num_envs=int(config.get("num_envs", 64)),
+        config=config,
     )
     trunk_type = config.get("trunk", "classic")
     if checkpoint_to_load and "trunk" not in config:
@@ -379,6 +391,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         print(f"Pesos de treino carregados ({res['mode']}): {res['total_params']} parâmetros ativos. Trunk congelado: {res['trunk_frozen']}")
 
     tracker = LiveStatsTracker()
+    tracker.metrics.target_steps = steps
     last_telemetry_ts = 0.0
     last_frame_ts = 0.0
 
@@ -403,6 +416,17 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     else:
         print("⚡ Hindsight Experience Replay (B.2): DESATIVADO")
 
+    sil_enabled = bool(config.get("sil_enabled", True))
+    sil_coef = float(config.get("sil_coef", 0.10))
+    sil_batch_size = int(config.get("sil_batch_size", 8))
+    sil_max_trajectories = int(config.get("sil_max_trajectories", 5120))
+    sil_max_per_depth = int(config.get("sil_max_per_depth", 512))
+
+    if sil_enabled:
+        print(f"🧠 Self-Imitation Learning (SIL Replay): ATIVO (coef={sil_coef:.2f}, batch={sil_batch_size}, max_trajs={sil_max_trajectories}, max_per_depth={sil_max_per_depth})")
+    else:
+        print("⚡ Self-Imitation Learning (SIL Replay): DESATIVADO")
+
     trainer = RecurrentPPOTrainer(
         agent=agent,
         env=env,
@@ -417,6 +441,11 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         hindsight_replay=hindsight_replay,
         hindsight_bonus=hindsight_bonus,
         hindsight_min_gain=hindsight_min_gain,
+        sil_enabled=sil_enabled,
+        sil_coef=sil_coef,
+        sil_batch_size=sil_batch_size,
+        sil_max_trajectories=sil_max_trajectories,
+        sil_max_per_depth=sil_max_per_depth,
     )
 
 
@@ -486,6 +515,9 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         if save_path:
             cur_promotions = tracker.metrics.curriculum_promotions if tracker else 0
             is_new_level = cur_promotions > last_ckpt_promotions
+            if is_new_level:
+                # Novo patamar curricular: reinicia o referencial de pico para o novo nível
+                best_saved_mean_return = 0.0
             is_periodic = (cur_steps - last_ckpt_step) >= 500_000
             is_new_best = mean_ret > (best_saved_mean_return + 1.5) and cur_steps >= 20_000
 
@@ -568,12 +600,12 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
 
 def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
     env_id = config.get("env", "CartPole-v1")
-    render_mode = config.get("render_mode", "in_browser")
+    # Diretriz S1: Avaliação deve ser sempre in-browser assíncrona
+    render_mode = "in_browser"
     device_pref = config.get("device", "auto")
     episodes = int(config.get("episodes", 5))
     load_path = config.get("load")
     save_path = config.get("save")
-    use_fast = config.get("inference_mode") == "fast"
     fps_target = float(config.get("fps", 50.0))
     dt_target = (1.0 / fps_target) if fps_target > 0 else 0.0
 
@@ -596,6 +628,7 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
         is_training=False,
         frame_skip=int(config.get("frame_skip", 4)),
         scramble_depth=scramble_depth,
+        config=config,
     )
     trunk_type = config.get("trunk", "classic")
     if load_path:
@@ -665,7 +698,7 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
     )
 
     ensemble_fallback = bool(config.get("ensemble_fallback", True))
-    mode_desc = "act_fast() [Reflexo Puro]" if use_fast else "act_with_confidence() [Gating]"
+    mode_desc = "Reflexo Neural S1"
     if ensemble_fallback:
         mode_desc += " + Quality Ensemble Fallback (A.2)"
     print(f"=== [HUD Worker] Modo de Avaliação Iniciado no Ambiente: {env_id} ===")
@@ -689,6 +722,13 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
     agent.eval()
     explainer = GradCAMExplainer(agent)
     tracker = LiveStatsTracker()
+    raw_env_obj = getattr(env, "unwrapped", env)
+    max_ep_steps = getattr(env, "_max_episode_steps", None)
+    if max_ep_steps is None:
+        max_ep_steps = getattr(raw_env_obj, "max_steps", None)
+    if max_ep_steps is None:
+        max_ep_steps = 40 if "rubik" in env_id.lower() else 500
+    tracker.metrics.target_steps = episodes * int(max_ep_steps)
     last_telemetry_ts = 0.0
     last_frame_ts = 0.0
 
@@ -707,41 +747,23 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
                 t_step_start = time.perf_counter()
 
                 t0 = time.perf_counter_ns()
-                if use_fast:
-                    decision = agent.act_fast(
-                        obs_dict,
-                        return_decision=True,
-                        deterministic=eval_det,
-                        noise_scale=noise_scale,
-                        calibration=eval_calibration,
-                        ensemble_fallback=ensemble_fallback,
-                    )
-                    lat_us = (time.perf_counter_ns() - t0) / 1000.0
-                    action = decision.action
-                    tracker.record_inference(
-                        latency_us=lat_us,
-                        uncertainty=decision.uncertainty,
-                        confidence=decision.confidence,
-                        entropy=decision.entropy,
-                        calibration=decision.calibration,
-                    )
-                else:
-                    decision = agent.act_with_confidence(
-                        obs_dict,
-                        deterministic=eval_det,
-                        noise_scale=noise_scale,
-                        calibration=eval_calibration,
-                        ensemble_fallback=ensemble_fallback,
-                    )
-                    lat_us = (time.perf_counter_ns() - t0) / 1000.0
-                    action = decision.action
-                    tracker.record_inference(
-                        latency_us=lat_us,
-                        uncertainty=decision.uncertainty,
-                        confidence=decision.confidence,
-                        entropy=decision.entropy,
-                        calibration=decision.calibration,
-                    )
+                decision = agent.act_fast(
+                    obs_dict,
+                    return_decision=True,
+                    deterministic=eval_det,
+                    noise_scale=noise_scale,
+                    calibration=eval_calibration,
+                    ensemble_fallback=ensemble_fallback,
+                )
+                lat_us = (time.perf_counter_ns() - t0) / 1000.0
+                action = decision.action
+                tracker.record_inference(
+                    latency_us=lat_us,
+                    uncertainty=decision.uncertainty,
+                    confidence=decision.confidence,
+                    entropy=decision.entropy,
+                    calibration=decision.calibration,
+                )
 
 
                 obs_dict, reward, terminated, truncated, env_info = env.step(action)
@@ -866,7 +888,7 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
                 except Exception:
                     pass
 
-            win_str = "true" if win else "false"
+            win_str = "\033[92mtrue\033[0m" if win else "\033[91mfalse\033[0m"
             print(f"Episódio {ep + 1}/{episodes} finalizado | Retorno: {ep_reward:.1f} | Passos: {steps} | win: {win_str}")
 
         if save_path:
@@ -915,6 +937,7 @@ def run_worker_benchmark(config: Dict[str, Any], hud_client: HUDClient) -> None:
 
     latencies = []
     tracker = LiveStatsTracker()
+    tracker.metrics.target_steps = steps
 
     t_start = time.time()
     for s in range(steps):
