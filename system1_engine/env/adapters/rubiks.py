@@ -646,6 +646,14 @@ class RubiksCubeEnv(gym.Env):
     def inverse_action_map(self) -> Dict[int, int]:
         return {i: i ^ 1 for i in range(12)}
 
+    @property
+    def curriculum_success_rate(self) -> float:
+        if len(self.frontier_successes) > 0:
+            return float(np.mean(self.frontier_successes))
+        if len(self.recent_successes) > 0:
+            return float(np.mean(self.recent_successes))
+        return 0.0
+
     def set_view_mode(self, mode: str) -> None:
         self.view_mode = str(mode).lower()
 
@@ -879,6 +887,14 @@ class RubiksCubeMacroEnv(gym.Env):
     def inverse_action_map(self) -> Dict[int, int]:
         return {i: i ^ 1 for i in range(12)}
 
+    @property
+    def curriculum_success_rate(self) -> float:
+        if len(self.frontier_successes) > 0:
+            return float(np.mean(self.frontier_successes))
+        if len(self.recent_successes) > 0:
+            return float(np.mean(self.recent_successes))
+        return 0.0
+
     def set_view_mode(self, mode: str) -> None:
         self.view_mode = str(mode).lower()
 
@@ -1046,19 +1062,28 @@ class RubiksCubeMacroEnv(gym.Env):
 
 
 class InfoList(list):
-    """Lista de dicionários de informações que suporta acesso transparente tanto como lista quanto dicionário."""
+    """Lista de dicionários de informações que suporta acesso transparente tanto como lista quanto dicionário.
+
+    Garante agregação transparente para o batch vetorizado e propagação correta
+    de flags de eventos globais (como 'curriculum_promoted').
+    """
 
     def __getitem__(self, key: Any) -> Any:
         if isinstance(key, str):
+            if key == "curriculum_promoted":
+                return any(isinstance(x, dict) and x.get("curriculum_promoted", False) for x in self)
             return self[0][key]
         return super().__getitem__(key)
 
     def __contains__(self, key: Any) -> bool:
         if isinstance(key, str):
-            return len(self) > 0 and key in self[0]
+            return any(isinstance(x, dict) and key in x for x in self)
         return super().__contains__(key)
 
     def get(self, key: str, default: Any = None) -> Any:
+        if key == "curriculum_promoted":
+            if any(isinstance(x, dict) and x.get("curriculum_promoted", False) for x in self):
+                return True
         if len(self) > 0 and isinstance(self[0], dict):
             return self[0].get(key, default)
         return default
@@ -1133,6 +1158,28 @@ class VectorizedRubiksEnv(gym.Env):
         return self.envs[0].curriculum_promotions
 
     @property
+    def curriculum_window(self) -> int:
+        return self.envs[0].curriculum_window
+
+    @property
+    def recent_successes(self) -> deque[float]:
+        return self.envs[0].recent_successes
+
+    @property
+    def frontier_successes(self) -> deque[float]:
+        return self.envs[0].frontier_successes
+
+    @property
+    def curriculum_success_rate(self) -> float:
+        f = self.frontier_successes
+        if len(f) > 0:
+            return float(np.mean(f))
+        r = self.recent_successes
+        if len(r) > 0:
+            return float(np.mean(r))
+        return 0.0
+
+    @property
     def action_descriptions(self) -> List[str]:
         return self.envs[0].action_descriptions
 
@@ -1175,6 +1222,21 @@ class VectorizedRubiksEnv(gym.Env):
             obs, info = env.reset(seed=env_seed, options=options)
             obs_list.append(obs)
             info_list.append(info)
+
+        shared_depth = max(e.current_depth for e in self.envs)
+        shared_promos = max(e.curriculum_promotions for e in self.envs)
+        global_rate = self.curriculum_success_rate
+
+        for env in self.envs:
+            if env.curriculum:
+                env.current_depth = shared_depth
+                env.curriculum_promotions = shared_promos
+
+        for inf in info_list:
+            inf["current_depth"] = shared_depth
+            inf["curriculum_promotions"] = shared_promos
+            inf["curriculum_success_rate"] = global_rate
+
         return np.stack(obs_list, axis=0), InfoList(info_list)
 
     def step(
@@ -1190,13 +1252,15 @@ class VectorizedRubiksEnv(gym.Env):
         truncateds = np.empty(self.num_envs, dtype=bool)
         info_list = []
 
-        shared_depth = self.envs[0].current_depth
+        shared_depth = max(e.current_depth for e in self.envs)
         shared_promos = max(e.curriculum_promotions for e in self.envs)
         for env in self.envs:
             if env.curriculum and env.current_depth != shared_depth:
                 env.current_depth = shared_depth
             if env.curriculum and env.curriculum_promotions != shared_promos:
                 env.curriculum_promotions = shared_promos
+
+        any_promoted = False
 
         for i, env in enumerate(self.envs):
             act_i = int(act_arr[i])
@@ -1205,23 +1269,34 @@ class VectorizedRubiksEnv(gym.Env):
                 obs, reset_info = env.reset()
                 info["terminal_observation"] = obs
                 info["reset_info"] = reset_info
-                if env.curriculum and env.current_depth != shared_depth:
+                if env.curriculum and env.current_depth > shared_depth:
                     shared_depth = env.current_depth
                     shared_promos = max(shared_promos + 1, env.curriculum_promotions)
-                    for other in self.envs:
-                        other.current_depth = shared_depth
-                        other.curriculum_promotions = shared_promos
-                        other.recent_successes.clear()
-                        other.frontier_successes.clear()
-                    info["current_depth"] = shared_depth
-                    info["curriculum_promotions"] = shared_promos
-                    info["curriculum_promoted"] = True
+                    any_promoted = True
 
             next_obs_list.append(obs)
             rewards[i] = rew
             terminateds[i] = term
             truncateds[i] = trunc
             info_list.append(info)
+
+        if any_promoted:
+            for other in self.envs:
+                other.current_depth = shared_depth
+                other.curriculum_promotions = shared_promos
+                other.recent_successes.clear()
+                other.frontier_successes.clear()
+            for inf in info_list:
+                inf["current_depth"] = shared_depth
+                inf["curriculum_promotions"] = shared_promos
+                inf["curriculum_promoted"] = True
+                inf["curriculum_success_rate"] = 0.0
+        else:
+            global_rate = self.curriculum_success_rate
+            for inf in info_list:
+                inf["current_depth"] = shared_depth
+                inf["curriculum_promotions"] = shared_promos
+                inf["curriculum_success_rate"] = global_rate
 
         return (
             np.stack(next_obs_list, axis=0),

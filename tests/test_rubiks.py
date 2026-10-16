@@ -405,13 +405,49 @@ class TestRubiksSystemOneIntegration:
         assert fps > 10000, f"Throughput esperado > 10.000 FPS, obtido: {fps:.0f} FPS"
 
     def test_vectorized_rubiks_curriculum_synchronization(self):
-        """Valida que a frota de ambientes sincroniza o progresso do currículo."""
+        """Valida que a frota de ambientes sincroniza o progresso do currículo e propaga flags de promoção (Opção 4)."""
         from system1_engine.env.adapters.rubiks import VectorizedRubiksEnv
 
-        vec_env = VectorizedRubiksEnv(num_envs=4, curriculum=True, min_depth=1, max_depth=5)
+        vec_env = VectorizedRubiksEnv(
+            num_envs=4,
+            curriculum=True,
+            min_depth=1,
+            max_depth=5,
+            target_success_rate=0.90,
+            curriculum_window=4,
+        )
         assert vec_env.current_depth == 1
         obs, infos = vec_env.reset()
         assert all(info["current_depth"] == 1 for info in infos)
+        assert vec_env.curriculum_success_rate == 0.0
+
+        # Simula 4 vitórias na janela compartilhada
+        for _ in range(4):
+            vec_env.frontier_successes.append(1.0)
+            vec_env.recent_successes.append(1.0)
+        assert vec_env.curriculum_success_rate == 1.0
+
+        # Dispara resolução no primeiro sub-ambiente (aplica U e depois resolve com U')
+        vec_env.envs[0].core.reset()
+        vec_env.envs[0].core.apply_atomic("U")
+        vec_env.envs[0]._prev_score = vec_env.envs[0].core.get_score()
+        actions = np.zeros(4, dtype=np.int64)
+        actions[0] = 1  # 1 = U', resolve o cubo
+        obs, rews, terms, truncs, infos = vec_env.step(actions)
+        assert bool(terms[0]) is True
+
+        # A promoção deve sincronizar imediatamente toda a frota para depth 2
+        assert vec_env.current_depth == 2
+        assert all(e.current_depth == 2 for e in vec_env.envs)
+        assert vec_env.curriculum_promotions == 1
+
+        # O InfoList e todos os sub-infos devem refletir a promoção
+        assert infos.get("curriculum_promoted") is True
+        assert infos["curriculum_promoted"] is True
+        assert all(inf.get("curriculum_promoted") is True for inf in infos)
+        assert all(inf["current_depth"] == 2 for inf in infos)
+        assert vec_env.curriculum_success_rate == 0.0  # Buffer limpo após promoção
+
 
     def test_rubiks_build_hud_env_mixed_replay_rate_and_config(self):
         """Valida que build_hud_env aceita config e mixed_replay_rate sem erros de escopo."""

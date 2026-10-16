@@ -329,6 +329,8 @@ class SuccessReplayBuffer:
         self.device = device
         self.hidden_dim = hidden_dim
         self._depth_buffers: Dict[int, List[SuccessfulTrajectory]] = defaultdict(list)
+        self.total_added: int = 0
+        self.total_pruned: int = 0
 
     @property
     def trajectories(self) -> List[SuccessfulTrajectory]:
@@ -347,6 +349,8 @@ class SuccessReplayBuffer:
     def clear(self) -> None:
         """Limpa todos os estratos do buffer."""
         self._depth_buffers.clear()
+        self.total_added = 0
+        self.total_pruned = 0
 
     def get_depth_distribution(self) -> Dict[int, int]:
         """Retorna a contagem de trajetórias armazenadas por profundidade."""
@@ -356,22 +360,64 @@ class SuccessReplayBuffer:
         return sum(len(b) for b in self._depth_buffers.values())
 
     def add(self, trajectory: SuccessfulTrajectory) -> None:
-        """Adiciona uma trajetória de vitória ao estrato correspondente, garantindo isolamento entre profundidades."""
+        """Adiciona uma trajetória de vitória ao estrato correspondente com poda de qualidade e substituição prioritária."""
         depth = int(getattr(trajectory, "depth", 1))
         d_buf = self._depth_buffers[depth]
 
-        # Quota local por profundidade (FIFO intra-estrato para evitar saturação de um único nível)
-        if len(d_buf) >= self.max_per_depth:
-            d_buf.pop(0)
-        d_buf.append(trajectory)
+        # 1. Filtro de Eficiência / Poda de Loops Erráticos (Quality & Efficiency Pruning):
+        # Rejeita trajetórias excessivamente longas/erráticas que ensinariam a política a vagar.
+        if depth > 0:
+            if len(d_buf) < 4:
+                max_allowed = max(10, int(depth * 2.5))
+            else:
+                max_allowed = max(8, int(depth * 2.0))
+            if trajectory.length > max_allowed:
+                self.total_pruned += 1
+                return
 
-        # Limite global: se o total exceder max_trajectories, descarte a trajetória mais antiga do nível mais baixo
+        t_ret = float(trajectory.returns[0]) if len(trajectory.returns) > 0 else 0.0
+        t_len = int(trajectory.length)
+        new_quality = (t_ret, -t_len)
+
+        # 2. Quota local por estrato com substituição prioritária por qualidade:
+        # Em vez de FIFO cego que descarta demonstrações ótimas antigas, mantém as melhores trajetórias.
+        if len(d_buf) >= self.max_per_depth:
+            worst_idx = min(
+                range(len(d_buf)),
+                key=lambda i: (
+                    float(d_buf[i].returns[0]) if len(d_buf[i].returns) > 0 else 0.0,
+                    -int(d_buf[i].length),
+                ),
+            )
+            worst_traj = d_buf[worst_idx]
+            worst_quality = (
+                float(worst_traj.returns[0]) if len(worst_traj.returns) > 0 else 0.0,
+                -int(worst_traj.length),
+            )
+            if new_quality >= worst_quality:
+                d_buf[worst_idx] = trajectory
+                self.total_added += 1
+            else:
+                self.total_pruned += 1
+                return
+        else:
+            d_buf.append(trajectory)
+            self.total_added += 1
+
+        # 3. Limite global: se o total exceder max_trajectories, descarte a trajetória de menor qualidade do menor nível
         while len(self) > self.max_trajectories:
             non_empty_depths = [d for d in sorted(self._depth_buffers.keys()) if len(self._depth_buffers[d]) > 0]
             if not non_empty_depths:
                 break
             min_d = non_empty_depths[0]
-            self._depth_buffers[min_d].pop(0)
+            worst_idx = min(
+                range(len(self._depth_buffers[min_d])),
+                key=lambda i: (
+                    float(self._depth_buffers[min_d][i].returns[0]) if len(self._depth_buffers[min_d][i].returns) > 0 else 0.0,
+                    -int(self._depth_buffers[min_d][i].length),
+                ),
+            )
+            self._depth_buffers[min_d].pop(worst_idx)
             if len(self._depth_buffers[min_d]) == 0:
                 del self._depth_buffers[min_d]
 

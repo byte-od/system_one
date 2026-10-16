@@ -459,7 +459,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         ckpt_succ_d = ckpt_info.get("successful_depth")
         ckpt_curr_d = ckpt_info.get("curriculum_depth") or ckpt_info.get("depth")
         ckpt_max_d = max(int(ckpt_succ_d or 1), int(ckpt_curr_d or 1))
-        resume_d = int(ckpt_succ_d or ckpt_curr_d or 1)
+        resume_d = int(ckpt_curr_d or ckpt_succ_d or 1)
         if ckpt_max_d > 1:
             raw_env.set_curriculum_depth(resume_d)
             trainer.best_state_depth = raw_env.current_depth

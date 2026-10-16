@@ -346,3 +346,81 @@ def test_curriculum_warm_start_and_sil_prewarming():
     assert len(trainer.sil_buffer) == n_added
 
 
+def test_sil_trajectory_quality_pruning_and_priority_replacement():
+    """Valida a Poda de Eficiência de Trajetórias e Substituição Prioritária por Qualidade (Opção 3)."""
+    buf = SuccessReplayBuffer(
+        max_trajectories=100,
+        max_per_depth=2,
+        obs_shape=(324,),
+        action_shape=(),
+        device=torch.device("cpu"),
+        hidden_dim=512,
+    )
+
+    # 1. Adiciona trajetórias de D7 com 8 passos (ótima eficiência)
+    for i in range(4):
+        buf.add(
+            SuccessfulTrajectory(
+                obs=np.zeros((8, 324), dtype=np.float32),
+                delta_obs=None,
+                prev_actions=np.zeros(8, dtype=np.int64),
+                prev_rewards=np.zeros(8, dtype=np.float32),
+                actions=np.zeros(8, dtype=np.int64),
+                returns=np.ones(8, dtype=np.float32) * (10.0 + i),
+                depth=7,
+                length=8,
+            )
+        )
+    assert len(buf._depth_buffers[7]) == 2
+
+    # 2. Trajetória excessivamente longa em D7 (25 passos) deve ser podada (max permitido é 14)
+    pruned_before = buf.total_pruned
+    buf.add(
+        SuccessfulTrajectory(
+            obs=np.zeros((25, 324), dtype=np.float32),
+            delta_obs=None,
+            prev_actions=np.zeros(25, dtype=np.int64),
+            prev_rewards=np.zeros(25, dtype=np.float32),
+            actions=np.zeros(25, dtype=np.int64),
+            returns=np.ones(25, dtype=np.float32) * 5.0,
+            depth=7,
+            length=25,
+        )
+    )
+    assert buf.total_pruned == pruned_before + 1
+    assert all(t.length == 8 for t in buf._depth_buffers[7])
+
+    # 3. Substituição prioritária:
+    # Trajetória inferior (return 8.0) é rejeitada
+    buf.add(
+        SuccessfulTrajectory(
+            obs=np.zeros((8, 324), dtype=np.float32),
+            delta_obs=None,
+            prev_actions=np.zeros(8, dtype=np.int64),
+            prev_rewards=np.zeros(8, dtype=np.float32),
+            actions=np.zeros(8, dtype=np.int64),
+            returns=np.ones(8, dtype=np.float32) * 8.0,
+            depth=7,
+            length=8,
+        )
+    )
+    assert min(t.returns[0] for t in buf._depth_buffers[7]) == 12.0
+
+    # Trajetória superior (return 16.0, length 7) substitui a pior (12.0)
+    buf.add(
+        SuccessfulTrajectory(
+            obs=np.zeros((7, 324), dtype=np.float32),
+            delta_obs=None,
+            prev_actions=np.zeros(7, dtype=np.int64),
+            prev_rewards=np.zeros(7, dtype=np.float32),
+            actions=np.zeros(7, dtype=np.int64),
+            returns=np.ones(7, dtype=np.float32) * 16.0,
+            depth=7,
+            length=7,
+        )
+    )
+    returns_in_buf = sorted([float(t.returns[0]) for t in buf._depth_buffers[7]])
+    assert returns_in_buf == [13.0, 16.0]
+
+
+
