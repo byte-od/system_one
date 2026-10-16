@@ -410,17 +410,25 @@
           </div>
         </div>
 
-        <!-- Seletor de Perspectiva 3D / 2D para Cubo Mágico -->
-        <div id="rubiks-view-controls" class="mb-2 py-1.5 px-2.5 rounded bg-indigo-950/40 border border-indigo-700/50 flex items-center justify-between transition">
-          <span class="text-[10px] font-bold text-indigo-300 flex items-center gap-1">
-            <span>🎲</span> Visualização Cubo:
-          </span>
-          <div class="flex items-center gap-1">
+        <!-- Seletor de Perspectiva 3D / 2D para Cubo Mágico & Controles de Câmera -->
+        <div id="rubiks-view-controls" class="mb-2 py-1.5 px-2.5 rounded bg-indigo-950/40 border border-indigo-700/50 flex flex-wrap items-center justify-between gap-1 transition">
+          <div class="flex items-center gap-1.5">
+            <span class="text-[10px] font-bold text-indigo-300 flex items-center gap-1">
+              <span>🎲</span> Cubo 3D:
+            </span>
             <button type="button" id="btn-cube-view-3d" onclick="setWebCubeViewMode('3d')" class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-600 text-white border border-indigo-400 shadow-sm transition cursor-pointer">
-              🎲 3D Isometric
+              🎲 3D
             </button>
             <button type="button" id="btn-cube-view-2d" onclick="setWebCubeViewMode('2d')" class="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-900 text-gray-400 border border-gray-800 hover:bg-gray-800 transition cursor-pointer">
               🗺️ 2D Net
+            </button>
+          </div>
+          <div class="flex items-center gap-1">
+            <button type="button" id="btn-cube-autorotate" onclick="toggleCubeAutoRotate()" class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 border border-indigo-700/60 shadow-sm transition cursor-pointer" title="Ativar/Desativar rotação contínua automática quando ocioso">
+              <span id="autorotate-icon">🔄</span> Auto-Giro
+            </button>
+            <button type="button" onclick="resetCubeCamera()" class="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-900 hover:bg-gray-800 text-gray-300 border border-gray-700 shadow-sm transition cursor-pointer" title="Restaurar ângulo de visão padrão do cubo">
+              🎯 Reset Câmera
             </button>
           </div>
         </div>
@@ -430,7 +438,7 @@
           <canvas id="viewport-canvas" width="480" height="320" class="w-full h-full object-contain hidden"></canvas>
           <div id="rubiks-3d-container" class="w-full h-full relative cursor-grab active:cursor-grabbing select-none flex items-center justify-center">
             <div class="absolute bottom-2 left-2 text-[10px] font-mono text-gray-400 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded pointer-events-none border border-gray-800/80 flex items-center gap-1 z-10">
-              <span>🖱️</span> Arraste para orbitar • 2 cliques para resetar ângulo
+              <span>🖱️</span> Arraste para orbitar • Zoom (Scroll) • 2 cliques para resetar
             </div>
           </div>
           <div id="loader-overlay" class="absolute inset-0 bg-black/80 flex flex-col items-center justify-center gap-2 text-xs font-mono text-cyan-400 z-20 hidden">
@@ -448,6 +456,45 @@
         <div class="mt-2.5 pt-2 border-t border-gray-800/80 flex items-center justify-between text-[11px] font-mono">
           <span class="text-gray-400">Status do Reflexo:</span>
           <span id="status-desc" class="text-cyan-300 font-bold truncate max-w-[280px]">Pronto para avaliar</span>
+        </div>
+
+        <!-- Teclado Virtual de Movimentos Manuais (Interactive Move Pad) -->
+        <div id="interactive-move-pad" class="mt-2 pt-2 border-t border-gray-800/80 flex flex-col gap-1.5">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold text-cyan-300 flex items-center gap-1">
+              <span>🎮</span> Giros Manuais (Teclado Físico & Virtual):
+            </span>
+            <span class="text-[9px] font-mono text-gray-400">
+              Shift = Inverso (<kbd class="px-1 bg-gray-800 rounded text-cyan-400">U'</kbd>)
+            </span>
+          </div>
+          <!-- 6 Pares de Ações Atômicas com cores oficiais -->
+          <div class="grid grid-cols-6 gap-1">
+            <!-- U: Branco -->
+            <button id="btn-move-U" onclick="applyManualMove('U')" class="py-1 px-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-300 text-slate-100 font-mono font-bold text-[11px] shadow-sm transition active:scale-95 cursor-pointer" title="Giro Topo Horário (Tecla U)">U</button>
+            <button id="btn-move-U_prime" onclick="applyManualMove('U_prime')" class="py-1 px-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-500/80 text-slate-300 font-mono font-bold text-[11px] transition active:scale-95 cursor-pointer" title="Giro Topo Anti-horário (Shift+U)">U'</button>
+            <!-- D: Amarelo -->
+            <button id="btn-move-D" onclick="applyManualMove('D')" class="py-1 px-1 rounded bg-yellow-950/70 hover:bg-yellow-900/90 border border-yellow-400 text-yellow-300 font-mono font-bold text-[11px] shadow-sm transition active:scale-95 cursor-pointer" title="Giro Base Horário (Tecla D)">D</button>
+            <button id="btn-move-D_prime" onclick="applyManualMove('D_prime')" class="py-1 px-1 rounded bg-yellow-950/40 hover:bg-yellow-950/80 border border-yellow-600/80 text-yellow-400/80 font-mono font-bold text-[11px] transition active:scale-95 cursor-pointer" title="Giro Base Anti-horário (Shift+D)">D'</button>
+            <!-- F: Verde -->
+            <button id="btn-move-F" onclick="applyManualMove('F')" class="py-1 px-1 rounded bg-emerald-950/70 hover:bg-emerald-900/90 border border-emerald-400 text-emerald-300 font-mono font-bold text-[11px] shadow-sm transition active:scale-95 cursor-pointer" title="Giro Frente Horário (Tecla F)">F</button>
+            <button id="btn-move-F_prime" onclick="applyManualMove('F_prime')" class="py-1 px-1 rounded bg-emerald-950/40 hover:bg-emerald-950/80 border border-emerald-600/80 text-emerald-400/80 font-mono font-bold text-[11px] transition active:scale-95 cursor-pointer" title="Giro Frente Anti-horário (Shift+F)">F'</button>
+          </div>
+          <div class="grid grid-cols-6 gap-1">
+            <!-- B: Azul -->
+            <button id="btn-move-B" onclick="applyManualMove('B')" class="py-1 px-1 rounded bg-blue-950/70 hover:bg-blue-900/90 border border-blue-400 text-blue-300 font-mono font-bold text-[11px] shadow-sm transition active:scale-95 cursor-pointer" title="Giro Trás Horário (Tecla B)">B</button>
+            <button id="btn-move-B_prime" onclick="applyManualMove('B_prime')" class="py-1 px-1 rounded bg-blue-950/40 hover:bg-blue-950/80 border border-blue-600/80 text-blue-400/80 font-mono font-bold text-[11px] transition active:scale-95 cursor-pointer" title="Giro Trás Anti-horário (Shift+B)">B'</button>
+            <!-- R: Vermelho -->
+            <button id="btn-move-R" onclick="applyManualMove('R')" class="py-1 px-1 rounded bg-rose-950/70 hover:bg-rose-900/90 border border-rose-400 text-rose-300 font-mono font-bold text-[11px] shadow-sm transition active:scale-95 cursor-pointer" title="Giro Direita Horário (Tecla R)">R</button>
+            <button id="btn-move-R_prime" onclick="applyManualMove('R_prime')" class="py-1 px-1 rounded bg-rose-950/40 hover:bg-rose-950/80 border border-rose-600/80 text-rose-400/80 font-mono font-bold text-[11px] transition active:scale-95 cursor-pointer" title="Giro Direita Anti-horário (Shift+R)">R'</button>
+            <!-- L: Laranja -->
+            <button id="btn-move-L" onclick="applyManualMove('L')" class="py-1 px-1 rounded bg-orange-950/70 hover:bg-orange-900/90 border border-orange-400 text-orange-300 font-mono font-bold text-[11px] shadow-sm transition active:scale-95 cursor-pointer" title="Giro Esquerda Horário (Tecla L)">L</button>
+            <button id="btn-move-L_prime" onclick="applyManualMove('L_prime')" class="py-1 px-1 rounded bg-orange-950/40 hover:bg-orange-950/80 border border-orange-600/80 text-orange-400/80 font-mono font-bold text-[11px] transition active:scale-95 cursor-pointer" title="Giro Esquerda Anti-horário (Shift+L)">L'</button>
+          </div>
+          <div class="flex items-center justify-between text-[9px] text-gray-400 font-mono pt-0.5">
+            <span>💡 Teclas: <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">U</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">D</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">F</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">B</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">R</kbd> <kbd class="px-1 bg-gray-800 text-cyan-300 rounded font-bold">L</kbd></span>
+            <span>Espaço = Passo IA • Esc = Reset</span>
+          </div>
         </div>
       </div>
 
@@ -930,6 +977,7 @@
       container.addEventListener('pointerdown', (e) => {
         isPointerDragging = true;
         cubeAutoRotate = false;
+        updateCubeAutoRotateUI();
         pointerPrev = { x: e.clientX, y: e.clientY };
         try { container.setPointerCapture(e.pointerId); } catch (_) {}
       });
@@ -951,11 +999,49 @@
       container.addEventListener('pointercancel', onPointerEnd);
 
       container.addEventListener('dblclick', () => {
-        cubeGroup.rotation.x = 0.45;
-        cubeGroup.rotation.y = -0.55;
+        resetCubeCamera();
       });
 
+      container.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (!threeCamera) return;
+        const delta = e.deltaY * 0.006;
+        threeCamera.position.z = Math.max(4.2, Math.min(14.0, threeCamera.position.z + delta));
+      }, { passive: false });
+
       isThreeInitialized = true;
+    }
+
+    function resetCubeCamera() {
+      if (cubeGroup) {
+        cubeGroup.rotation.x = 0.45;
+        cubeGroup.rotation.y = -0.55;
+        cubeGroup.rotation.z = 0;
+      }
+      if (threeCamera) {
+        threeCamera.position.set(0, 0, 7.2);
+        threeCamera.lookAt(0, 0, 0);
+      }
+      appendLog("[VIEW] 🎯 Câmera e zoom do cubo restaurados para a perspectiva padrão.");
+    }
+
+    function toggleCubeAutoRotate() {
+      cubeAutoRotate = !cubeAutoRotate;
+      updateCubeAutoRotateUI();
+      appendLog(`[VIEW] 🔄 Auto-Giro do cubo ${cubeAutoRotate ? 'ativado' : 'desativado'}.`);
+    }
+
+    function updateCubeAutoRotateUI() {
+      const btn = document.getElementById('btn-cube-autorotate');
+      const icon = document.getElementById('autorotate-icon');
+      if (!btn) return;
+      if (cubeAutoRotate) {
+        btn.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400 shadow-sm transition cursor-pointer';
+        if (icon) icon.innerText = '🔄';
+      } else {
+        btn.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-gray-900 hover:bg-gray-800 text-gray-400 border border-gray-700 shadow-sm transition cursor-pointer';
+        if (icon) icon.innerText = '⏸️';
+      }
     }
 
     const THREE_CUBE_PALETTE = {
@@ -1254,6 +1340,7 @@
       const isRubiks = cfg.type === "rubiks" || demoKey.startsWith("rubiks");
       const scrambleSec = document.getElementById('scramble-section');
       const viewControls = document.getElementById('rubiks-view-controls');
+      const movePad = document.getElementById('interactive-move-pad');
       const canvasEl = document.getElementById('viewport-canvas');
       const container3d = document.getElementById('rubiks-3d-container');
 
@@ -1275,6 +1362,7 @@
 
         if (scrambleSec) scrambleSec.classList.remove('hidden');
         if (viewControls) viewControls.classList.remove('hidden');
+        if (movePad) movePad.classList.remove('hidden');
         document.getElementById('status-desc').innerText = `Embaralhado (${moves.length} giros): ${moves.join(" ")}`;
         appendLog(`[RESET] Cubo embaralhado com ${moves.length} giros: ${moves.join(" ")}`);
 
@@ -1308,6 +1396,7 @@
 
         if (scrambleSec) scrambleSec.classList.add('hidden');
         if (viewControls) viewControls.classList.add('hidden');
+        if (movePad) movePad.classList.add('hidden');
         container3d.classList.add('hidden');
         canvasEl.classList.remove('hidden');
         document.getElementById('status-desc').innerText = "Pronto para avaliar";
@@ -1419,6 +1508,122 @@
       document.getElementById('status-desc').innerText = "Estado resetado para inicial";
       appendLog("🔄 Estado da simulação resetado.");
     }
+
+    // =====================================================================
+    // CONTROLES DE JOGO MANUAL & ATALHOS DE TECLADO (INTERACTIVE PLAY)
+    // =====================================================================
+    function applyManualMove(moveName) {
+      const cfg = MODELS[activeDemo] || MODELS["rubiks_atomic"];
+      const isRubiks = cfg.type === "rubiks" || activeDemo.startsWith("rubiks");
+      if (!isRubiks || !sim) {
+        appendLog("[AVISO] Giros manuais disponíveis apenas para o simulador do Cubo Mágico.");
+        return;
+      }
+
+      pulseMoveButton(moveName);
+
+      if (isRunning) {
+        stopEvaluation();
+        appendLog("[PAUSA] Avaliação automática pausada para controle manual.");
+      }
+
+      sim.applyAtomic(moveName, true);
+
+      if (!window.visitedStates) window.visitedStates = [];
+      window.visitedStates.push(sim.getStateHash ? sim.getStateHash() : "");
+      if (window.visitedStates.length > 24) window.visitedStates.shift();
+
+      const atomicList = (System1 && System1.RubiksCubeSim && System1.RubiksCubeSim.ATOMIC_MOVES) ? System1.RubiksCubeSim.ATOMIC_MOVES : [];
+      const actIdx = atomicList.indexOf(moveName);
+      if (actIdx !== -1) {
+        actionHistory.push(actIdx);
+        if (actionHistory.length > 20) actionHistory.shift();
+        if (agent) agent.prevAction = actIdx;
+      }
+
+      stepCount++;
+      const maxSteps = 40;
+      const stepPct = Math.min(100.0, (stepCount / maxSteps) * 100);
+      const stepsKpi = document.getElementById('kpi-steps');
+      if (stepsKpi) {
+        stepsKpi.innerText = `${stepPct.toFixed(1)}%`;
+        stepsKpi.title = `${stepCount.toLocaleString()} / ${maxSteps} passos (${stepPct.toFixed(1)}%)`;
+      }
+
+      const curScore = sim.getScore ? sim.getScore() : 0.0;
+      const deltaScore = curScore - lastScore;
+      lastScore = curScore;
+      lastReward = (deltaScore * 5.0) - 0.02;
+      if (agent) agent.prevReward = lastReward;
+
+      const retKpi = document.getElementById('kpi-return');
+      if (retKpi) retKpi.innerText = curScore.toFixed(2);
+
+      const statusDesc = document.getElementById('status-desc');
+      if (webCubeViewMode === '3d') {
+        updateCube3D(sim.state);
+      }
+      sim.render(canvas);
+
+      pushDataPoint(chartRew, 0, curScore);
+      chartRew.update('none');
+
+      if (sim.isSolved()) {
+        if (statusDesc) statusDesc.innerText = "🏆 CUBO RESOLVIDO COM SUCESSO!";
+        appendLog(`[SOLVED] 🏆 Cubo 3x3 totalmente resolvido manualmente em ${sim.steps} passos! | win: true`);
+      } else {
+        if (statusDesc) statusDesc.innerText = `Giro Manual: ${moveName} (Passo ${sim.steps})`;
+        appendLog(`[MANUAL] 🎮 Giro: ${moveName} | Alinhamento: ${(curScore * 100).toFixed(0)}% (Passo ${sim.steps})`);
+      }
+    }
+
+    function pulseMoveButton(moveName) {
+      const btn = document.getElementById(`btn-move-${moveName}`);
+      if (btn) {
+        btn.classList.add('ring-2', 'ring-cyan-400', 'scale-95');
+        setTimeout(() => {
+          btn.classList.remove('ring-2', 'ring-cyan-400', 'scale-95');
+        }, 150);
+      }
+    }
+
+    // Atalhos de teclado físicos globais
+    window.addEventListener('keydown', (e) => {
+      const tag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.isComposing) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key;
+
+      if (key === ' ' || key === 'Spacebar') {
+        e.preventDefault();
+        stepOnce();
+        return;
+      }
+
+      if (key === 'Escape') {
+        e.preventDefault();
+        resetEnv();
+        return;
+      }
+
+      const lower = key.toLowerCase();
+      const moveMap = {
+        'u': 'U',
+        'd': 'D',
+        'f': 'F',
+        'b': 'B',
+        'r': 'R',
+        'l': 'L'
+      };
+
+      if (moveMap[lower]) {
+        const base = moveMap[lower];
+        const moveName = e.shiftKey ? `${base}_prime` : base;
+        e.preventDefault();
+        applyManualMove(moveName);
+      }
+    });
 
     async function stepOnce() {
       if (!agent || !sim) return;
