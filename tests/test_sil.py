@@ -5,7 +5,12 @@ import numpy as np
 import torch
 
 from system1_engine.core.agent import UniversalS1Agent
-from system1_engine.training.buffer import SuccessReplayBuffer, SuccessfulTrajectory
+from system1_engine.training.buffer import (
+    FrontierTransition,
+    FrontierTransitionBuffer,
+    SuccessReplayBuffer,
+    SuccessfulTrajectory,
+)
 from system1_engine.training.ppo import RecurrentPPOTrainer
 from system1_engine.env.wrapper import UniversalS1Wrapper
 from system1_engine.env.adapters.rubiks import RubiksCubeEnv, VectorizedRubiksEnv
@@ -421,6 +426,165 @@ def test_sil_trajectory_quality_pruning_and_priority_replacement():
     )
     returns_in_buf = sorted([float(t.returns[0]) for t in buf._depth_buffers[7]])
     assert returns_in_buf == [13.0, 16.0]
+
+
+def test_frontier_transition_from_step_and_alias():
+    """Valida instanciação atômica via from_step e o alias FrontierTransitionBuffer."""
+    assert FrontierTransitionBuffer is SuccessReplayBuffer
+
+    trans = FrontierTransition.from_step(
+        obs=np.ones(324, dtype=np.float32) * 2.0,
+        action=5,
+        reward=10.0,
+        target_return=12.5,
+        depth=3,
+        delta_obs=np.ones(324, dtype=np.float32) * 0.1,
+        prev_action=4,
+        prev_reward=1.0,
+        td_error=2.5,
+    )
+    assert isinstance(trans, SuccessfulTrajectory)
+    assert isinstance(trans, FrontierTransition)
+    assert trans.length == 1
+    assert trans.depth == 3
+    assert trans.obs.shape == (1, 324)
+    assert trans.actions.shape == (1,)
+    assert trans.actions[0] == 5
+    assert trans.returns[0] == 12.5
+    assert trans.td_error == 2.5
+
+    # Testa adição direta ao buffer
+    buf = FrontierTransitionBuffer(max_trajectories=10, obs_shape=(324,))
+    buf.add(trans)
+    assert len(buf) == 1
+    batch = buf.sample_batch(batch_size=1)
+    assert batch is not None
+    assert batch["obs"].shape == (1, 1, 324)
+    assert batch["actions"][0, 0] == 5
+    assert batch["returns"][0, 0] == 12.5
+
+
+def test_visual_observation_uint8_compression_and_decompression():
+    """Valida compressão em uint8 para ambientes visuais (ex: ViZDoom/pixels) e descompressão float32."""
+    buf = SuccessReplayBuffer(
+        max_trajectories=10,
+        is_visual=True,
+        obs_shape=(3, 64, 64),
+        action_shape=(),
+        device=torch.device("cpu"),
+    )
+
+    # Imagem simulada em float32 normalizada [0.0, 1.0]
+    raw_img = np.random.uniform(0.0, 1.0, size=(5, 3, 64, 64)).astype(np.float32)
+    traj = SuccessfulTrajectory(
+        obs=raw_img.copy(),
+        delta_obs=None,
+        prev_actions=np.zeros(5, dtype=np.int64),
+        prev_rewards=np.zeros(5, dtype=np.float32),
+        actions=np.zeros(5, dtype=np.int64),
+        returns=np.ones(5, dtype=np.float32) * 5.0,
+        depth=1,
+        length=5,
+    )
+
+    buf.add(traj)
+    # A observação guardada no buffer DEVE estar comprimida em uint8 (1 byte por pixel em vez de 4)
+    stored_traj = buf._depth_buffers[1][0]
+    assert stored_traj.obs.dtype == np.uint8
+    assert stored_traj.obs.nbytes < raw_img.nbytes  # Redução de 75% em memória RAM!
+
+    # Na amostragem, sample_batch deve descompactar de volta para float32 [0.0, 1.0]
+    batch = buf.sample_batch(batch_size=1)
+    assert batch is not None
+    assert batch["obs"].dtype == torch.float32
+    assert batch["obs"].shape == (1, 5, 3, 64, 64)
+    # O valor descompactado deve ser aproximadamente igual ao original (erro de quantização < 1/255)
+    decompressed = batch["obs"][0].cpu().numpy()
+    np.testing.assert_allclose(decompressed, raw_img, atol=1.0 / 255.0)
+
+
+def test_frontier_slicing_preserves_deep_solutions():
+    """Valida Frontier Slicing: vitórias longas com desvios em D7 retêm o prefixo decisivo em vez de serem podadas."""
+    # Buffer COM frontier_slicing ativado (como configurado no RecurrentPPOTrainer)
+    buf = SuccessReplayBuffer(
+        max_trajectories=10,
+        max_per_depth=5,
+        obs_shape=(324,),
+        action_shape=(),
+        device=torch.device("cpu"),
+        frontier_slicing=True,
+    )
+
+    # Trajetória longa de 25 passos em D7 (max_allowed seria 14)
+    traj = SuccessfulTrajectory(
+        obs=np.tile(np.arange(25)[:, None], (1, 324)).astype(np.float32),
+        delta_obs=None,
+        prev_actions=np.arange(25, dtype=np.int64),
+        prev_rewards=np.zeros(25, dtype=np.float32),
+        actions=np.arange(25, dtype=np.int64),
+        returns=np.linspace(10.0, 20.0, 25, dtype=np.float32),
+        depth=7,
+        length=25,
+    )
+
+    buf.add(traj)
+    # Não deve ter sido podada! Deve ter sido cortada para o prefixo decisivo de max_allowed (17 quando len < 4)
+    assert buf.total_pruned == 0
+    assert len(buf) == 1
+    stored = buf._depth_buffers[7][0]
+    assert stored.length == 17  # Sliced para 17
+    assert stored.obs.shape[0] == 17
+    # Preserva o estado inicial de fronteira (passo 0) e o retorno alto acumulado
+    assert stored.obs[0, 0] == 0.0
+    assert stored.returns[0] == pytest.approx(10.0, abs=1e-4)
+
+
+def test_frontier_priority_sampling_ratio():
+    """Valida amostragem balanceada 75% fronteira e 25% âncoras quando target_depth está ativo."""
+    buf = SuccessReplayBuffer(
+        max_trajectories=20,
+        obs_shape=(324,),
+        action_shape=(),
+        device=torch.device("cpu"),
+        frontier_ratio=0.75,
+    )
+
+    # Adiciona 5 âncoras (D2..D3) e 5 fronteiras (D7)
+    for _ in range(5):
+        buf.add(
+            SuccessfulTrajectory(
+                obs=np.zeros((4, 324), dtype=np.float32),
+                delta_obs=None,
+                prev_actions=np.zeros(4, dtype=np.int64),
+                prev_rewards=np.zeros(4, dtype=np.float32),
+                actions=np.zeros(4, dtype=np.int64),
+                returns=np.ones(4, dtype=np.float32) * 5.0,
+                depth=2,
+                length=4,
+            )
+        )
+    for _ in range(5):
+        buf.add(
+            SuccessfulTrajectory(
+                obs=np.ones((6, 324), dtype=np.float32),
+                delta_obs=None,
+                prev_actions=np.zeros(6, dtype=np.int64),
+                prev_rewards=np.zeros(6, dtype=np.float32),
+                actions=np.ones(6, dtype=np.int64),
+                returns=np.ones(6, dtype=np.float32) * 15.0,
+                depth=7,
+                length=6,
+            )
+        )
+
+    # Amostra lote de 4 com target_depth=7
+    # 75% de 4 = 3 fronteiras (D7, length 6) e 25% de 4 = 1 âncora (D2, length 4)
+    batch = buf.sample_batch(batch_size=4, target_depth=7)
+    assert batch is not None
+    mask_sums = batch["mask"].sum(dim=1).cpu().numpy().tolist()
+    assert mask_sums.count(6.0) == 3, f"Esperado 3 amostras de fronteira (tam 6), obtido: {mask_sums}"
+    assert mask_sums.count(4.0) == 1, f"Esperado 1 amostra de âncora (tam 4), obtido: {mask_sums}"
+
 
 
 

@@ -298,15 +298,67 @@ class SuccessfulTrajectory:
     length: int                      # Duração T em passos
 
 
-class SuccessReplayBuffer:
-    """Buffer estratificado por profundidade de trajetórias completas bem-sucedidas para Self-Imitation Learning (SIL).
+@dataclass
+class FrontierTransition(SuccessfulTrajectory):
+    """Transição atômica ou micro-manobra decisiva de fronteira (Bellman 1-step / n-step breakthrough)."""
+    td_error: float = 0.0
 
-    Preserva trajetórias vitoriosas onde o agente atingiu o objetivo (ex: cubo resolvido),
+    @classmethod
+    def from_step(
+        cls,
+        obs: np.ndarray,
+        action: Union[int, np.ndarray],
+        reward: float,
+        target_return: float,
+        depth: int,
+        delta_obs: Optional[np.ndarray] = None,
+        prev_action: Union[int, np.ndarray] = 0,
+        prev_reward: float = 0.0,
+        td_error: float = 0.0,
+    ) -> "FrontierTransition":
+        """Cria uma transição atômica 1-step formatada como micro-trajetória de comprimento 1."""
+        obs_arr = np.asarray(obs)
+        if obs_arr.ndim == 1 or obs_arr.ndim == 3:
+            obs_arr = np.expand_dims(obs_arr, axis=0)
+
+        if np.isscalar(action):
+            act_arr = np.asarray([action], dtype=np.int64)
+        else:
+            act_arr = np.expand_dims(np.asarray(action), axis=0)
+
+        if np.isscalar(prev_action):
+            prev_act_arr = np.asarray([prev_action], dtype=np.int64)
+        else:
+            prev_act_arr = np.expand_dims(np.asarray(prev_action), axis=0)
+
+        delta_arr = None
+        if delta_obs is not None:
+            delta_arr = np.asarray(delta_obs)
+            if delta_arr.ndim == 1 or delta_arr.ndim == 3:
+                delta_arr = np.expand_dims(delta_arr, axis=0)
+
+        return cls(
+            obs=obs_arr,
+            delta_obs=delta_arr,
+            prev_actions=prev_act_arr,
+            prev_rewards=np.array([prev_reward], dtype=np.float32),
+            actions=act_arr,
+            returns=np.array([target_return], dtype=np.float32),
+            depth=int(depth),
+            length=1,
+            td_error=float(td_error),
+        )
+
+
+class SuccessReplayBuffer:
+    """Buffer estratificado por profundidade de trajetórias completas e micro-transições para SIL e Frontier Replay.
+
+    Preserva trajetórias vitoriosas e transições de avanço onde o agente atingiu o objetivo (ex: cubo resolvido),
     organizadas em estratos por profundidade curricular (D1..D10+) para eliminar esquecimento
     catastrófico e despejo cruzado (cross-depth eviction).
     
-    A amostragem equilibra trajetórias da fronteira ativa (reforço imediato) com trajetórias
-    âncoras de níveis anteriores (regularização contra regressão).
+    A amostragem equilibra 75% de transições da fronteira ativa (reforço imediato) com 25% de
+    âncoras fundacionais de níveis anteriores (regularização contra regressão).
     """
 
     def __init__(
@@ -319,6 +371,8 @@ class SuccessReplayBuffer:
         action_shape: Tuple[int, ...] = (),
         device: torch.device = torch.device("cpu"),
         hidden_dim: int = 512,
+        frontier_slicing: bool = False,
+        frontier_ratio: float = 0.75,
     ) -> None:
         self.max_trajectories = max(2, int(max_trajectories))
         self.max_per_depth = max(1, min(int(max_per_depth), self.max_trajectories))
@@ -328,9 +382,12 @@ class SuccessReplayBuffer:
         self.action_shape = action_shape
         self.device = device
         self.hidden_dim = hidden_dim
+        self.frontier_slicing = frontier_slicing
+        self.frontier_ratio = float(frontier_ratio)
         self._depth_buffers: Dict[int, List[SuccessfulTrajectory]] = defaultdict(list)
         self.total_added: int = 0
         self.total_pruned: int = 0
+
 
     @property
     def trajectories(self) -> List[SuccessfulTrajectory]:
@@ -359,27 +416,82 @@ class SuccessReplayBuffer:
     def __len__(self) -> int:
         return sum(len(b) for b in self._depth_buffers.values())
 
-    def add(self, trajectory: SuccessfulTrajectory) -> None:
-        """Adiciona uma trajetória de vitória ao estrato correspondente com poda de qualidade e substituição prioritária."""
+    def add(self, trajectory: SuccessfulTrajectory, slice_frontier: Optional[bool] = None) -> None:
+        """Adiciona uma trajetória ou micro-manobra de vitória ao estrato correspondente.
+
+        Aplica poda de loops erráticos ou Frontier Slicing (para resgatar o avanço de fronteira),
+        compressão de observações visuais para uint8, e substituição prioritária por qualidade/retorno.
+        """
         depth = int(getattr(trajectory, "depth", 1))
         d_buf = self._depth_buffers[depth]
+        do_slice = self.frontier_slicing if slice_frontier is None else bool(slice_frontier)
 
-        # 1. Filtro de Eficiência / Poda de Loops Erráticos (Quality & Efficiency Pruning):
-        # Rejeita trajetórias excessivamente longas/erráticas que ensinariam a política a vagar.
+        # 1. Filtro de Eficiência / Poda de Loops Erráticos ou Frontier Slicing:
+        # Rejeita trajetórias excessivamente longas/erráticas ou extrai o prefixo de fronteira decisivo.
         if depth > 0:
             if len(d_buf) < 4:
                 max_allowed = max(10, int(depth * 2.5))
             else:
                 max_allowed = max(8, int(depth * 2.0))
             if trajectory.length > max_allowed:
-                self.total_pruned += 1
-                return
+                if do_slice:
+                    # Frontier Slicing: preserva a descoberta no nível de fronteira cortando para o prefixo decisivo
+                    L = max_allowed
+                    sliced_obs = trajectory.obs[:L]
+                    sliced_delta = (
+                        trajectory.delta_obs[:L]
+                        if trajectory.delta_obs is not None
+                        else None
+                    )
+                    sliced_prev_actions = trajectory.prev_actions[:L]
+                    sliced_prev_rewards = trajectory.prev_rewards[:L]
+                    sliced_actions = trajectory.actions[:L]
+                    sliced_returns = trajectory.returns[:L]
+                    td_err = getattr(trajectory, "td_error", 0.0)
+                    if isinstance(trajectory, FrontierTransition):
+                        trajectory = FrontierTransition(
+                            obs=sliced_obs,
+                            delta_obs=sliced_delta,
+                            prev_actions=sliced_prev_actions,
+                            prev_rewards=sliced_prev_rewards,
+                            actions=sliced_actions,
+                            returns=sliced_returns,
+                            depth=depth,
+                            length=L,
+                            td_error=td_err,
+                        )
+                    else:
+                        trajectory = SuccessfulTrajectory(
+                            obs=sliced_obs,
+                            delta_obs=sliced_delta,
+                            prev_actions=sliced_prev_actions,
+                            prev_rewards=sliced_prev_rewards,
+                            actions=sliced_actions,
+                            returns=sliced_returns,
+                            depth=depth,
+                            length=L,
+                        )
+                else:
+                    self.total_pruned += 1
+                    return
+
+        # 2. Compressão de Observações Visuais para uint8 [0, 255] (Redução de 75% a 90% de RAM em jogos pixel)
+        if self.is_visual and trajectory.obs.dtype != np.uint8:
+            if np.issubdtype(trajectory.obs.dtype, np.floating):
+                max_val = float(np.max(trajectory.obs)) if trajectory.obs.size > 0 else 1.0
+                if max_val <= 1.0 + 1e-4:
+                    comp_obs = np.clip(trajectory.obs * 255.0, 0, 255).astype(np.uint8)
+                else:
+                    comp_obs = np.clip(trajectory.obs, 0, 255).astype(np.uint8)
+            else:
+                comp_obs = np.clip(trajectory.obs, 0, 255).astype(np.uint8)
+            trajectory.obs = comp_obs
 
         t_ret = float(trajectory.returns[0]) if len(trajectory.returns) > 0 else 0.0
         t_len = int(trajectory.length)
         new_quality = (t_ret, -t_len)
 
-        # 2. Quota local por estrato com substituição prioritária por qualidade:
+        # 3. Quota local por estrato com substituição prioritária por qualidade:
         # Em vez de FIFO cego que descarta demonstrações ótimas antigas, mantém as melhores trajetórias.
         if len(d_buf) >= self.max_per_depth:
             worst_idx = min(
@@ -404,7 +516,7 @@ class SuccessReplayBuffer:
             d_buf.append(trajectory)
             self.total_added += 1
 
-        # 3. Limite global: se o total exceder max_trajectories, descarte a trajetória de menor qualidade do menor nível
+        # 4. Limite global: se o total exceder max_trajectories, descarte a trajetória de menor qualidade do menor nível
         while len(self) > self.max_trajectories:
             non_empty_depths = [d for d in sorted(self._depth_buffers.keys()) if len(self._depth_buffers[d]) > 0]
             if not non_empty_depths:
@@ -426,7 +538,7 @@ class SuccessReplayBuffer:
         batch_size: int = 8,
         target_depth: Optional[int] = None,
     ) -> Optional[Dict[str, torch.Tensor]]:
-        """Amostra um mini-lote padronizado de trajetórias vitoriosas com balanceamento fronteira/âncora e máscara temporal."""
+        """Amostra um mini-lote padronizado de trajetórias/transições com balanceamento fronteira/âncora e máscara temporal."""
         if len(self) == 0:
             return None
 
@@ -445,8 +557,10 @@ class SuccessReplayBuffer:
             anchors = [t for t in self.trajectories if t.depth < frontier_min_depth]
 
             if len(frontier) > 0 and len(anchors) > 0:
-                # Dual sampling: 50% fronteira ativa / 50% âncoras fundacionais
-                n_frontier = max(1, k // 2)
+                # Prioritização de Fronteira: 75% fronteira ativa / 25% âncoras fundacionais
+                n_frontier = max(1, int(round(k * self.frontier_ratio)))
+                if n_frontier >= k and k > 1:
+                    n_frontier = k - 1
                 n_anchor = k - n_frontier
                 f_indices = np.random.choice(len(frontier), size=n_frontier, replace=(n_frontier > len(frontier)))
                 a_indices = np.random.choice(len(anchors), size=n_anchor, replace=(n_anchor > len(anchors)))
@@ -474,7 +588,10 @@ class SuccessReplayBuffer:
 
         for i, t in enumerate(sampled_trajs):
             L = t.length
-            b_obs[i, :L] = t.obs
+            if self.is_visual and t.obs.dtype == np.uint8:
+                b_obs[i, :L] = t.obs.astype(np.float32) / 255.0
+            else:
+                b_obs[i, :L] = t.obs
             if has_delta and t.delta_obs is not None:
                 b_delta[i, :L] = t.delta_obs
             b_prev_act[i, :L] = t.prev_actions
@@ -514,3 +631,17 @@ class SuccessReplayBuffer:
             "hx": tensor_hx,
             "dones": None,
         }
+
+
+# Alias universal para a Arquitetura de Transições de Fronteira
+FrontierTransitionBuffer = SuccessReplayBuffer
+
+__all__ = [
+    "RecurrentBatch",
+    "RecurrentRolloutBuffer",
+    "SuccessfulTrajectory",
+    "FrontierTransition",
+    "SuccessReplayBuffer",
+    "FrontierTransitionBuffer",
+]
+

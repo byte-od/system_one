@@ -11,6 +11,8 @@ from system1_engine.core.agent import UniversalS1Agent
 from system1_engine.env.wrapper import UniversalS1Wrapper
 from system1_engine.telemetry.tracker import LiveStatsTracker
 from system1_engine.training.buffer import (
+    FrontierTransition,
+    FrontierTransitionBuffer,
     RecurrentRolloutBuffer,
     SuccessReplayBuffer,
     SuccessfulTrajectory,
@@ -135,8 +137,8 @@ class RecurrentPPOTrainer:
             hidden_dim=self.trunk_hidden_dim,
         )
 
-        # Buffer estratificado por profundidade de trajetórias completas resolvidas para Self-Imitation Learning
-        self.sil_buffer = SuccessReplayBuffer(
+        # Buffer estratificado por profundidade de trajetórias e transições de fronteira (Frontier Transition Buffer)
+        self.sil_buffer = FrontierTransitionBuffer(
             max_trajectories=self.sil_max_trajectories,
             max_per_depth=self.sil_max_per_depth,
             is_visual=env.is_visual,
@@ -145,6 +147,8 @@ class RecurrentPPOTrainer:
             action_shape=act_shape,
             device=self.device,
             hidden_dim=self.trunk_hidden_dim,
+            frontier_slicing=True,
+            frontier_ratio=0.75,
         )
         self._active_vec_trajectories: List[List[Dict[str, Any]]] = [[] for _ in range(self.num_envs)]
         self._active_single_trajectory: List[Dict[str, Any]] = []
@@ -387,7 +391,7 @@ class RecurrentPPOTrainer:
                                             traj_returns[t_idx] = running_r
 
                                         self.sil_buffer.add(
-                                            SuccessfulTrajectory(
+                                            FrontierTransition(
                                                 obs=traj_obs,
                                                 delta_obs=traj_delta,
                                                 prev_actions=traj_prev_act,
@@ -396,6 +400,7 @@ class RecurrentPPOTrainer:
                                                 returns=traj_returns,
                                                 depth=d,
                                                 length=T_traj,
+                                                td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
                                             )
                                         )
                                         added_total += 1
@@ -455,7 +460,7 @@ class RecurrentPPOTrainer:
                                             running_r = t_steps[t_idx]["reward"] + self.gamma * running_r
                                             traj_returns[t_idx] = running_r
                                         self.sil_buffer.add(
-                                            SuccessfulTrajectory(
+                                            FrontierTransition(
                                                 obs=traj_obs,
                                                 delta_obs=traj_delta,
                                                 prev_actions=traj_prev_act,
@@ -464,6 +469,7 @@ class RecurrentPPOTrainer:
                                                 returns=traj_returns,
                                                 depth=d,
                                                 length=T_traj,
+                                                td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
                                             )
                                         )
                                         added_total += 1
@@ -787,7 +793,7 @@ class RecurrentPPOTrainer:
 
                                 cur_d = int(d_info.get("scramble_depth", d_info.get("current_depth", 1))) if isinstance(d_info, dict) else 1
                                 self.sil_buffer.add(
-                                    SuccessfulTrajectory(
+                                    FrontierTransition(
                                         obs=traj_obs,
                                         delta_obs=traj_delta,
                                         prev_actions=traj_prev_act,
@@ -796,6 +802,7 @@ class RecurrentPPOTrainer:
                                         returns=traj_returns,
                                         depth=cur_d,
                                         length=T_traj,
+                                        td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
                                     )
                                 )
                             self._active_vec_trajectories[d_i].clear()
@@ -1206,7 +1213,7 @@ class RecurrentPPOTrainer:
 
                             cur_d = int(env_info.get("scramble_depth", env_info.get("current_depth", 1))) if isinstance(env_info, dict) else 1
                             self.sil_buffer.add(
-                                SuccessfulTrajectory(
+                                FrontierTransition(
                                     obs=traj_obs,
                                     delta_obs=traj_delta,
                                     prev_actions=traj_prev_act,
@@ -1215,6 +1222,7 @@ class RecurrentPPOTrainer:
                                     returns=traj_returns,
                                     depth=cur_d,
                                     length=T_traj,
+                                    td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
                                 )
                             )
                         self._active_single_trajectory.clear()
