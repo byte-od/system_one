@@ -232,15 +232,15 @@ def find_latest_trained_checkpoint(env_id: str, project_root: Optional[Path] = N
 
     def sort_key(p: Path):
         name = p.stem.lower()
-        is_cerberus = 1 if "cerberus" in name else 0
-        has_trained = 1 if ("trained" in name or is_cerberus) else 0
+        is_aura = 1 if ("aura" in name or "cerberus" in name) else 0
+        has_trained = 1 if ("trained" in name or is_aura) else 0
         m = re.search(r"_v(\d+)$", name)
         ver = int(m.group(1)) if m else (1 if has_trained else 0)
         try:
             mtime = p.stat().st_mtime
         except OSError:
             mtime = 0.0
-        return (is_cerberus, has_trained, ver, mtime)
+        return (is_aura, has_trained, ver, mtime)
 
     matching.sort(key=sort_key, reverse=True)
     return str(matching[0])
@@ -263,14 +263,14 @@ def generate_web_manifest(
     metadata_catalog = {
         "s1_rubiks_atomic.onnx": {
             "key": "rubiks_atomic",
-            "name": "⚡ Cerberus-v1: Cubo Mágico 3x3 (1.6M Multi-Timescale)",
+            "name": "⚡ A.U.R.A: Cubo Mágico 3x3 (1.6M Multi-Timescale)",
             "env_id": "RubiksCube-v0",
             "type": "rubiks",
             "mode": "atomic",
             "obs_dim": 324,
             "act_dim": 12,
             "discrete": True,
-            "description": "Cerberus-v1: Tronco recorrente de 1.6M parâmetros com Fast GRU + Slow GRU + Residual Highway. 12 giros atômicos, latência sub-milissegundo.",
+            "description": "A.U.R.A: Tronco recorrente de 1.6M parâmetros com Fast GRU + Slow GRU + Residual Highway. 12 giros atômicos, latência sub-milissegundo.",
             "default": True,
         },
         "s1_rubiks_macro.onnx": {
@@ -380,11 +380,17 @@ def generate_web_manifest(
                 source_ckpt = os.path.basename(found)
             else:
                 clean_env_id = target_env.lower().replace("-", "_")
-                source_ckpt = f"s1_{clean_env_id}_trained.pt"
+                if target_env == "RubiksCube-v0" or filename == "s1_rubiks_atomic.onnx":
+                    source_ckpt = "s1_rubikscube_v0_aura.pt"
+                else:
+                    source_ckpt = f"s1_{clean_env_id}_trained.pt"
         if source_ckpt:
             meta["checkpoint_source"] = source_ckpt
             m_ver = re.search(r"_v(\d+)$", Path(source_ckpt).stem)
-            meta["checkpoint_version"] = f"v{m_ver.group(1)}" if m_ver else "v1"
+            if "aura" in source_ckpt.lower():
+                meta["checkpoint_version"] = f"A.U.R.A{' v' + m_ver.group(1) if m_ver else ''}"
+            else:
+                meta["checkpoint_version"] = f"v{m_ver.group(1)}" if m_ver else "v1"
 
         key = meta.get("key", onnx_path.stem)
         models_dict[key] = meta

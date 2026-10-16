@@ -187,7 +187,7 @@
         OPERATIONAL CONTROL HUD
       </span>
       <div id="hud-model-badge" class="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-950/80 border border-amber-500/70 text-amber-300 font-mono text-[11px] font-bold shadow-sm" title="Modelo ativo no motor System 1">
-        <span>⚡ Modelo:</span> <span id="hud-model-name" class="text-white">Cerberus-v1</span>
+        <span>⚡ Modelo:</span> <span id="hud-model-name" class="text-white">A.U.R.A</span>
       </div>
       <a href="/web/" target="_blank" rel="noopener noreferrer" class="ml-2 px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white border border-cyan-400/50 shadow flex items-center gap-1.5 transition" title="Abrir HUD Web Interativo no Navegador (ONNX WebAssembly)">
         <span>🌐</span> HUD Web (ONNX) ↗
@@ -287,7 +287,7 @@
             <option value="Pendulum-v1">Pendulum-v1 (Vetor, Contínuo Box)</option>
             <option value="MountainCar-v0">MountainCar-v0 (Vetor, 2D)</option>
             <option value="Ant-v5">🐜 Ant-v5 (MuJoCo, 105D, 8 Ações Contínuas)</option>
-            <option value="RubiksCube-v0" selected>⚡ Cerberus-v1: Cubo Mágico 3x3 (Atômico 1.6M)</option>
+            <option value="RubiksCube-v0" selected>⚡ A.U.R.A: Cubo Mágico 3x3 (Atômico 1.6M)</option>
             <option value="RubiksCubeMacro-v0">Cubo Mágico: Macro-Ações (CFOP / 12 Algoritmos)</option>
             <option value="vizdoom">ViZDoom (Nativo / Visual IMPALA)</option>
             <option value="custom">Outro (Customizado Gymnasium...)</option>
@@ -397,7 +397,7 @@
               <button type="button" onclick="suggestCheckpointName(true)" class="badge-btn" title="Gera ou incrementa um nome de arquivo .pt contextualizado com o ambiente e cenário selecionados">🪄 Sugerir Nome</button>
             </div>
             <div id="save-input-container" class="flex flex-col gap-1">
-              <input type="text" id="cfg-save" placeholder="ex: s1_cartpole_trained.pt" value="s1_rubikscube_v0_cerberus_v2.pt" class="hud-input" oninput="checkSaveConflict()" />
+              <input type="text" id="cfg-save" placeholder="ex: s1_cartpole_trained.pt" value="s1_rubikscube_v0_aura.pt" class="hud-input" oninput="checkSaveConflict()" />
               <div id="save-status-msg" class="text-[10px] text-gray-500 font-mono"></div>
               <label class="flex items-center gap-1.5 cursor-pointer text-[10px] text-emerald-400 font-mono mt-0.5 select-none" title="Converte automaticamente para formato ONNX e sincroniza com web/models e o portfólio oficial">
                 <input type="checkbox" id="chk-auto-sync-web" checked class="w-3 h-3 rounded bg-gray-900 border-gray-700 text-emerald-500 focus:ring-0 cursor-pointer" />
@@ -789,7 +789,7 @@
             </p>
           </div>
           <div id="video-overlay" class="absolute bottom-2 left-2 right-2 flex justify-between items-center px-2 py-1 rounded bg-black/60 backdrop-blur-sm text-[10px] font-mono text-gray-400 pointer-events-none">
-            <span id="overlay-env" class="text-cyan-400 font-bold">⚡ Cerberus-v1 (RubiksCube-v0)</span>
+            <span id="overlay-env" class="text-cyan-400 font-bold">⚡ A.U.R.A (RubiksCube-v0)</span>
             <span id="overlay-fps">50.0 FPS</span>
           </div>
         </div>
@@ -1441,9 +1441,9 @@
       const customSug = document.getElementById('custom-env-suggestions');
       if (customSug) customSug.classList.toggle('hidden', env !== 'custom');
       document.getElementById('group-vizdoom-scenario').classList.toggle('hidden', env !== 'vizdoom');
-      const isCerberus = actualEnv === 'RubiksCube-v0';
-      const modelName = isCerberus ? 'Cerberus-v1' : actualEnv;
-      document.getElementById('overlay-env').innerText = isCerberus ? '⚡ Cerberus-v1 (RubiksCube-v0)' : (actualEnv || 'Custom');
+      const isAura = actualEnv === 'RubiksCube-v0';
+      const modelName = isAura ? 'A.U.R.A' : actualEnv;
+      document.getElementById('overlay-env').innerText = isAura ? '⚡ A.U.R.A (RubiksCube-v0)' : (actualEnv || 'Custom');
       const modelBadgeEl = document.getElementById('hud-model-name');
       if (modelBadgeEl) {
         modelBadgeEl.innerText = modelName;
@@ -1619,7 +1619,7 @@
       const suffix = 'trained';
 
       if (envVal === 'RubiksCube-v0') {
-        return 's1_rubikscube_v0_cerberus';
+        return 's1_rubikscube_v0_aura';
       } else if (envVal === 'vizdoom') {
         if (scenarioClean && scenarioClean !== 'vizdoom') {
           return `s1_vizdoom_${scenarioClean}_${suffix}`;
@@ -1732,8 +1732,8 @@
       }
       const item = availableCheckpointsDetailed.find(c => c.path === val);
       if (item) {
-        const isCerberus = item.trunk_type === 'lean' || (item.path && item.path.toLowerCase().includes('cerberus'));
-        const modelLabel = isCerberus ? 'Modelo: ⚡ Cerberus-v1 (Lean 512D) • ' : (item.trunk_type === 'classic' ? 'Modelo: Classic 256D • ' : '');
+        const isAura = item.trunk_type === 'lean' || (item.path && (item.path.toLowerCase().includes('aura') || item.path.toLowerCase().includes('cerberus')));
+        const modelLabel = isAura ? 'Modelo: ⚡ A.U.R.A (Lean 512D) • ' : (item.trunk_type === 'classic' ? 'Modelo: Classic 256D • ' : '');
         const depthVal = getCheckpointDepth(item);
         const maxDepthVal = getCheckpointMaxDepth(item);
         const reachedVal = getCheckpointReachedDepth(item);
@@ -1749,10 +1749,10 @@
 
         const modelBadgeEl = document.getElementById('hud-model-name');
         if (modelBadgeEl) {
-          modelBadgeEl.innerText = isCerberus ? 'Cerberus-v1' : (item.env_id || 'Ativo');
+          modelBadgeEl.innerText = isAura ? 'A.U.R.A' : (item.env_id || 'Ativo');
         }
-        if (isCerberus) {
-          document.getElementById('overlay-env').innerText = `⚡ Cerberus-v1 (${item.env_id || 'RubiksCube-v0'})`;
+        if (isAura) {
+          document.getElementById('overlay-env').innerText = `⚡ A.U.R.A (${item.env_id || 'RubiksCube-v0'})`;
         }
       } else {
         metaEl.innerText = `Arquivo selecionado: ${val}`;
@@ -1877,8 +1877,8 @@
       }
       const retStr = formatCheckpointReturns(item, true);
       const retInfo = retStr ? ` • ${retStr}` : '';
-      const isCerberus = item.trunk_type === 'lean' || (item.path && item.path.toLowerCase().includes('cerberus'));
-      const modelTag = isCerberus ? '⚡ Modelo: Cerberus-v1 • ' : '';
+      const isAura = item.trunk_type === 'lean' || (item.path && (item.path.toLowerCase().includes('aura') || item.path.toLowerCase().includes('cerberus')));
+      const modelTag = isAura ? '⚡ Modelo: A.U.R.A • ' : '';
       if (metaEl) metaEl.innerText = `${modelTag}${envInfo}${dimInfo}${depthInfo}${retInfo}`;
 
       const currentEnv = document.getElementById('cfg-env').value;
@@ -2424,13 +2424,13 @@
       availableCheckpointsDetailed.forEach(ckpt => {
         const depthVal = getCheckpointDepth(ckpt);
         const maxDepthVal = getCheckpointMaxDepth(ckpt);
-        const cerberusTag = (ckpt.trunk_type === 'lean' || (ckpt.path && ckpt.path.toLowerCase().includes('cerberus'))) ? ' [⚡ Cerberus-v1]' : '';
+        const auraTag = (ckpt.trunk_type === 'lean' || (ckpt.path && (ckpt.path.toLowerCase().includes('aura') || ckpt.path.toLowerCase().includes('cerberus')))) ? ' [⚡ A.U.R.A]' : '';
         const envTag = ckpt.env_id ? ` [${ckpt.env_id}]` : '';
         const depthTag = depthVal ? ` [🎓 D${depthVal}${maxDepthVal ? '/' + maxDepthVal : ''}]` : '';
         const retText = formatCheckpointReturns(ckpt, false);
         const retTag = retText ? ` [${retText}]` : '';
         const dimTag = (ckpt.obs_dim && ckpt.act_dim) ? ` (${ckpt.obs_dim}D→${ckpt.act_dim}A)` : '';
-        const optText = `${ckpt.path}${cerberusTag}${envTag}${depthTag}${retTag}${dimTag} • ${ckpt.size_mb} MB`;
+        const optText = `${ckpt.path}${auraTag}${envTag}${depthTag}${retTag}${dimTag} • ${ckpt.size_mb} MB`;
         loadSel.innerHTML += `<option value="${ckpt.path}">${optText}</option>`;
         transSel.innerHTML += `<option value="${ckpt.path}">${optText}</option>`;
       });
@@ -2439,7 +2439,7 @@
         loadSel.value = curLoad;
       } else if (!curLoad && availableCheckpointsDetailed.length > 0) {
         const curEnv = document.getElementById('cfg-env').value;
-        const matchingCkpt = availableCheckpointsDetailed.find(c => c.env_id === curEnv && (c.trunk_type === 'lean' || c.path.includes('cerberus'))) || availableCheckpointsDetailed.find(c => c.env_id === curEnv);
+        const matchingCkpt = availableCheckpointsDetailed.find(c => c.env_id === curEnv && (c.trunk_type === 'lean' || c.path.includes('aura') || c.path.includes('cerberus'))) || availableCheckpointsDetailed.find(c => c.env_id === curEnv);
         if (matchingCkpt) {
           loadSel.value = matchingCkpt.path;
         }
@@ -2468,8 +2468,8 @@
         const depthVal = getCheckpointDepth(item);
         const maxDepthVal = getCheckpointMaxDepth(item);
         const reachedDepth = getCheckpointReachedDepth(item);
-        const isCerberus = item.trunk_type === 'lean' || (item.path && item.path.toLowerCase().includes('cerberus'));
-        const cerberusBadge = isCerberus ? `<span class="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 text-[9px] border border-amber-800 font-bold" title="Arquitetura Cerberus-v1 (Tronco LeanResidualTrunk 512D Multi-Timescale, 1.6M)">⚡ Cerberus-v1</span>` : '';
+        const isAura = item.trunk_type === 'lean' || (item.path && (item.path.toLowerCase().includes('aura') || item.path.toLowerCase().includes('cerberus')));
+        const auraBadge = isAura ? `<span class="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 text-[9px] border border-amber-800 font-bold" title="Arquitetura A.U.R.A (Tronco LeanResidualTrunk 512D Multi-Timescale, 1.6M)">⚡ A.U.R.A</span>` : '';
         const div = document.createElement('div');
         div.className = 'flex items-center justify-between p-1.5 rounded bg-gray-900/70 border border-gray-800 text-xs';
         const envBadge = item.env_id ? `<span class="px-1 py-0.2 rounded bg-cyan-950 text-cyan-400 text-[9px] border border-cyan-800 font-bold">${item.env_id}</span>` : '';
@@ -2480,7 +2480,7 @@
         }
         const depthBadge = depthVal ? `<span class="px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 text-[9px] border border-purple-800 font-bold" title="${depthTitle}">🎓 D${depthVal}${maxDepthVal ? '/' + maxDepthVal : ''}</span>` : '';
         const dimBadge = (item.obs_dim && item.act_dim) ? `<span class="text-[9px] text-gray-400 font-mono">${item.obs_dim}D obs • ${item.act_dim} ações</span>` : '';
-        const trunkInfo = item.trunk_type ? `<span>•</span> <span class="font-mono text-cyan-400">${item.trunk_type === 'lean' ? 'Lean 512D (Cerberus)' : 'Classic 256D'}</span>` : '';
+        const trunkInfo = item.trunk_type ? `<span>•</span> <span class="font-mono text-cyan-400">${item.trunk_type === 'lean' ? 'Lean 512D (A.U.R.A)' : 'Classic 256D'}</span>` : '';
         
         let retBadge = '';
         const retText = formatCheckpointReturns(item, true);
@@ -2499,7 +2499,7 @@
           <div class="flex flex-col min-w-0 pr-2 gap-0.5">
             <div class="flex items-center gap-1.5 flex-wrap">
               <span class="font-bold text-gray-200 truncate font-mono text-[11px]">${item.path}</span>
-              ${cerberusBadge}
+              ${auraBadge}
               ${envBadge}
               ${depthBadge}
             </div>

@@ -35,9 +35,9 @@ class TelemetrySpec:
 @dataclass(frozen=True)
 class CheckpointSpec:
     """Convenção oficial de nomenclatura e auto-resolução de checkpoints do System 1."""
-    required_keywords: tuple = ("trained", "cerberus")
-    pattern: str = r"^s1_.+_(?:trained|cerberus)(?:_v\d+)?\.pt$"
-    description: str = "Checkpoints PyTorch (.pt) salvos e treinados devem conter 'trained' ou linhagem canônica ('cerberus') no nome."
+    required_keywords: tuple = ("trained", "cerberus", "aura")
+    pattern: str = r"^s1_.+_(?:trained|cerberus|aura)(?:_v\d+)?\.pt$"
+    description: str = "Checkpoints PyTorch (.pt) salvos e treinados devem conter 'trained' ou linhagem canônica ('aura', 'cerberus') no nome."
 
 
 class HUDWebParityContract:
