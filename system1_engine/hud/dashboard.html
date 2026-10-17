@@ -176,7 +176,7 @@
     }
   </style>
 </head>
-<body class="p-4 min-h-screen flex flex-col justify-between">
+<body class="p-3 sm:p-4 min-h-screen flex flex-col bg-[#050811] text-gray-100">
   <!-- Top Navigation & Global Controls -->
   <header class="card p-3 mb-3 flex flex-wrap justify-between items-center gap-3 border-b border-gray-800 shadow-md">
     <div class="flex items-center gap-3 flex-wrap">
@@ -226,7 +226,7 @@
       <a href="/web/" target="_blank" rel="noopener noreferrer" class="px-2 py-1.5 rounded text-xs font-bold bg-gray-900 hover:bg-gray-800 text-cyan-400 border border-gray-800 flex items-center gap-1 transition" title="Abrir HUD Web 3D (ONNX Wasm)">
         <span>🌐</span> Web ↗
       </a>
-      <button type="button" id="btn-sync-web-models" onclick="triggerWebModelSync()" class="px-2 py-1.5 rounded text-[11px] font-mono font-semibold bg-gray-900 hover:bg-gray-800 text-cyan-300 border border-cyan-800/60 shadow-sm flex items-center gap-1 transition cursor-pointer" title="Sincronizar checkpoints PyTorch para modelos ONNX do HUD Web">
+      <button type="button" id="btn-sync-web-models" onclick="triggerWebModelSync()" class="px-2.5 py-1.5 rounded text-[11px] font-mono font-semibold bg-gray-900 hover:bg-gray-800 text-cyan-300 border border-cyan-800/60 shadow-sm flex items-center gap-1 transition cursor-pointer" title="Sincronizar checkpoints PyTorch para modelos ONNX do HUD Web">
         <span>🔄</span> Sincronizar ONNX
       </button>
     </div>
@@ -249,6 +249,7 @@
       <button type="button" id="tab-layout-train" onclick="selectAppMode('train', true)"></button>
       <button type="button" id="tab-layout-eval" onclick="selectAppMode('eval', true)"></button>
       <img id="stream-img" src="/video_feed" class="hidden" alt="Stream Bridge" />
+      <span id="footer-sse-status" class="text-green-400">CONECTADO</span>
     </div>
   </header>
 
@@ -361,7 +362,7 @@
                 <span>🖥️</span> Terminal de Logs do Motor
               </span>
               <span id="term-status-pill" class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold">PRONTO</span>
-              <span id="log-count-badge" class="text-[9px] font-mono text-gray-500 border-l border-gray-800 pl-2">0 linhas</span>
+              <span id="log-count-badge" class="text-[9px] font-mono text-cyan-400 border-l border-gray-800 pl-2 font-semibold">0 / 30 linhas</span>
             </div>
 
             <!-- Controles do Terminal: Limpar, Copiar, Autoscroll -->
@@ -1205,16 +1206,7 @@
     </div>
   </div>
 
-  <footer class="mt-4 pt-2 border-t border-gray-800/80 text-[11px] text-gray-500 flex justify-between items-center">
-    <div class="flex items-center gap-2">
-      <span>System 1 Engine • Amortized Reflex Intelligence Framework</span>
-      <span>•</span>
-      <a href="https://gymnasium.farama.org/environments/" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:text-cyan-300 underline font-mono text-[10px]" title="Documentação completa do ecossistema Farama Gymnasium">
-        Gymnasium Farama Docs ↗
-      </a>
-    </div>
-    <div class="font-mono">Status SSE: <span id="footer-sse-status" class="text-green-400">CONECTADO</span></div>
-  </footer>
+
 
   <script>
     // Autenticação Segura via Token (?token=... ou Header)
@@ -1752,20 +1744,21 @@
       term.innerHTML = '';
       if (_logsHistory.length === 0) {
         term.innerHTML = '<div class="text-gray-500 italic">Central HUD pronta. Configure os parâmetros e clique em Iniciar.</div>';
+        const countBadge = document.getElementById('log-count-badge');
+        if (countBadge) countBadge.innerText = '0 / 30 linhas';
         return;
       }
 
+      const matching = _logsHistory.filter(item => matchesLogCategory(item.cleanLine, _currentLogCategory, query));
+      const sliced = matching.slice(-30);
+
       const frag = document.createDocumentFragment();
-      let matchedCount = 0;
-      _logsHistory.forEach(item => {
-        if (matchesLogCategory(item.cleanLine, _currentLogCategory, query)) {
-          const { div } = createLogDiv(item.raw);
-          frag.appendChild(div);
-          matchedCount++;
-        }
+      sliced.forEach(item => {
+        const { div } = createLogDiv(item.raw);
+        frag.appendChild(div);
       });
 
-      if (matchedCount === 0) {
+      if (sliced.length === 0) {
         const noDiv = document.createElement('div');
         noDiv.className = 'text-gray-500 italic py-2';
         noDiv.innerText = 'Nenhuma linha encontrada para o filtro selecionado.';
@@ -1773,6 +1766,9 @@
       } else {
         term.appendChild(frag);
       }
+
+      const countBadge = document.getElementById('log-count-badge');
+      if (countBadge) countBadge.innerText = `${sliced.length} / 30 linhas`;
 
       if (document.getElementById('chk-autoscroll')?.checked) {
         term.scrollTop = term.scrollHeight;
@@ -2503,7 +2499,7 @@
     async function clearLogs() {
       _logsHistory = [];
       const countBadge = document.getElementById('log-count-badge');
-      if (countBadge) countBadge.innerText = '0 linhas';
+      if (countBadge) countBadge.innerText = '0 / 30 linhas';
       
       const term = document.getElementById('terminal-logs');
       if (term) term.innerHTML = '<div class="text-gray-500 italic">Central HUD limpa. Configure os parâmetros e clique em Iniciar.</div>';
@@ -2584,10 +2580,10 @@
     function appendLog(line) {
       const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
       _logsHistory.push({ raw: line, cleanLine: cleanLine });
-      if (_logsHistory.length > 3000) _logsHistory.shift();
+      if (_logsHistory.length > 30) _logsHistory.shift();
 
       const countBadge = document.getElementById('log-count-badge');
-      if (countBadge) countBadge.innerText = `${_logsHistory.length} linhas`;
+      if (countBadge) countBadge.innerText = `${_logsHistory.length} / 30 linhas`;
 
       const query = (document.getElementById('log-search-input')?.value || '').toLowerCase().trim();
       if (matchesLogCategory(cleanLine, _currentLogCategory, query)) {
@@ -2599,13 +2595,18 @@
           const { div } = createLogDiv(line);
           term.appendChild(div);
 
+          // Limitar rigorosamente às últimas 30 linhas na DOM
+          while (term.children.length > 30) {
+            term.removeChild(term.firstElementChild);
+          }
+
           if (document.getElementById('chk-autoscroll')?.checked) {
             term.scrollTop = term.scrollHeight;
           }
         }
       }
 
-      // Append ao mini-logs da avaliação
+      // Append ao mini-logs da avaliação (também limitado às últimas 30 linhas)
       const evalLogs = document.getElementById('eval-mini-logs');
       if (evalLogs) {
         if (evalLogs.children.length === 1 && evalLogs.children[0].classList.contains('italic')) {
@@ -2613,6 +2614,9 @@
         }
         const { div } = createLogDiv(line);
         evalLogs.appendChild(div);
+        while (evalLogs.children.length > 30) {
+          evalLogs.removeChild(evalLogs.firstElementChild);
+        }
         evalLogs.scrollTop = evalLogs.scrollHeight;
       }
     }
