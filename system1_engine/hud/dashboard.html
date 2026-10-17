@@ -177,970 +177,956 @@
   </style>
 </head>
 <body class="p-4 min-h-screen flex flex-col justify-between">
-  <!-- Top Navigation & Global KPIs -->
-  <header class="card p-3 mb-4 flex flex-wrap justify-between items-center gap-4 border-b border-gray-800">
-    <div class="flex items-center gap-3">
-      <span class="text-2xl font-black tracking-wider text-cyan-400 flex items-center gap-2">
-        <span>⚡</span> A.U.R.A
+  <!-- Top Navigation & Global Controls -->
+  <header class="card p-3 mb-3 flex flex-wrap justify-between items-center gap-3 border-b border-gray-800 shadow-md">
+    <div class="flex items-center gap-3 flex-wrap">
+      <span class="text-xl font-black tracking-wider text-cyan-400 flex items-center gap-1.5">
+        <span>⚡</span> SYSTEM 1 ENGINE
       </span>
       <span class="px-2 py-0.5 rounded text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-800 font-bold tracking-widest uppercase">
-        SYSTEM 1 ENGINE • OPERATIONAL CONTROL HUD
+        Visual Control HUD
       </span>
       <div id="hud-model-badge" class="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-950/80 border border-amber-500/70 text-amber-300 font-mono text-[11px] font-bold shadow-sm" title="Modelo ativo no motor System 1">
         <span>⚡ Modelo:</span> <span id="hud-model-name" class="text-white">RubiksCube-v0</span>
       </div>
-      <a href="/web/" target="_blank" rel="noopener noreferrer" class="ml-2 px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white border border-cyan-400/50 shadow flex items-center gap-1.5 transition" title="Abrir HUD Web Interativo no Navegador (ONNX WebAssembly)">
-        <span>🌐</span> HUD Web (ONNX) ↗
+      <div id="device-hw-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-gray-900 text-cyan-400 border border-gray-800 flex items-center gap-1.5" title="Hardware detectado pelo motor System 1">
+        <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+        <span id="device-hw-text">Detectando...</span>
+      </div>
+    </div>
+
+    <!-- SELETOR PRINCIPAL DE FOCO: TREINO vs AVALIAÇÃO -->
+    <div class="flex items-center gap-1 bg-gray-950 p-1 rounded-lg border border-gray-800 shadow-inner">
+      <button type="button" id="tab-mode-train" onclick="selectAppMode('train', true)" class="px-3.5 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-cyan-600 text-white shadow" title="Foco em Logs em tempo real e Status de convergência do treinamento">
+        <span>🏋️</span> Treinamento (Logs & Status)
+      </button>
+      <button type="button" id="tab-mode-eval" onclick="selectAppMode('eval', true)" class="px-3.5 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-gray-900 text-gray-400 hover:text-gray-200 border border-transparent hover:border-gray-800" title="Foco na Visualização gráfica, Scoreboard de pontuação e Controles interativos">
+        <span>🎮</span> Avaliação (Simulação & Scores)
+      </button>
+    </div>
+
+    <!-- STATUS DO MOTOR & AÇÕES DE ACESSO RÁPIDO -->
+    <div class="flex items-center gap-2 flex-wrap">
+      <div class="flex items-center gap-2 px-2.5 py-1 rounded bg-gray-900 border border-gray-800">
+        <span id="global-status-dot" class="status-dot bg-gray-500"></span>
+        <span id="global-status-text" class="text-xs font-bold uppercase text-gray-400">IDLE</span>
+      </div>
+      <button type="button" id="btn-start" onclick="startExecution()" class="py-1.5 px-3 rounded bg-emerald-600 hover:bg-emerald-500 font-bold text-white text-xs uppercase flex items-center gap-1.5 transition shadow cursor-pointer">
+        <span>▶️</span> Iniciar
+      </button>
+      <button type="button" id="btn-stop" onclick="stopExecution()" disabled class="py-1.5 px-3 rounded bg-rose-900/40 text-gray-500 font-bold text-xs uppercase flex items-center gap-1.5 border border-rose-900/60 transition cursor-not-allowed">
+        <span>⏹️</span> Parar
+      </button>
+      <button type="button" onclick="toggleSettingsDrawer()" id="btn-toggle-settings" class="px-2.5 py-1.5 rounded bg-gray-900 hover:bg-gray-800 text-gray-300 border border-gray-700 text-xs font-semibold flex items-center gap-1 transition cursor-pointer" title="Configurar Parâmetros de Execução">
+        <span>⚙️</span> Configurações
+      </button>
+      <button type="button" onclick="openCheckpointsModal()" class="px-2.5 py-1.5 rounded bg-gray-900 hover:bg-gray-800 text-purple-300 border border-purple-900/60 text-xs font-semibold flex items-center gap-1 transition cursor-pointer" title="Gerenciar Checkpoints Salvos">
+        <span>💾</span> Checkpoints
+      </button>
+      <a href="/web/" target="_blank" rel="noopener noreferrer" class="px-2 py-1.5 rounded text-xs font-bold bg-gray-900 hover:bg-gray-800 text-cyan-400 border border-gray-800 flex items-center gap-1 transition" title="Abrir HUD Web 3D (ONNX Wasm)">
+        <span>🌐</span> Web ↗
       </a>
-      <button type="button" id="btn-sync-web-models" onclick="triggerWebModelSync()" class="px-2 py-1 rounded text-[11px] font-mono font-semibold bg-gray-900 hover:bg-gray-800 text-cyan-300 border border-cyan-700/60 shadow-sm flex items-center gap-1 transition cursor-pointer" title="Sincronizar checkpoints PyTorch (.pt) para modelos ONNX do HUD Web">
+      <button type="button" id="btn-sync-web-models" onclick="triggerWebModelSync()" class="px-2 py-1.5 rounded text-[11px] font-mono font-semibold bg-gray-900 hover:bg-gray-800 text-cyan-300 border border-cyan-800/60 shadow-sm flex items-center gap-1 transition cursor-pointer" title="Sincronizar checkpoints PyTorch para modelos ONNX do HUD Web">
         <span>🔄</span> Sincronizar ONNX
       </button>
     </div>
 
-    <!-- Alternador de Foco Contextual: Treino (Logs & Status) vs Avaliação (Visualização & Scores) -->
-    <div class="flex items-center gap-1 bg-gray-950/90 p-1 rounded-lg border border-gray-800 shadow-inner">
-      <button type="button" id="tab-layout-train" onclick="setLayoutFocus('train', true)" class="px-2.5 py-1 rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-cyan-600 text-white shadow" title="Foco no Treinamento: Logs em tempo real expandidos, convergência, perdas PPO e status do currículo">
-        <span>🏋️</span> Foco Treino (Logs & Status)
-      </button>
-      <button type="button" id="tab-layout-eval" onclick="setLayoutFocus('eval', true)" class="px-2.5 py-1 rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-gray-900 text-gray-400 hover:text-gray-200 border border-transparent hover:border-gray-800" title="Foco na Avaliação: Visualização gráfica proeminente, scoreboard com scores/confiança e controles interativos">
-        <span>🎮</span> Foco Avaliação (Visualização & Scores)
-      </button>
-    </div>
-
-    <!-- Indicador de Status Global & Hardware -->
-    <div class="flex items-center gap-2.5">
-      <div id="device-hw-badge" class="px-2 py-1 rounded text-[10px] font-mono bg-cyan-950 text-cyan-400 border border-cyan-800 flex items-center gap-1.5" title="Hardware detectado pelo motor System 1">
-        <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
-        <span id="device-hw-text">Detectando...</span>
+    <!-- Fallbacks invisíveis para garantir 100% de paridade de IDs com scripts legados e testes -->
+    <div class="hidden">
+      <span id="kpi-fps">0.0</span>
+      <span id="kpi-steps-label">Passos</span>
+      <span id="kpi-steps">0.0%</span>
+      <span id="kpi-return">0.00</span>
+      <span id="kpi-latency">0.0 µs</span>
+      <span id="kpi-confidence">0.0%</span>
+      <div id="kpi-curriculum-container">
+        <span id="kpi-curriculum-depth">D1</span>
+        <span id="kpi-curriculum-rate"></span>
+        <span id="kpi-curriculum-peak-wrapper"><span id="kpi-curriculum-peak-depth">1</span><span id="kpi-curriculum-peak-val">0.00</span></span>
+        <span id="kpi-curriculum-peak-badge"><span id="kpi-curriculum-badge-depth">1</span><span id="kpi-curriculum-badge-val">0.00</span></span>
       </div>
-      <div class="flex items-center gap-2 px-3 py-1 rounded bg-gray-900 border border-gray-800">
-        <span id="global-status-dot" class="status-dot bg-gray-500"></span>
-        <span id="global-status-text" class="text-xs font-bold uppercase text-gray-400">IDLE</span>
-      </div>
-    </div>
-
-    <!-- Quick KPIs -->
-    <div class="flex flex-wrap items-center gap-4 text-xs bg-gray-900/80 px-4 py-1.5 rounded border border-gray-800">
-      <div>FPS Simulação: <span id="kpi-fps" class="font-bold text-green-400">0.0</span></div>
-      <div><span id="kpi-steps-label">Passos</span>: <span id="kpi-steps" class="font-bold text-yellow-400" title="Progresso da meta de passos">0.0%</span></div>
-      <div>Pico: <span id="kpi-return" class="font-bold text-cyan-400" title="Maior pontuação alcançada em um único episódio">0.00</span> <span id="kpi-curriculum-peak-wrapper" class="hidden text-purple-300 font-mono text-[11px]" title="Maior pontuação alcançada na profundidade atual do currículo">(D<span id="kpi-curriculum-peak-depth">1</span>: <span id="kpi-curriculum-peak-val" class="font-bold text-cyan-300">0.00</span>)</span></div>
-      <div>Latência P50: <span id="kpi-latency" class="font-bold text-pink-400">0.0 µs</span></div>
-      <div>Confiança: <span id="kpi-confidence" class="font-bold text-emerald-400">0.0%</span></div>
-      <div id="kpi-curriculum-container" class="hidden flex items-center gap-1.5 bg-purple-950/60 px-2 py-0.5 rounded border border-purple-800/60">🎓 Currículo: <span id="kpi-curriculum-depth" class="font-bold text-purple-300">D1</span> <span id="kpi-curriculum-rate" class="text-purple-400 text-[10px]"></span> <span id="kpi-curriculum-peak-badge" class="hidden text-cyan-300 text-[10px] font-bold pl-1.5 border-l border-purple-700/60" title="Pico na profundidade atual">Pico D<span id="kpi-curriculum-badge-depth">1</span>: <span id="kpi-curriculum-badge-val">0.00</span></span></div>
-      <div id="kpi-sil-container" class="hidden flex items-center gap-1.5 bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-800/60" title="Trajetórias vitoriosas preservadas no Self-Imitation Learning (SIL)">🧠 SIL: <span id="kpi-sil-count" class="font-bold text-indigo-300">0</span> <span class="text-indigo-400 text-[10px]">vitórias</span></div>
+      <div id="kpi-sil-container"><span id="kpi-sil-count">0</span></div>
+      <button type="button" id="tab-layout-train" onclick="selectAppMode('train', true)"></button>
+      <button type="button" id="tab-layout-eval" onclick="selectAppMode('eval', true)"></button>
+      <img id="stream-img" src="/video_feed" class="hidden" alt="Stream Bridge" />
     </div>
   </header>
 
-  <!-- Main 3-Column Grid -->
-  <main class="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1">
-    
-    <!-- COLUNA 1: PAINEL DE CONTROLE DE FLAGS E CONFIGURAÇÃO (4 Colunas) -->
-    <section class="lg:col-span-4 flex flex-col gap-4">
-      <div class="card p-4 flex flex-col gap-3 max-h-[85vh] overflow-y-auto">
-        <div class="flex justify-between items-center border-b border-gray-800 pb-2">
-          <h2 class="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
-            <span>🎛️</span> Painel de Configuração de Flags
-          </h2>
-          <span class="text-[10px] text-gray-500">CLI & PPO Bridge</span>
+  <!-- Main Application Body -->
+  <main class="flex-1 flex flex-col min-h-0">
+
+    <!-- ========================================================================= -->
+    <!-- VISÃO 1: MODO TREINAMENTO (FOCO TOTAL EM LOGS, STATUS E CONVERGÊNCIA)     -->
+    <!-- ========================================================================= -->
+    <div id="view-training" class="flex flex-col gap-3 flex-1 min-h-0">
+      
+      <!-- BARRA DE STATUS E MÉTRICAS DE ALTO IMPACTO (6 Cards Zero-Clutter) -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+        <!-- 1. Progresso & Passos -->
+        <div class="card p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Passos PPO</span>
+            <span id="train-metric-pct" class="text-[10px] font-mono text-cyan-400 font-bold">0.0%</span>
+          </div>
+          <div class="flex items-baseline gap-1.5 my-1">
+            <span id="train-metric-steps" class="text-xl font-black font-mono text-white">0</span>
+            <span id="train-metric-total-steps" class="text-[10px] text-gray-500 font-mono">/ 40k</span>
+          </div>
+          <div class="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-800">
+            <div id="train-metric-progress-bar" class="bg-gradient-to-r from-cyan-500 to-indigo-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+          </div>
         </div>
 
-        <!-- Modo de Operação & Ação Primária -->
-        <div class="flex flex-col gap-2">
+        <!-- 2. Throughput & FPS -->
+        <div class="card p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between">
           <div class="flex items-center justify-between">
-            <label class="text-[11px] text-gray-400 font-semibold flex items-center gap-1">
-              <span>🎛️</span> Modo de Operação
-            </label>
+            <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Throughput</span>
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          </div>
+          <div class="flex items-baseline gap-1 my-1">
+            <span id="train-metric-fps" class="text-xl font-black font-mono text-emerald-300">0.0</span>
+            <span class="text-[10px] text-gray-400 font-mono">FPS</span>
+          </div>
+          <span class="text-[9px] text-gray-500 font-mono truncate">Motor Reflexivo PPO</span>
+        </div>
+
+        <!-- 3. Nível Curricular & Win Rate -->
+        <div class="card p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Currículo S1</span>
+            <span id="train-metric-depth" class="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-amber-950 text-amber-300 border border-amber-800">D1</span>
+          </div>
+          <div class="flex items-baseline gap-1.5 my-1">
+            <span id="train-metric-winrate" class="text-xl font-black font-mono text-amber-300">0.0%</span>
+            <span class="text-[10px] text-gray-500 font-mono">Win Rate</span>
+          </div>
+          <div class="flex items-center justify-between text-[9px] font-mono text-gray-400">
+            <span>Pico: <strong id="train-metric-peak" class="text-amber-200">D1 (0%)</strong></span>
+          </div>
+        </div>
+
+        <!-- 4. Recompensa / Retorno -->
+        <div class="card p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold text-yellow-400 uppercase tracking-wider">Recompensa</span>
+            <span class="text-[9px] text-gray-500 font-mono">Episódios</span>
+          </div>
+          <div class="flex items-baseline gap-1 my-1">
+            <span id="train-metric-return" class="text-xl font-black font-mono text-yellow-300">0.00</span>
+            <span class="text-[10px] text-gray-400 font-mono">&mu;20</span>
+          </div>
+          <span id="train-metric-episodes" class="text-[9px] text-gray-500 font-mono">0 episódios</span>
+        </div>
+
+        <!-- 5. Perdas PPO & Entropia -->
+        <div class="card p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold text-purple-400 uppercase tracking-wider">Perda & Entropia</span>
+            <span class="text-[9px] text-gray-500 font-mono">PPO</span>
+          </div>
+          <div class="flex items-baseline gap-1 my-1">
+            <span id="train-metric-loss" class="text-xl font-black font-mono text-purple-300">0.00</span>
+            <span class="text-[10px] text-gray-400 font-mono">&mu;Loss</span>
+          </div>
+          <div class="flex items-center justify-between text-[9px] font-mono text-gray-400">
+            <span>Entropia: <strong id="train-metric-entropy" class="text-purple-200">0.00</strong></span>
+          </div>
+        </div>
+
+        <!-- 6. Buffer SIL (Self-Imitation Learning) -->
+        <div class="card p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Memória SIL</span>
+            <span class="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">Buffer</span>
+          </div>
+          <div class="flex items-baseline gap-1 my-1">
+            <span id="train-metric-sil" class="text-xl font-black font-mono text-indigo-300">0</span>
+            <span class="text-[10px] text-gray-400 font-mono">decisões</span>
+          </div>
+          <span class="text-[9px] text-gray-500 font-mono">Prioritizadas (+R)</span>
+        </div>
+      </div>
+
+      <!-- PAINEL DIVIDIDO (2 COLUNAS): TERMINAL DE LOGS (60%) + TELEMETRIA GRÁFICA (40%) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0">
+        
+        <!-- TERMINAL DE LOGS EM TEMPO REAL (7 Colunas / ~60%) -->
+        <div id="terminal-logs-card" class="lg:col-span-7 card p-3 flex flex-col bg-[#070b14] border-slate-800 shadow-xl min-h-[450px] lg:min-h-0">
+          
+          <!-- Cabeçalho do Terminal -->
+          <div class="flex flex-wrap justify-between items-center gap-2 border-b border-gray-800/80 pb-2 mb-2">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" id="term-status-dot"></span>
+              <span class="text-xs font-bold text-gray-200 uppercase tracking-wider flex items-center gap-1.5">
+                <span>🖥️</span> Terminal de Logs do Motor
+              </span>
+              <span id="term-status-pill" class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold">PRONTO</span>
+              <span id="log-count-badge" class="text-[9px] font-mono text-gray-500 border-l border-gray-800 pl-2">0 linhas</span>
+            </div>
+
+            <!-- Controles do Terminal: Limpar, Copiar, Autoscroll -->
+            <div class="flex items-center gap-2">
+              <label class="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer select-none">
+                <input type="checkbox" id="chk-autoscroll" checked class="w-3 h-3 rounded bg-gray-900 border-gray-700 text-cyan-500 focus:ring-0 cursor-pointer" />
+                <span>Auto-scroll</span>
+              </label>
+              <button type="button" onclick="copyLogsToClipboard()" class="px-2 py-0.5 rounded text-[10px] bg-slate-800 hover:bg-slate-700 text-cyan-300 font-mono transition cursor-pointer" title="Copiar logs visíveis">
+                📋 Copiar
+              </button>
+              <button type="button" onclick="clearLogs()" class="px-2 py-0.5 rounded text-[10px] bg-slate-800 hover:bg-slate-700 text-rose-300 font-mono transition cursor-pointer" title="Limpar janela de logs">
+                🗑️ Limpar
+              </button>
+            </div>
+          </div>
+
+          <!-- Barra de Filtros e Busca Rápida -->
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b border-gray-800/50">
+            <!-- Chips de Categoria -->
+            <div class="flex items-center gap-1 overflow-x-auto text-[10px]">
+              <button type="button" onclick="setLogCategoryFilter('all')" id="log-filter-all" class="px-2 py-0.5 rounded font-semibold bg-cyan-600 text-white transition">Todos</button>
+              <button type="button" onclick="setLogCategoryFilter('ppo')" id="log-filter-ppo" class="px-2 py-0.5 rounded font-semibold bg-slate-900 text-purple-300 hover:bg-slate-800 transition">PPO</button>
+              <button type="button" onclick="setLogCategoryFilter('rollout')" id="log-filter-rollout" class="px-2 py-0.5 rounded font-semibold bg-slate-900 text-emerald-300 hover:bg-slate-800 transition">Rollout</button>
+              <button type="button" onclick="setLogCategoryFilter('sil')" id="log-filter-sil" class="px-2 py-0.5 rounded font-semibold bg-slate-900 text-indigo-300 hover:bg-slate-800 transition">SIL</button>
+              <button type="button" onclick="setLogCategoryFilter('ckpt')" id="log-filter-ckpt" class="px-2 py-0.5 rounded font-semibold bg-slate-900 text-yellow-300 hover:bg-slate-800 transition">Checkpoint</button>
+              <button type="button" onclick="setLogCategoryFilter('err')" id="log-filter-err" class="px-2 py-0.5 rounded font-semibold bg-slate-900 text-rose-300 hover:bg-slate-800 transition">Erros</button>
+            </div>
+
+            <!-- Busca por texto -->
+            <div class="relative w-44">
+              <input type="text" id="log-search-input" oninput="filterLogs()" placeholder="Filtrar log..." class="w-full pl-6 pr-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-cyan-500 font-mono" />
+              <span class="absolute left-1.5 top-0.5 text-gray-600 text-[10px]">🔍</span>
+            </div>
+          </div>
+
+          <!-- Área do Console de Logs -->
+          <div id="terminal-logs" class="flex-1 bg-[#02050c] rounded-md p-2.5 font-mono text-[11px] leading-relaxed overflow-y-auto text-gray-300 select-text border border-gray-900 min-h-[300px]">
+            <div class="text-gray-500 italic">SYSTEM 1 ENGINE inicializado. Selecione o modo e clique em Iniciar para acompanhar os logs em tempo real.</div>
+          </div>
+        </div>
+
+        <!-- TELEMETRIA GRÁFICA DE CONVERGÊNCIA (5 Colunas / ~40%) -->
+        <div class="lg:col-span-5 flex flex-col gap-2.5">
+          <!-- Gráfico 1: Retorno & Recompensa -->
+          <div class="card p-2.5 flex flex-col">
+            <div class="flex justify-between items-center mb-1">
+              <span class="text-[10px] font-bold text-yellow-400 uppercase tracking-wider">🎯 Convergência de Retorno (Média 20)</span>
+              <span class="text-[9px] text-gray-500 font-mono">Episódios</span>
+            </div>
+            <div class="h-28 w-full"><canvas id="chartReward"></canvas></div>
+          </div>
+
+          <!-- Gráfico 2: Perdas PPO -->
+          <div class="card p-2.5 flex flex-col">
+            <div class="flex justify-between items-center mb-1">
+              <span class="text-[10px] font-bold text-purple-400 uppercase tracking-wider">📉 Perdas PPO (Policy & Value)</span>
+              <span class="text-[9px] text-gray-500 font-mono">&mu;Loss</span>
+            </div>
+            <div class="h-28 w-full"><canvas id="chartLoss"></canvas></div>
+          </div>
+
+          <!-- Gráfico 3: Normas de Gradiente & Latência -->
+          <div class="grid grid-cols-2 gap-2">
+            <div class="card p-2 flex flex-col">
+              <span class="text-[9px] font-bold text-pink-400 uppercase tracking-wider mb-1">⚖️ Gradientes (||∇||)</span>
+              <div class="h-24 w-full"><canvas id="chartGrads"></canvas></div>
+            </div>
+            <div class="card p-2 flex flex-col">
+              <span class="text-[9px] font-bold text-cyan-400 uppercase tracking-wider mb-1">⏱️ Latência (µs)</span>
+              <div class="h-24 w-full"><canvas id="chartLatency"></canvas></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- VISÃO 2: MODO AVALIAÇÃO (FOCO TOTAL EM SIMULAÇÃO, SCORES E INTERAÇÃO)    -->
+    <!-- ========================================================================= -->
+    <div id="view-evaluation" class="hidden flex flex-col gap-3 flex-1 min-h-0">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1">
+        
+        <!-- LADO ESQUERDO: HERO SIMULATION VIEWPORT & DECK (8 Colunas / ~65%) -->
+        <div class="lg:col-span-8 flex flex-col gap-2.5">
+          
+          <!-- HERO VIEWPORT CARD -->
+          <div class="card p-3 flex flex-col bg-black/40 border border-cyan-800/60 shadow-xl">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-2 mb-2">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-yellow-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>🎮</span> Viewport de Simulação Interativa
+                </span>
+                <span id="feed-status" class="px-1.5 py-0.5 rounded text-[9px] bg-green-950 text-green-300 border border-green-800 font-mono">STANDBY</span>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <!-- Seletor 3D / 2D para Cubo Mágico -->
+                <div id="rubiks-view-controls" class="hidden flex items-center gap-1">
+                  <button type="button" id="btn-cube-view-3d" onclick="setCubeViewMode('3d')" class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-600 text-white border border-indigo-400 shadow-sm transition">
+                    🎲 3D
+                  </button>
+                  <button type="button" id="btn-cube-view-2d" onclick="setCubeViewMode('2d')" class="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-900 text-gray-400 border border-gray-800 hover:bg-gray-800 transition">
+                    🗺️ 2D
+                  </button>
+                </div>
+
+                <!-- Motor de Renderização de Vídeo -->
+                <select id="sel-viewport-engine" onchange="onViewportEngineChange()" class="px-1.5 py-0.5 rounded text-[9px] bg-gray-900 border border-gray-700 text-gray-300 font-mono cursor-pointer">
+                  <option value="auto">⚡ Auto (Resiliente)</option>
+                  <option value="direct">🔥 Direct Frame</option>
+                  <option value="mjpeg">📼 MJPEG Stream</option>
+                </select>
+                <button type="button" onclick="refreshVideoFeed(true)" class="px-2 py-0.5 rounded text-[9px] bg-gray-800 hover:bg-gray-700 text-cyan-300 font-mono transition cursor-pointer" title="Reconectar stream">↻ Reconectar</button>
+              </div>
+            </div>
+
+            <!-- Frame do Vídeo Hero -->
+            <div id="train-viewport-frame" class="relative bg-black rounded-lg overflow-hidden aspect-[16/10] sm:aspect-[16/9] flex items-center justify-center border border-gray-800 shadow-inner">
+              <img id="game-feed" src="/video_feed" alt="System 1 Game Viewport" class="w-full h-full object-contain" onerror="handleVideoFeedError()" />
+              
+              <div id="video-overlay" class="absolute bottom-2 left-2 right-2 flex justify-between items-center px-2.5 py-1 rounded-md bg-black/70 backdrop-blur-sm text-[11px] font-mono text-gray-300 pointer-events-none border border-gray-800/60">
+                <span id="overlay-env" class="text-cyan-400 font-bold">RubiksCube-v0</span>
+                <span id="overlay-fps" class="text-green-400 font-bold">50.0 FPS</span>
+              </div>
+            </div>
+
+            <!-- Modos de Visão & Atenção Visual (XAI) -->
+            <div class="mt-2.5 pt-2 border-t border-gray-800/80 flex items-center justify-between gap-2">
+              <span class="text-[10px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1">
+                <span>👁️</span> Atenção Visual (XAI):
+              </span>
+              <div class="grid grid-cols-4 gap-1 flex-1 max-w-md">
+                <button type="button" id="btn-vis-normal" onclick="setVisionMode('normal')" class="py-1 px-1 rounded text-[10px] font-semibold transition bg-cyan-600 text-white shadow cursor-pointer">Normal</button>
+                <button type="button" id="btn-vis-gradcam_policy" onclick="setVisionMode('gradcam_policy')" class="py-1 px-1 rounded text-[10px] font-semibold transition bg-gray-900 text-gray-400 border border-gray-800 hover:bg-gray-800 cursor-pointer">🎯 Ação</button>
+                <button type="button" id="btn-vis-saliency_value" onclick="setVisionMode('saliency_value')" class="py-1 px-1 rounded text-[10px] font-semibold transition bg-gray-900 text-gray-400 border border-gray-800 hover:bg-gray-800 cursor-pointer">🧭 Valor</button>
+                <button type="button" id="btn-vis-saliency_entropy" onclick="setVisionMode('saliency_entropy')" class="py-1 px-1 rounded text-[10px] font-semibold transition bg-gray-900 text-gray-400 border border-gray-800 hover:bg-gray-800 cursor-pointer">❓ Dúvida</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- DECK DE INTERAÇÃO & CADÊNCIA -->
+          <div class="card p-3 flex flex-col gap-2.5 bg-[#0a0f1d] border border-cyan-800/60 shadow-lg">
+            <div class="flex justify-between items-center border-b border-gray-800/80 pb-1.5">
+              <span class="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span>🎮</span> Controles Interativos & Velocidade
+              </span>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] text-gray-400">Cadência:</span>
+                <span id="eval-fps-label" class="font-bold text-green-400 font-mono text-xs">50 FPS</span>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5">
+                <button type="button" onclick="startExecution()" class="py-1.5 px-3 rounded bg-emerald-600 hover:bg-emerald-500 font-bold text-white text-xs uppercase flex items-center gap-1 transition shadow cursor-pointer">
+                  <span>▶️</span> Iniciar
+                </button>
+                <button type="button" onclick="stopExecution()" class="py-1.5 px-3 rounded bg-rose-800 hover:bg-rose-700 font-bold text-white text-xs uppercase flex items-center gap-1 transition shadow cursor-pointer">
+                  <span>⏹️</span> Parar
+                </button>
+                <button type="button" onclick="clearLogs()" class="py-1.5 px-2.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 text-xs font-semibold flex items-center gap-1 transition cursor-pointer">
+                  <span>🔄</span> Reset
+                </button>
+              </div>
+
+              <!-- Presets de Velocidade -->
+              <div class="flex items-center gap-1 text-[10px]">
+                <button type="button" onclick="setFPS(0)" class="badge-btn">⚡ Turbo (0)</button>
+                <button type="button" onclick="setFPS(5)" class="badge-btn">🐢 5 FPS</button>
+                <button type="button" onclick="setFPS(30)" class="badge-btn">30 FPS</button>
+                <button type="button" onclick="setFPS(50)" class="badge-btn font-bold text-cyan-300 border-cyan-700 bg-cyan-950">👁️ 50 FPS</button>
+              </div>
+            </div>
+
+            <!-- Move Pad Interativo (Cubo Mágico) -->
+            <div id="eval-rubiks-move-pad" class="flex flex-col gap-1.5 pt-2 border-t border-gray-800/80">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-amber-300 flex items-center gap-1">
+                  <span>🎲</span> Ações Manuais (Move Pad):
+                </span>
+                <span class="text-[9px] text-gray-500">Injeta rotação no estado do ambiente</span>
+              </div>
+              <div class="grid grid-cols-6 gap-1">
+                <button type="button" onclick="hintCubeAction('U')" class="py-1 px-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-300 text-slate-100 font-mono font-bold text-[11px] transition shadow-sm cursor-pointer">U</button>
+                <button type="button" onclick="hintCubeAction('U_prime')" class="py-1 px-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-500/80 text-slate-300 font-mono font-bold text-[11px] transition cursor-pointer">U'</button>
+                <button type="button" onclick="hintCubeAction('D')" class="py-1 px-1 rounded bg-yellow-950/70 hover:bg-yellow-900/90 border border-yellow-400 text-yellow-300 font-mono font-bold text-[11px] transition shadow-sm cursor-pointer">D</button>
+                <button type="button" onclick="hintCubeAction('D_prime')" class="py-1 px-1 rounded bg-yellow-950/40 hover:bg-yellow-950/80 border border-yellow-600/80 text-yellow-400/80 font-mono font-bold text-[11px] transition cursor-pointer">D'</button>
+                <button type="button" onclick="hintCubeAction('F')" class="py-1 px-1 rounded bg-emerald-950/70 hover:bg-emerald-900/90 border border-emerald-400 text-emerald-300 font-mono font-bold text-[11px] transition shadow-sm cursor-pointer">F</button>
+                <button type="button" onclick="hintCubeAction('F_prime')" class="py-1 px-1 rounded bg-emerald-950/40 hover:bg-emerald-950/80 border border-emerald-600/80 text-emerald-400/80 font-mono font-bold text-[11px] transition cursor-pointer">F'</button>
+              </div>
+              <div class="grid grid-cols-6 gap-1">
+                <button type="button" onclick="hintCubeAction('B')" class="py-1 px-1 rounded bg-blue-950/70 hover:bg-blue-900/90 border border-blue-400 text-blue-300 font-mono font-bold text-[11px] transition shadow-sm cursor-pointer">B</button>
+                <button type="button" onclick="hintCubeAction('B_prime')" class="py-1 px-1 rounded bg-blue-950/40 hover:bg-blue-950/80 border border-blue-600/80 text-blue-400/80 font-mono font-bold text-[11px] transition cursor-pointer">B'</button>
+                <button type="button" onclick="hintCubeAction('R')" class="py-1 px-1 rounded bg-rose-950/70 hover:bg-rose-900/90 border border-rose-400 text-rose-300 font-mono font-bold text-[11px] transition shadow-sm cursor-pointer">R</button>
+                <button type="button" onclick="hintCubeAction('R_prime')" class="py-1 px-1 rounded bg-rose-950/40 hover:bg-rose-900/80 border border-rose-600/80 text-rose-400/80 font-mono font-bold text-[11px] transition cursor-pointer">R'</button>
+                <button type="button" onclick="hintCubeAction('L')" class="py-1 px-1 rounded bg-orange-950/70 hover:bg-orange-900/90 border border-orange-400 text-orange-300 font-mono font-bold text-[11px] transition shadow-sm cursor-pointer">L</button>
+                <button type="button" onclick="hintCubeAction('L_prime')" class="py-1 px-1 rounded bg-orange-950/40 hover:bg-orange-900/80 border border-orange-600/80 text-orange-400/80 font-mono font-bold text-[11px] transition cursor-pointer">L'</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LADO DIREITO: HERO SCOREBOARD & TELEMETRIA DE DECISÃO (4 Colunas / ~35%) -->
+        <div class="lg:col-span-4 flex flex-col gap-2.5">
+          
+          <!-- HERO SCOREBOARD TILES -->
+          <div class="grid grid-cols-2 gap-2">
+            <!-- Score Atual do Episódio -->
+            <div class="card p-3 flex flex-col bg-gradient-to-br from-[#0c1a2e] to-[#070b14] border border-cyan-500/60 shadow-lg">
+              <span class="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">🎯 Score Atual</span>
+              <span id="eval-current-score" class="text-3xl font-black font-mono text-cyan-300 mt-1">0.00</span>
+              <div class="flex items-center justify-between text-[10px] text-gray-400 font-mono mt-1 pt-1 border-t border-gray-800">
+                <span>Pico Recorde:</span>
+                <span id="eval-peak-score" class="font-bold text-cyan-400">0.00</span>
+              </div>
+            </div>
+
+            <!-- Passos do Episódio -->
+            <div class="card p-3 flex flex-col bg-gradient-to-br from-[#1c180c] to-[#070b14] border border-yellow-500/60 shadow-lg">
+              <span class="text-[10px] text-yellow-400 font-bold uppercase tracking-wider">⏱️ Passos</span>
+              <span id="eval-steps-counter" class="text-3xl font-black font-mono text-yellow-400 mt-1">0</span>
+              <span id="eval-steps-sub" class="text-[10px] text-gray-400 font-mono mt-1 pt-1 border-t border-gray-800 truncate">Progresso: 0.0%</span>
+            </div>
+          </div>
+
+          <!-- DECISÃO NEURAL & CALIBRAÇÃO -->
+          <div class="card p-3 flex flex-col gap-2.5 bg-gradient-to-br from-[#0d1624] to-[#080d19] border border-cyan-800/60 shadow-lg">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-1.5">
+              <span class="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1">
+                <span>🧠</span> Decisão Neural & Calibração
+              </span>
+              <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold">SYSTEM 1</span>
+            </div>
+
+            <!-- Confiança da Decisão -->
+            <div class="flex flex-col gap-1 p-2 rounded bg-gray-950 border border-gray-800">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Confiança da Ação</span>
+                <span id="eval-confidence-val" class="text-lg font-black font-mono text-emerald-400">--%</span>
+              </div>
+              <div class="w-full bg-gray-900 h-2 rounded-full overflow-hidden mt-0.5 border border-gray-800">
+                <div id="eval-confidence-bar" class="bg-gradient-to-r from-emerald-600 to-cyan-400 h-full rounded-full transition-all duration-150" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <!-- Modo de Calibração (Contrato Paridade) -->
+            <div class="flex flex-col gap-1.5 p-2 rounded bg-gray-950 border border-gray-800">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] text-purple-300 font-bold uppercase tracking-wider">CALIBRAÇÃO (Incerteza)</span>
+                <span id="eval-calib-badge" class="px-1.5 py-0.2 rounded text-[9px] bg-purple-950 text-purple-300 border border-purple-800 font-mono font-bold">Auto</span>
+              </div>
+              <div class="grid grid-cols-4 gap-1">
+                <button type="button" onclick="setEvalCalibration('auto')" class="badge-btn font-bold text-purple-300 border-purple-700 bg-purple-950">Auto</button>
+                <button type="button" onclick="setEvalCalibration(0.5)" class="badge-btn">Calibrado</button>
+                <button type="button" onclick="setEvalCalibration(0.0)" class="badge-btn">Determinístico</button>
+                <button type="button" onclick="setEvalCalibration(1.0)" class="badge-btn">Estocástico</button>
+              </div>
+            </div>
+
+            <!-- Latência P50 -->
+            <div class="flex items-center justify-between p-2 rounded bg-gray-950 border border-gray-800">
+              <div>
+                <span class="text-[10px] text-pink-400 font-bold uppercase tracking-wider block">Latência de Decisão P50</span>
+                <span class="text-[9px] text-gray-500 font-mono">&le; 800&mu;s Hardware Reflexivo</span>
+              </div>
+              <span id="eval-latency-val" class="text-xl font-black font-mono text-pink-300">-- µs</span>
+            </div>
+          </div>
+
+          <!-- MINI LOGS DO EPISÓDIO -->
+          <div class="card p-2.5 flex flex-col flex-1 min-h-[160px] max-h-[220px]">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-1 mb-1.5">
+              <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">📝 Logs do Episódio</span>
+              <button type="button" onclick="copyLogsToClipboard()" class="text-[9px] text-cyan-400 hover:underline">Copiar</button>
+            </div>
+            <div id="eval-mini-logs" class="flex-1 overflow-y-auto font-mono text-[10px] text-gray-300 space-y-0.5">
+              <div class="text-gray-500 italic">Pronto para avaliar. Clique em Iniciar.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- DRAWER: GAVETA LATERAL DE CONFIGURAÇÕES E FLAGS          -->
+  <!-- ======================================================== -->
+  <div id="drawer-settings-backdrop" onclick="toggleSettingsDrawer(false)" class="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs hidden transition-opacity"></div>
+  <aside id="drawer-settings" class="fixed top-0 right-0 bottom-0 z-50 w-full sm:w-[480px] bg-[#090d16] border-l border-cyan-800/60 shadow-2xl flex flex-col transform translate-x-full transition-transform duration-300 ease-in-out">
+    <!-- Cabeçalho da Gaveta -->
+    <div class="p-3.5 bg-[#0d1424] border-b border-gray-800 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="text-xl">⚙️</span>
+        <div>
+          <h3 class="text-sm font-bold text-white tracking-wide">Configurações & Hiperparâmetros</h3>
+          <p class="text-[10px] text-gray-400">Ajuste os parâmetros de treino, checkpoints e avaliação</p>
+        </div>
+      </div>
+      <button type="button" onclick="toggleSettingsDrawer(false)" class="w-7 h-7 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 flex items-center justify-center text-sm font-bold transition cursor-pointer" title="Fechar (Esc)">✕</button>
+    </div>
+
+    <!-- Conteúdo Scrollável da Gaveta -->
+    <div class="p-4 overflow-y-auto flex-1 flex flex-col gap-4">
+      
+      <!-- Modo de Operação -->
+      <div class="card p-3 flex flex-col gap-2.5 bg-gray-950/60 border-gray-800">
+        <div class="flex items-center justify-between">
+          <label class="text-[11px] text-gray-300 font-semibold flex items-center gap-1">
+            <span>🎛️</span> Modo de Operação
+          </label>
+          <span class="tooltip-wrap tooltip-down tooltip-left">
+            <span class="tooltip-icon" title="Define o modo de execução: Treino (PPO com BPTT), Avaliar (sem gradientes) ou Benchmark.">ⓘ</span>
+            <span class="tooltip-bubble"><strong>--mode</strong>: Alterna a operação do motor.<br>• <strong>Treino</strong>: Otimização PPO com Advantage e BPTT recorrente.<br>• <strong>Avaliar</strong>: Executa episódios de teste com visualização assíncrona.<br>• <strong>Bench</strong>: Mede latência P50/P99 e throughput de inferência.</span>
+          </span>
+        </div>
+        <div class="grid grid-cols-3 gap-1 bg-gray-950/80 p-0.5 rounded border border-gray-800">
+          <button type="button" id="btn-mode-train" onclick="setMode('train')" class="py-1 px-2 text-xs font-bold rounded bg-cyan-600 text-white border border-cyan-500 transition shadow">Treino</button>
+          <button type="button" id="btn-mode-run" onclick="setMode('run')" class="py-1 px-2 text-xs font-bold rounded bg-gray-800 text-gray-400 border border-transparent hover:bg-gray-700 transition">Avaliar</button>
+          <button type="button" id="btn-mode-bench" onclick="setMode('benchmark')" class="py-1 px-2 text-xs font-bold rounded bg-gray-800 text-gray-400 border border-transparent hover:bg-gray-700 transition">Bench</button>
+        </div>
+      </div>
+
+      <!-- Ambiente e Cenário -->
+      <div class="card p-3 flex flex-col gap-2 bg-gray-950/60 border-gray-800">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-1.5">
+            <label class="text-[11px] text-gray-300 font-semibold">Ambiente (--env)</label>
             <span class="tooltip-wrap tooltip-down tooltip-left">
-              <span class="tooltip-icon" title="Define o modo de execução: Treino (PPO com BPTT), Avaliar (sem gradientes) ou Benchmark.">ⓘ</span>
-              <span class="tooltip-bubble"><strong>--mode</strong>: Alterna a operação do motor.<br>• <strong>Treino</strong>: Otimização PPO com Advantage e BPTT recorrente.<br>• <strong>Avaliar</strong>: Executa episódios de teste com visualização assíncrona.<br>• <strong>Bench</strong>: Mede latência P50/P99 e throughput de inferência.</span>
+              <span class="tooltip-icon" title="Identificador do ambiente: CartPole, Acrobot, Pendulum, MountainCar ou ViZDoom nativo.">ⓘ</span>
+              <span class="tooltip-bubble"><strong>--env</strong>: Seleciona o ambiente de simulação.<br>• <em>Vetoriais</em>: CartPole, Acrobot, etc. usam adaptador MLP de ultra-baixa latência.<br>• <em>ViZDoom</em>: Doom nativo com extrator visual IMPALA CNN 3D.</span>
             </span>
           </div>
-          <div class="grid grid-cols-3 gap-1 bg-gray-950/80 p-0.5 rounded border border-gray-800">
-            <button type="button" id="btn-mode-train" onclick="setMode('train')" class="py-1 px-2 text-xs font-bold rounded bg-cyan-600 text-white border border-cyan-500 transition shadow">Treino</button>
-            <button type="button" id="btn-mode-run" onclick="setMode('run')" class="py-1 px-2 text-xs font-bold rounded bg-gray-800 text-gray-400 border border-transparent hover:bg-gray-700 transition">Avaliar</button>
-            <button type="button" id="btn-mode-bench" onclick="setMode('benchmark')" class="py-1 px-2 text-xs font-bold rounded bg-gray-800 text-gray-400 border border-transparent hover:bg-gray-700 transition">Bench</button>
-          </div>
-
-          <!-- Ação Primária: Iniciar / Interromper (Sempre Acessível no Topo) -->
-          <div class="grid grid-cols-2 gap-2 mt-0.5">
-            <button type="button" id="btn-start" onclick="startExecution()" title="Dispara a execução do motor com a configuração definida" class="py-2.5 px-3 rounded bg-emerald-600 hover:bg-emerald-500 font-bold text-white text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition shadow-lg shadow-emerald-950 cursor-pointer">
-              <span>▶️</span> INICIAR
+          <div class="flex items-center gap-1">
+            <button type="button" onclick="openGymCatalogModal()" class="text-[10px] text-cyan-300 hover:text-cyan-200 font-mono flex items-center gap-1 bg-cyan-950/80 hover:bg-cyan-900/90 px-1.5 py-0.5 rounded border border-cyan-700/80 transition cursor-pointer shadow-sm" title="Abrir catálogo interativo com todos os ambientes e jogos do Gymnasium">
+              <span>📚</span> Lista de Jogos
             </button>
-            <button type="button" id="btn-stop" onclick="stopExecution()" disabled title="Interrompe o subprocesso ativo com segurança" class="py-2.5 px-3 rounded bg-rose-900/40 text-gray-500 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 border border-rose-900/60 transition cursor-not-allowed">
-              <span>⏹️</span> PARAR
-            </button>
+            <a href="https://gymnasium.farama.org/environments/" target="_blank" rel="noopener noreferrer" class="text-[10px] text-gray-400 hover:text-gray-200 font-mono flex items-center gap-0.5 bg-gray-900 hover:bg-gray-800 px-1.5 py-0.5 rounded border border-gray-800 transition" title="Abrir documentação oficial do Farama Gymnasium em nova aba">
+              Docs ↗
+            </a>
           </div>
         </div>
+        <select id="cfg-env" class="hud-input" onchange="onEnvChange()">
+          <option value="CartPole-v1">CartPole-v1 (Vetor, 4D, 2 Ações)</option>
+          <option value="Acrobot-v1">Acrobot-v1 (Vetor, 6D, 3 Ações)</option>
+          <option value="Pendulum-v1">Pendulum-v1 (Vetor, Contínuo Box)</option>
+          <option value="MountainCar-v0">MountainCar-v0 (Vetor, 2D)</option>
+          <option value="Ant-v5">🐜 Ant-v5 (MuJoCo, 105D, 8 Ações Contínuas)</option>
+          <option value="RubiksCube-v0" selected>⚡ Cubo Mágico 3x3 (Atômico 1.6M)</option>
+          <option value="RubiksCubeMacro-v0">Cubo Mágico: Macro-Ações (CFOP / 12 Algoritmos)</option>
+          <option value="vizdoom">ViZDoom (Nativo / Visual IMPALA)</option>
+          <option value="custom">Outro (Customizado Gymnasium...)</option>
+        </select>
+        <input type="text" id="cfg-custom-env" placeholder="Digite o ID do Gymnasium (ex: LunarLander-v3)..." class="hud-input hidden" oninput="onCustomEnvInput()" />
 
-        <!-- Ambiente e Cenário -->
-        <div>
-          <div class="flex items-center justify-between mb-1">
+        <!-- Atalhos Rápidos para Jogos Populares quando em Modo Customizado -->
+        <div id="custom-env-suggestions" class="hidden flex flex-col gap-1 p-1.5 rounded bg-gray-950/70 border border-gray-800/80 text-[10px]">
+          <div class="flex items-center justify-between text-gray-400">
+            <span class="font-semibold text-gray-300 flex items-center gap-1"><span>💡</span> Jogos Populares:</span>
+            <button type="button" onclick="openGymCatalogModal()" class="text-cyan-400 hover:underline">Ver Todos (60+) ↗</button>
+          </div>
+          <div class="flex flex-wrap gap-1">
+            <button type="button" onclick="selectGymEnvFromChip('LunarLander-v3')" class="px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 hover:bg-purple-900 border border-purple-800 text-[9px] font-mono cursor-pointer transition">LunarLander-v3</button>
+            <button type="button" onclick="selectGymEnvFromChip('BipedalWalker-v3')" class="px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 hover:bg-purple-900 border border-purple-800 text-[9px] font-mono cursor-pointer transition">BipedalWalker-v3</button>
+            <button type="button" onclick="selectGymEnvFromChip('CarRacing-v3')" class="px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 hover:bg-purple-900 border border-purple-800 text-[9px] font-mono cursor-pointer transition">CarRacing-v3</button>
+            <button type="button" onclick="selectGymEnvFromChip('FrozenLake-v1')" class="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 hover:bg-amber-900 border border-amber-800 text-[9px] font-mono cursor-pointer transition">FrozenLake-v1</button>
+            <button type="button" onclick="selectGymEnvFromChip('Ant-v5')" class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 hover:bg-emerald-900 border border-emerald-800 text-[9px] font-mono cursor-pointer transition">Ant-v5</button>
+            <button type="button" onclick="selectGymEnvFromChip('HalfCheetah-v5')" class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 hover:bg-emerald-900 border border-emerald-800 text-[9px] font-mono cursor-pointer transition">HalfCheetah-v5</button>
+          </div>
+        </div>
+        
+        <div id="group-vizdoom-scenario" class="hidden">
+          <div class="flex items-center gap-1.5 mb-1">
+            <label class="text-[10px] text-gray-400 font-semibold">Cenário ViZDoom (--scenario)</label>
+            <span class="tooltip-wrap tooltip-down tooltip-left">
+              <span class="tooltip-icon" title="Arquivo .cfg do ViZDoom definindo mapa, bot, armas, recompensas e limites de tempo.">ⓘ</span>
+              <span class="tooltip-bubble"><strong>--scenario</strong>: Configuração .cfg do ViZDoom.<br>Define mapa, inimigos, armas, recompensas e tempo de missão (ex: basic.cfg, deadly_corridor.cfg).</span>
+            </span>
+          </div>
+          <select id="cfg-scenario-select" class="hud-input mb-1" onchange="onScenarioPresetChange()">
+            <option value="basic.cfg">basic.cfg (Defesa Básica)</option>
+            <option value="defend_the_center.cfg">defend_the_center.cfg (Defesa Central 360°)</option>
+            <option value="deadly_corridor.cfg">deadly_corridor.cfg (Corredor Letal)</option>
+            <option value="my_way_home.cfg">my_way_home.cfg (Labirinto / Navegação)</option>
+            <option value="custom">Outro cenário .cfg...</option>
+          </select>
+          <input type="text" id="cfg-scenario" placeholder="Nome ou caminho do .cfg..." class="hud-input hidden" value="basic.cfg" oninput="onCustomScenarioInput()" />
+        </div>
+
+        <!-- SEÇÃO: EMBARALHAMENTO DO CUBO MÁGICO (--scramble-depth) -->
+        <div id="group-rubiks-scramble" class="bg-[#120f09] p-2 rounded border border-amber-800/60 flex flex-col gap-1.5 transition">
+          <div class="flex items-center justify-between">
             <div class="flex items-center gap-1.5">
-              <label class="text-[11px] text-gray-400 font-semibold">Ambiente (--env)</label>
+              <span class="text-[10px] font-bold text-amber-300 flex items-center gap-1">
+                <span>🎲</span> Embaralhamento (--scramble-depth)
+              </span>
               <span class="tooltip-wrap tooltip-down tooltip-left">
-                <span class="tooltip-icon" title="Identificador do ambiente: CartPole, Acrobot, Pendulum, MountainCar ou ViZDoom nativo.">ⓘ</span>
-                <span class="tooltip-bubble"><strong>--env</strong>: Seleciona o ambiente de simulação.<br>• <em>Vetoriais</em>: CartPole, Acrobot, etc. usam adaptador MLP de ultra-baixa latência.<br>• <em>ViZDoom</em>: Doom nativo com extrator visual IMPALA CNN 3D.</span>
+                <span class="tooltip-icon" title="Número de passos/profundidade de embaralhamento do Cubo Mágico (número aberto sem limites para treino e avaliação).">ⓘ</span>
+                <span class="tooltip-bubble"><strong>--scramble-depth</strong>: Número de giros/macro-ações aplicadas para embaralhar o cubo no início de cada episódio.<br>• <strong>Sem limite</strong>: Pode digitar qualquer valor inteiro positivo (ex: 1, 3, 10, 20, 50, 100...).<br>• Funciona tanto no <strong>Treino</strong> quanto na <strong>Avaliação</strong>.</span>
+              </span>
+            </div>
+            <div class="flex gap-1">
+              <button type="button" onclick="setScrambleDepthInput(1)" class="badge-btn">1</button>
+              <button type="button" onclick="setScrambleDepthInput(3)" class="badge-btn">3</button>
+              <button type="button" onclick="setScrambleDepthInput(5)" class="badge-btn">5</button>
+              <button type="button" onclick="setScrambleDepthInput(10)" class="badge-btn">10</button>
+              <button type="button" onclick="setScrambleDepthInput(20)" class="badge-btn">20</button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <input type="number" id="cfg-scramble-depth" value="3" min="1" placeholder="Qtd de passos (livre sem limite)..." class="hud-input font-mono text-[11px] text-amber-200" />
+            <span class="text-[9px] text-amber-400/80 font-mono whitespace-nowrap">Passos livres</span>
+          </div>
+
+          <!-- Controle de Mixed Replay -->
+          <div class="flex items-center justify-between border-t border-amber-900/40 pt-1.5 mt-0.5 text-[10px]">
+            <div class="flex items-center gap-1 text-amber-300 font-semibold">
+              <span>🔄 Mixed Replay</span>
+              <span class="tooltip-wrap tooltip-down tooltip-left">
+                <span class="tooltip-icon" title="Taxa de amostragem de níveis anteriores durante o currículo. Reduzido para 5% ou 0% para concentrar 95-100% dos passos na profundidade de fronteira.">ⓘ</span>
+                <span class="tooltip-bubble"><strong>Mixed Replay</strong>: Controla quanto tempo o treino gasta em profundidades já consolidadas.<br>• <strong>5% (Padrão S1)</strong>: 95% do tempo focado na fronteira de avanço.<br>• <strong>0% (Desativado)</strong>: 100% na fronteira máxima, acelerando a quebra de platôs.</span>
               </span>
             </div>
             <div class="flex items-center gap-1">
-              <button type="button" onclick="openGymCatalogModal()" class="text-[10px] text-cyan-300 hover:text-cyan-200 font-mono flex items-center gap-1 bg-cyan-950/80 hover:bg-cyan-900/90 px-1.5 py-0.5 rounded border border-cyan-700/80 transition cursor-pointer shadow-sm" title="Abrir catálogo interativo com todos os ambientes e jogos do Gymnasium">
-                <span>📚</span> Lista de Jogos
-              </button>
-              <a href="https://gymnasium.farama.org/environments/" target="_blank" rel="noopener noreferrer" class="text-[10px] text-gray-400 hover:text-gray-200 font-mono flex items-center gap-0.5 bg-gray-900 hover:bg-gray-800 px-1.5 py-0.5 rounded border border-gray-800 transition" title="Abrir documentação oficial do Farama Gymnasium em nova aba">
-                Docs ↗
-              </a>
-            </div>
-          </div>
-          <select id="cfg-env" class="hud-input mb-1.5" onchange="onEnvChange()">
-            <option value="CartPole-v1">CartPole-v1 (Vetor, 4D, 2 Ações)</option>
-            <option value="Acrobot-v1">Acrobot-v1 (Vetor, 6D, 3 Ações)</option>
-            <option value="Pendulum-v1">Pendulum-v1 (Vetor, Contínuo Box)</option>
-            <option value="MountainCar-v0">MountainCar-v0 (Vetor, 2D)</option>
-            <option value="Ant-v5">🐜 Ant-v5 (MuJoCo, 105D, 8 Ações Contínuas)</option>
-            <option value="RubiksCube-v0" selected>⚡ Cubo Mágico 3x3 (Atômico 1.6M)</option>
-            <option value="RubiksCubeMacro-v0">Cubo Mágico: Macro-Ações (CFOP / 12 Algoritmos)</option>
-            <option value="vizdoom">ViZDoom (Nativo / Visual IMPALA)</option>
-            <option value="custom">Outro (Customizado Gymnasium...)</option>
-          </select>
-          <input type="text" id="cfg-custom-env" placeholder="Digite o ID do Gymnasium (ex: LunarLander-v3)..." class="hud-input hidden mb-1.5" oninput="onCustomEnvInput()" />
-
-          <!-- Atalhos Rápidos para Jogos Populares quando em Modo Customizado -->
-          <div id="custom-env-suggestions" class="hidden flex flex-col gap-1 mb-1.5 p-1.5 rounded bg-gray-950/70 border border-gray-800/80 text-[10px]">
-            <div class="flex items-center justify-between text-gray-400">
-              <span class="font-semibold text-gray-300 flex items-center gap-1"><span>💡</span> Jogos Populares:</span>
-              <button type="button" onclick="openGymCatalogModal()" class="text-cyan-400 hover:underline">Ver Todos (60+) ↗</button>
-            </div>
-            <div class="flex flex-wrap gap-1">
-              <button type="button" onclick="selectGymEnvFromChip('LunarLander-v3')" class="px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 hover:bg-purple-900 border border-purple-800 text-[9px] font-mono cursor-pointer transition">LunarLander-v3</button>
-              <button type="button" onclick="selectGymEnvFromChip('BipedalWalker-v3')" class="px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 hover:bg-purple-900 border border-purple-800 text-[9px] font-mono cursor-pointer transition">BipedalWalker-v3</button>
-              <button type="button" onclick="selectGymEnvFromChip('CarRacing-v3')" class="px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 hover:bg-purple-900 border border-purple-800 text-[9px] font-mono cursor-pointer transition">CarRacing-v3</button>
-              <button type="button" onclick="selectGymEnvFromChip('FrozenLake-v1')" class="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 hover:bg-amber-900 border border-amber-800 text-[9px] font-mono cursor-pointer transition">FrozenLake-v1</button>
-              <button type="button" onclick="selectGymEnvFromChip('Ant-v5')" class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 hover:bg-emerald-900 border border-emerald-800 text-[9px] font-mono cursor-pointer transition">Ant-v5</button>
-              <button type="button" onclick="selectGymEnvFromChip('HalfCheetah-v5')" class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 hover:bg-emerald-900 border border-emerald-800 text-[9px] font-mono cursor-pointer transition">HalfCheetah-v5</button>
-            </div>
-          </div>
-          
-          <div id="group-vizdoom-scenario" class="hidden">
-            <div class="flex items-center gap-1.5 mb-1">
-              <label class="text-[10px] text-gray-400 font-semibold">Cenário ViZDoom (--scenario)</label>
-              <span class="tooltip-wrap tooltip-down tooltip-left">
-                <span class="tooltip-icon" title="Arquivo .cfg do ViZDoom definindo mapa, bot, armas, recompensas e limites de tempo.">ⓘ</span>
-                <span class="tooltip-bubble"><strong>--scenario</strong>: Configuração .cfg do ViZDoom.<br>Define mapa, inimigos, armas, recompensas e tempo de missão (ex: basic.cfg, deadly_corridor.cfg).</span>
-              </span>
-            </div>
-            <select id="cfg-scenario-select" class="hud-input mb-1" onchange="onScenarioPresetChange()">
-              <option value="basic.cfg">basic.cfg (Defesa Básica)</option>
-              <option value="defend_the_center.cfg">defend_the_center.cfg (Defesa Central 360°)</option>
-              <option value="deadly_corridor.cfg">deadly_corridor.cfg (Corredor Letal)</option>
-              <option value="my_way_home.cfg">my_way_home.cfg (Labirinto / Navegação)</option>
-              <option value="custom">Outro cenário .cfg...</option>
-            </select>
-            <input type="text" id="cfg-scenario" placeholder="Nome ou caminho do .cfg..." class="hud-input hidden" value="basic.cfg" oninput="onCustomScenarioInput()" />
-          </div>
-
-          <!-- SEÇÃO: EMBARALHAMENTO DO CUBO MÁGICO (--scramble-depth) -->
-          <div id="group-rubiks-scramble" class="mt-2 bg-[#120f09] p-2 rounded border border-amber-800/60 flex flex-col gap-1.5 transition">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-1.5">
-                <span class="text-[10px] font-bold text-amber-300 flex items-center gap-1">
-                  <span>🎲</span> Embaralhamento (--scramble-depth)
-                </span>
-                <span class="tooltip-wrap tooltip-down tooltip-left">
-                  <span class="tooltip-icon" title="Número de passos/profundidade de embaralhamento do Cubo Mágico (número aberto sem limites para treino e avaliação).">ⓘ</span>
-                  <span class="tooltip-bubble"><strong>--scramble-depth</strong>: Número de giros/macro-ações aplicadas para embaralhar o cubo no início de cada episódio.<br>• <strong>Sem limite</strong>: Pode digitar qualquer valor inteiro positivo (ex: 1, 3, 10, 20, 50, 100...).<br>• Funciona tanto no <strong>Treino</strong> quanto na <strong>Avaliação</strong>.</span>
-                </span>
-              </div>
-              <div class="flex gap-1">
-                <button type="button" onclick="setScrambleDepthInput(1)" class="badge-btn">1</button>
-                <button type="button" onclick="setScrambleDepthInput(3)" class="badge-btn">3</button>
-                <button type="button" onclick="setScrambleDepthInput(5)" class="badge-btn">5</button>
-                <button type="button" onclick="setScrambleDepthInput(10)" class="badge-btn">10</button>
-                <button type="button" onclick="setScrambleDepthInput(20)" class="badge-btn">20</button>
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <input type="number" id="cfg-scramble-depth" value="3" min="1" placeholder="Qtd de passos (livre sem limite)..." class="hud-input font-mono text-[11px] text-amber-200" />
-              <span class="text-[9px] text-amber-400/80 font-mono whitespace-nowrap">Passos livres</span>
-            </div>
-
-            <!-- Controle de Mixed Replay -->
-            <div class="flex items-center justify-between border-t border-amber-900/40 pt-1.5 mt-0.5 text-[10px]">
-              <div class="flex items-center gap-1 text-amber-300 font-semibold">
-                <span>🔄 Mixed Replay</span>
-                <span class="tooltip-wrap tooltip-down tooltip-left">
-                  <span class="tooltip-icon" title="Taxa de amostragem de níveis anteriores durante o currículo. Reduzido para 5% ou 0% para concentrar 95-100% dos passos na profundidade de fronteira.">ⓘ</span>
-                  <span class="tooltip-bubble"><strong>Mixed Replay</strong>: Controla quanto tempo o treino gasta em profundidades já consolidadas.<br>• <strong>5% (Padrão S1)</strong>: 95% do tempo focado na fronteira de avanço.<br>• <strong>0% (Desativado)</strong>: 100% na fronteira máxima, acelerando a quebra de platôs.</span>
-                </span>
-              </div>
-              <div class="flex items-center gap-1">
-                <button type="button" onclick="setMixedReplayRate(0.0)" id="btn-replay-0" class="badge-btn">0% (Off)</button>
-                <button type="button" onclick="setMixedReplayRate(0.05)" id="btn-replay-5" class="badge-btn text-cyan-300 font-bold border-cyan-700 bg-cyan-950">5% (Min)</button>
-                <button type="button" onclick="setMixedReplayRate(0.10)" id="btn-replay-10" class="badge-btn">10%</button>
-                <input type="hidden" id="cfg-mixed-replay-rate" value="0.05" />
-              </div>
+              <button type="button" onclick="setMixedReplayRate(0.0)" id="btn-replay-0" class="badge-btn">0% (Off)</button>
+              <button type="button" onclick="setMixedReplayRate(0.05)" id="btn-replay-5" class="badge-btn text-cyan-300 font-bold border-cyan-700 bg-cyan-950">5% (Min)</button>
+              <button type="button" onclick="setMixedReplayRate(0.10)" id="btn-replay-10" class="badge-btn">10%</button>
+              <input type="hidden" id="cfg-mixed-replay-rate" value="0.05" />
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- SEÇÃO: GERENCIAMENTO DE CHECKPOINTS & MODELOS -->
-        <div class="border-t border-gray-800/80 pt-2 flex flex-col gap-2.5 bg-gray-900/40 p-2.5 rounded border border-gray-800">
-          <div class="flex justify-between items-center">
-            <span class="text-[11px] font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1">
-              <span>💾</span> Gestão de Checkpoints
+      <!-- SEÇÃO: GERENCIAMENTO DE CHECKPOINTS & MODELOS -->
+      <div class="card p-3 flex flex-col gap-2.5 bg-gray-950/60 border-gray-800">
+        <div class="flex justify-between items-center">
+          <span class="text-[11px] font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1">
+            <span>💾</span> Gestão de Checkpoints
+          </span>
+          <button type="button" onclick="refreshCheckpoints()" class="badge-btn flex items-center gap-1" title="Escanear arquivos .pt no projeto">
+            <span>🔄</span> Atualizar
+          </button>
+        </div>
+
+        <!-- SALVAR CHECKPOINT (--save) - Modo Treino -->
+        <div id="group-save" class="bg-[#0b101c] p-2 rounded border border-gray-800/80 flex flex-col gap-1.5">
+          <div class="flex items-center justify-between">
+            <label class="flex items-center gap-1.5 cursor-pointer text-[11px] text-cyan-400 font-semibold">
+              <input type="checkbox" id="chk-enable-save" checked onchange="toggleSaveInput()" class="w-3.5 h-3.5 rounded bg-gray-900 border-gray-700 text-cyan-500 focus:ring-0" />
+              <span>Salvar Checkpoint (--save)</span>
+              <span class="tooltip-wrap tooltip-down tooltip-left">
+                <span class="tooltip-icon" title="Nome do arquivo .pt para persistir os pesos neurais ao bater o objetivo ou concluir o treino.">ⓘ</span>
+                <span class="tooltip-bubble"><strong>--save</strong>: Nome do arquivo de checkpoint (.pt).<br>Salva os 18 tensores do tronco neural compartilhado + as cabeças específicas de política e valor ao concluir o treinamento ou bater o Target Return.</span>
+              </span>
+            </label>
+            <button type="button" onclick="suggestCheckpointName(true)" class="badge-btn" title="Gera ou incrementa um nome de arquivo .pt contextualizado com o ambiente e cenário selecionados">🪄 Sugerir Nome</button>
+          </div>
+          <div id="save-input-container" class="flex flex-col gap-1">
+            <input type="text" id="cfg-save" placeholder="ex: s1_cartpole_trained.pt" value="s1_rubikscube_v0_trained.pt" class="hud-input" oninput="checkSaveConflict()" />
+            <div id="save-status-msg" class="text-[10px] text-gray-500 font-mono"></div>
+            <label class="flex items-center gap-1.5 cursor-pointer text-[10px] text-emerald-400 font-mono mt-0.5 select-none" title="Converte automaticamente para formato ONNX e sincroniza com web/models e o portfólio oficial">
+              <input type="checkbox" id="chk-auto-sync-web" checked class="w-3 h-3 rounded bg-gray-900 border-gray-700 text-emerald-500 focus:ring-0 cursor-pointer" />
+              <span>🌐 Auto-sincronizar ONNX com Portfólio Web</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- CARREGAR CHECKPOINT (--load) - Modo Avaliar -->
+        <div id="group-load" class="hidden bg-[#0b101c] p-2 rounded border border-gray-800/80 flex flex-col gap-1.5">
+          <div class="flex items-center gap-1.5">
+            <label class="text-[11px] text-yellow-400 font-semibold">Carregar Checkpoint (--load)</label>
+            <span class="tooltip-wrap tooltip-down tooltip-left">
+              <span class="tooltip-icon" title="Arquivo .pt de pesos pré-treinados a carregar para avaliação ou benchmark.">ⓘ</span>
+              <span class="tooltip-bubble"><strong>--load</strong>: Carrega pesos neurais pré-existentes (.pt).<br>Essencial para o modo <em>Avaliar</em> inspecionar a política aprendida ou para <em>Benchmark</em> testar a velocidade real da rede treinada.</span>
             </span>
-            <button type="button" onclick="refreshCheckpoints()" class="badge-btn flex items-center gap-1" title="Escanear arquivos .pt no projeto">
-              <span>🔄</span> Atualizar
-            </button>
           </div>
-
-          <!-- SALVAR CHECKPOINT (--save) - Modo Treino -->
-          <div id="group-save" class="bg-[#0b101c] p-2 rounded border border-gray-800/80 flex flex-col gap-1.5">
-            <div class="flex items-center justify-between">
-              <label class="flex items-center gap-1.5 cursor-pointer text-[11px] text-cyan-400 font-semibold">
-                <input type="checkbox" id="chk-enable-save" checked onchange="toggleSaveInput()" class="w-3.5 h-3.5 rounded bg-gray-900 border-gray-700 text-cyan-500 focus:ring-0" />
-                <span>Salvar Checkpoint (--save)</span>
-                <span class="tooltip-wrap tooltip-down tooltip-left">
-                  <span class="tooltip-icon" title="Nome do arquivo .pt para persistir os pesos neurais ao bater o objetivo ou concluir o treino.">ⓘ</span>
-                  <span class="tooltip-bubble"><strong>--save</strong>: Nome do arquivo de checkpoint (.pt).<br>Salva os 18 tensores do tronco neural compartilhado + as cabeças específicas de política e valor ao concluir o treinamento ou bater o Target Return.</span>
-                </span>
-              </label>
-              <button type="button" onclick="suggestCheckpointName(true)" class="badge-btn" title="Gera ou incrementa um nome de arquivo .pt contextualizado com o ambiente e cenário selecionados">🪄 Sugerir Nome</button>
-            </div>
-            <div id="save-input-container" class="flex flex-col gap-1">
-              <input type="text" id="cfg-save" placeholder="ex: s1_cartpole_trained.pt" value="s1_rubikscube_v0_trained.pt" class="hud-input" oninput="checkSaveConflict()" />
-              <div id="save-status-msg" class="text-[10px] text-gray-500 font-mono"></div>
-              <label class="flex items-center gap-1.5 cursor-pointer text-[10px] text-emerald-400 font-mono mt-0.5 select-none" title="Converte automaticamente para formato ONNX e sincroniza com web/models e o portfólio oficial">
-                <input type="checkbox" id="chk-auto-sync-web" checked class="w-3 h-3 rounded bg-gray-900 border-gray-700 text-emerald-500 focus:ring-0 cursor-pointer" />
-                <span>🌐 Auto-sincronizar ONNX com Portfólio Web</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- CARREGAR CHECKPOINT (--load) - Modo Avaliar -->
-          <div id="group-load" class="hidden bg-[#0b101c] p-2 rounded border border-gray-800/80 flex flex-col gap-1.5">
-            <div class="flex items-center gap-1.5">
-              <label class="text-[11px] text-yellow-400 font-semibold">Carregar Checkpoint (--load)</label>
-              <span class="tooltip-wrap tooltip-down tooltip-left">
-                <span class="tooltip-icon" title="Arquivo .pt de pesos pré-treinados a carregar para avaliação ou benchmark.">ⓘ</span>
-                <span class="tooltip-bubble"><strong>--load</strong>: Carrega pesos neurais pré-existentes (.pt).<br>Essencial para o modo <em>Avaliar</em> inspecionar a política aprendida ou para <em>Benchmark</em> testar a velocidade real da rede treinada.</span>
-              </span>
-            </div>
-            <select id="cfg-load" class="hud-input" onchange="onLoadCheckpointChange()">
-              <option value="">Nenhum (Pesos aleatórios inicializados)</option>
-            </select>
-            <div id="load-meta" class="text-[10px] text-gray-400 font-mono italic">Nenhum checkpoint selecionado.</div>
-            <div id="load-compat-warning" class="hidden"></div>
-          </div>
-
-          <!-- CARREGAMENTO DE CHECKPOINT / TRANSFERÊNCIA (--load / --transfer-from) - Modo Treino -->
-          <div id="group-transfer" class="bg-[#0b101c] p-2 rounded border border-gray-800/80 flex flex-col gap-2">
-            <div>
-              <div class="flex items-center gap-1.5 mb-1">
-                <label class="text-[11px] text-purple-400 font-semibold">Checkpoint Base / Transferência</label>
-                <span class="tooltip-wrap tooltip-down tooltip-left">
-                  <span class="tooltip-icon" title="Checkpoint para warm-start (mesmo ambiente) ou transferência de tronco (cross-domain).">ⓘ</span>
-                  <span class="tooltip-bubble"><strong>Checkpoint Base no Treino</strong>:<br>• <strong>Mesmo Ambiente</strong>: Restaura 100% dos parâmetros (percepção, tronco, política e valor) para continuar o treino sem regredir.<br>• <strong>Outro Ambiente</strong>: Transfere exclusivamente os 18 tensores do tronco universal reflexivo.</span>
-                </span>
-              </div>
-              <select id="cfg-transfer" class="hud-input" onchange="onTransferCheckpointChange()">
-                <option value="">Nenhum (Treinar do zero)</option>
-              </select>
-              <div id="transfer-meta" class="text-[10px] text-gray-400 font-mono italic mt-1">Nenhum checkpoint selecionado (treinar do zero).</div>
-              <div id="transfer-status-box" class="hidden mt-1.5"></div>
-            </div>
-            <div class="flex items-center justify-between border-t border-gray-800/80 pt-1.5 px-0.5">
-              <div class="flex flex-col">
-                <div class="flex items-center gap-1.5">
-                  <span class="text-[10px] text-gray-300 font-semibold">Congelar Tronco (--freeze-trunk)</span>
-                  <span class="tooltip-wrap tooltip-left">
-                    <span class="tooltip-icon" title="Bloqueia requires_grad=False nos 18 tensores do tronco compartilhado para 0% de Esquecimento Catastrófico.">ⓘ</span>
-                    <span class="tooltip-bubble"><strong>--freeze-trunk</strong>: Congelamento do Tronco.<br>Bloqueia a atualização de gradientes nos 18 tensores compartilhados. Apenas as novas cabeças de política/valor aprendem, garantindo 0% de interferência nos conhecimentos prévios.</span>
-                  </span>
-                </div>
-                <span id="freeze-desc" class="text-[9px] text-amber-400">Fine-Tuning Ativo (Trunk adaptativo livre)</span>
-              </div>
-              <input type="checkbox" id="cfg-freeze-trunk" onchange="onFreezeTrunkChange()" class="w-4 h-4 rounded bg-gray-900 border-gray-700 text-purple-500 focus:ring-0" />
-            </div>
-            <div class="flex items-center justify-between border-t border-gray-800/80 pt-1 px-0.5">
-              <div class="flex flex-col">
-                <span class="text-[10px] text-gray-400">Apenas Tronco (Descartar cabeças)</span>
-                <span class="text-[9px] text-gray-500">Força reinício da política com pesos aleatórios</span>
-              </div>
-              <input type="checkbox" id="cfg-force-trunk-only" class="w-4 h-4 rounded bg-gray-900 border-gray-700 text-amber-500 focus:ring-0" />
-            </div>
-
-          </div>
+          <select id="cfg-load" class="hud-input" onchange="onLoadCheckpointChange()">
+            <option value="">Nenhum (Pesos aleatórios inicializados)</option>
+          </select>
+          <div id="load-meta" class="text-[10px] text-gray-400 font-mono italic">Nenhum checkpoint selecionado.</div>
+          <div id="load-compat-warning" class="hidden"></div>
         </div>
 
-
-
-        <!-- HIPERPARÂMETROS DE TREINAMENTO (PPO & BPTT) -->
-        <div id="param-train-group" class="border-t border-gray-800/80 pt-2 flex flex-col gap-2">
-          <div class="flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-            <span>Hiperparâmetros PPO</span>
-          </div>
-
-          <div class="grid grid-cols-3 gap-2 text-xs">
-            <div>
-              <div class="flex justify-between items-center mb-0.5">
-                <div class="flex items-center gap-1">
-                  <span class="text-[10px] text-gray-400">Passos (--steps)</span>
-                  <span class="tooltip-wrap tooltip-left">
-                    <span class="tooltip-icon" title="Quantidade total de timesteps de ambiente a coletar e otimizar no PPO.">ⓘ</span>
-                    <span class="tooltip-bubble"><strong>--steps</strong>: Horizonte total de passos de ambiente a coletar e otimizar durante a sessão de treino PPO.</span>
-                  </span>
-                </div>
-                <div class="flex gap-0.5">
-                  <button type="button" onclick="setSteps(10000)" class="badge-btn">10k</button>
-                  <button type="button" onclick="setSteps(40000)" class="badge-btn">40k</button>
-                </div>
-              </div>
-              <input type="number" id="cfg-steps" value="40000" class="hud-input" />
-            </div>
-            <div>
-              <div class="flex justify-between items-center mb-0.5">
-                <div class="flex items-center gap-1">
-                  <span class="text-[10px] text-gray-400">Target Return</span>
-                  <span class="tooltip-wrap tooltip-right">
-                    <span class="tooltip-icon" title="Critério de parada antecipada (early stopping) baseado na média dos últimos 20 episódios.">ⓘ</span>
-                    <span class="tooltip-bubble"><strong>--target-return</strong>: Critério de parada antecipada.<br>Se a média móvel dos últimos 20 episódios atingir este valor (ex: 475.0 no CartPole, -100.0 no Acrobot), o treino é finalizado com sucesso imediatamente.</span>
-                  </span>
-                </div>
-                <div class="flex gap-0.5">
-                  <button type="button" onclick="setTargetReturn(12.0)" class="badge-btn">12</button>
-                  <button type="button" onclick="setTargetReturn(475.0)" class="badge-btn">475</button>
-                </div>
-              </div>
-              <input type="number" id="cfg-target-return" value="12.0" step="1" class="hud-input" />
-            </div>
-            <div>
-              <div class="flex justify-between items-center mb-0.5">
-                <div class="flex items-center gap-1">
-                  <span class="text-[10px] text-gray-400">LR (--lr)</span>
-                  <span class="tooltip-wrap tooltip-left">
-                    <span class="tooltip-icon" title="Taxa de aprendizado (Learning Rate) do otimizador Adam (ex: 0.0003).">ⓘ</span>
-                    <span class="tooltip-bubble"><strong>--lr</strong>: Learning Rate do otimizador Adam.<br>Controla a magnitude de passo dos gradientes. Valores típicos: <em>0.0003</em> a <em>0.0007</em>.</span>
-                  </span>
-                </div>
-                <div class="flex gap-0.5">
-                  <button type="button" onclick="setLR('0.0003')" class="badge-btn">3e-4</button>
-                  <button type="button" onclick="setLR('0.0007')" class="badge-btn">7e-4</button>
-                </div>
-              </div>
-              <input type="text" id="cfg-lr" value="0.0003" class="hud-input" />
-            </div>
-          </div>
-
-          <!-- Hiperparâmetros Avançados (Colapsáveis para manter interface limpa) -->
-          <details class="group bg-gray-950/60 p-2 rounded border border-gray-800/80">
-            <summary class="cursor-pointer text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center justify-between hover:text-gray-300 select-none">
-              <span class="flex items-center gap-1.5">
-                <span>⚙️</span> Hiperparâmetros Avançados (Entropia, Exploração, BPTT)
-              </span>
-              <span class="text-[9px] text-gray-500 font-mono transition-transform group-open:rotate-180">▼</span>
-            </summary>
-            <div class="flex flex-col gap-2.5 mt-2 pt-2 border-t border-gray-800/60">
-              <div class="grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <div class="flex items-center gap-1 mb-0.5">
-                    <span class="text-[10px] text-gray-400 block">Entropia (--entropy-coef)</span>
-                    <span class="tooltip-wrap tooltip-right">
-                      <span class="tooltip-icon" title="Bônus de entropia no PPO para encorajar exploração do agente e evitar colapso prematuro da política.">ⓘ</span>
-                      <span class="tooltip-bubble"><strong>--entropy-coef</strong>: Bônus de entropia da política.<br>Valores maiores (ex: 0.01) estimulam o agente a explorar ações variadas; valores menores (ex: 0.001) tornam a política mais determinística.</span>
-                    </span>
-                  </div>
-                  <input type="number" id="cfg-entropy" value="0.003" step="0.001" min="0" max="0.1" class="hud-input" />
-                </div>
-                <div>
-                  <div class="flex justify-between items-center mb-0.5">
-                    <div class="flex items-center gap-1">
-                      <span class="text-[10px] text-gray-400 block">Exploração Treino (0.05 a 1.0)</span>
-                      <span class="tooltip-wrap tooltip-left">
-                        <span class="tooltip-icon" title="Escala de exploração dos rollouts no treino PPO (temperatura Boltzmann para ações discretas / ruído σ para contínuas).">ⓘ</span>
-                        <span class="tooltip-bubble"><strong>Exploração no Treino</strong>:<br>• <strong>⚡ Auto</strong>: Homeostase dinâmica — esfria sob progresso para consolidação e aquece sob estagnação para auto-correção e quebra de loops.<br>• <strong>1.0 (Padrão)</strong>: Exploração estocástica completa do PPO.<br>• <strong>0.5 - 0.7</strong>: Exploração focada temperada.<br>• <strong>0.05</strong>: Quase-determinístico.</span>
-                      </span>
-                    </div>
-                    <div class="flex gap-0.5">
-                      <button type="button" onclick="setTrainCalibration('auto')" class="badge-btn">⚡ Auto</button>
-                      <button type="button" onclick="setTrainCalibration(1.0)" class="badge-btn">1.0</button>
-                      <button type="button" onclick="setTrainCalibration(0.7)" class="badge-btn">0.7</button>
-                      <button type="button" onclick="setTrainCalibration(0.5)" class="badge-btn">0.5</button>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <input type="range" id="cfg-train-calib-range" min="0.05" max="1.0" step="0.05" value="0.8" oninput="onTrainCalibRangeChange(this.value)" class="w-full accent-emerald-500 cursor-pointer" />
-                    <input type="text" id="cfg-train-calibration" value="auto" oninput="onTrainCalibNumChange(this.value)" class="hud-input w-16 text-center font-mono text-[11px]" />
-                  </div>
-                </div>
-              </div>
-
-              <!-- Self-Imitation Learning (SIL Replay) & Mixed Replay -->
-              <div class="bg-[#090d16] p-2 rounded border border-gray-800/60 flex flex-col gap-1.5 text-xs">
-                <div class="flex justify-between items-center text-[10px] text-gray-400 font-semibold px-0.5">
-                  <span class="flex items-center gap-1"><span class="text-indigo-400">🧠</span> Self-Imitation Learning (SIL Replay)</span>
-                  <label class="flex items-center gap-1.5 cursor-pointer select-none">
-                    <input type="checkbox" id="cfg-sil" checked class="accent-indigo-500 rounded cursor-pointer" />
-                    <span class="text-[10px] text-indigo-300 font-semibold">Ativo</span>
-                  </label>
-                </div>
-                <div class="grid grid-cols-2 gap-2 mt-0.5">
-                  <div>
-                    <div class="flex items-center gap-1 mb-0.5">
-                      <span class="text-[10px] text-gray-400 block">Coeficiente SIL (--sil-coef)</span>
-                      <span class="tooltip-wrap tooltip-right">
-                        <span class="tooltip-icon" title="Peso da perda de Self-Imitation Learning frente ao PPO.">ⓘ</span>
-                        <span class="tooltip-bubble"><strong>--sil-coef</strong>: Escala da atualização de auto-imitação baseada nas vantagens de vitória $(R - V)_+$. Padrão recomendado: 0.10.</span>
-                      </span>
-                    </div>
-                    <input type="number" id="cfg-sil-coef" value="0.10" step="0.02" min="0.01" max="1.0" class="hud-input text-center" />
-                  </div>
-                  <div>
-                    <div class="flex items-center gap-1 mb-0.5">
-                      <span class="text-[10px] text-gray-400 block">Taxa Mixed Replay</span>
-                      <span class="tooltip-wrap tooltip-left">
-                        <span class="tooltip-icon" title="Fração de episódios que revisitam profundidades consolidadas vs fronteira atual.">ⓘ</span>
-                        <span class="tooltip-bubble"><strong>mixed_replay_rate</strong>: 0.05 significa 95% do esforço focado na fronteira curricular e 5% em revisão. 0.0 desativa completamente.</span>
-                      </span>
-                    </div>
-                    <input type="number" id="cfg-mixed-replay-rate" value="0.05" step="0.01" min="0" max="0.5" class="hud-input text-center" />
-                  </div>
-                </div>
-              </div>
-
-              <!-- BPTT Recorrente Chunking -->
-              <div class="bg-[#090d16] p-2 rounded border border-gray-800/60 flex flex-col gap-1.5 text-xs">
-                <div class="flex justify-between items-center text-[10px] text-gray-400 font-semibold px-0.5">
-                  <span>BPTT Recorrente & Rollouts</span>
-                  <span class="text-[9px] text-gray-500 font-mono italic">Memória & Gradientes</span>
-                </div>
-                <div class="grid grid-cols-3 gap-1.5">
-                  <div>
-                    <div class="flex items-center justify-center gap-1 mb-0.5">
-                      <span class="text-[9px] text-gray-400 block">Rollout</span>
-                      <span class="tooltip-wrap tooltip-left">
-                        <span class="tooltip-icon" title="Tamanho do buffer de coleta de passos antes de cada época de otimização PPO.">ⓘ</span>
-                        <span class="tooltip-bubble"><strong>--rollout-steps</strong>: Tamanho do buffer de coleta.<br>Número de timesteps executados e armazenados antes de rodar os gradientes do PPO (ex: 512, 1024, 2048, 4096).</span>
-                      </span>
-                    </div>
-                    <input type="number" id="cfg-rollout-steps" value="2048" class="hud-input text-center" />
-                    <div class="flex justify-center gap-0.5 mt-1 flex-wrap">
-                      <button type="button" onclick="setRolloutSteps(512)" class="badge-btn" title="512 passos">512</button>
-                      <button type="button" onclick="setRolloutSteps(1024)" class="badge-btn" title="1024 passos">1k</button>
-                      <button type="button" onclick="setRolloutSteps(2048)" class="badge-btn" title="2048 passos">2k</button>
-                      <button type="button" onclick="setRolloutSteps(4096)" class="badge-btn" title="4096 passos">4k</button>
-                    </div>
-                  </div>
-                  <div>
-                    <div class="flex items-center justify-center gap-1 mb-0.5">
-                      <span class="text-[9px] text-gray-400 block">Chunk Len</span>
-                      <span class="tooltip-wrap">
-                        <span class="tooltip-icon" title="Comprimento temporal (T) de cada chunk para BPTT truncado em redes recorrentes.">ⓘ</span>
-                        <span class="tooltip-bubble"><strong>--chunk-length</strong>: Comprimento temporal (T) de cada chunk para BPTT recorrente. Permite que o estado oculto da rede aprenda dependências temporais (ex: 8, 16, 32, 64).</span>
-                      </span>
-                    </div>
-                    <input type="number" id="cfg-chunk-length" value="32" class="hud-input text-center" />
-                    <div class="flex justify-center gap-0.5 mt-1 flex-wrap">
-                      <button type="button" onclick="setChunkLength(8)" class="badge-btn" title="Chunk T=8">8</button>
-                      <button type="button" onclick="setChunkLength(16)" class="badge-btn" title="Chunk T=16">16</button>
-                      <button type="button" onclick="setChunkLength(32)" class="badge-btn" title="Chunk T=32">32</button>
-                      <button type="button" onclick="setChunkLength(64)" class="badge-btn" title="Chunk T=64">64</button>
-                    </div>
-                  </div>
-                  <div>
-                    <div class="flex items-center justify-center gap-1 mb-0.5">
-                      <span class="text-[9px] text-gray-400 block">Batch Chunks</span>
-                      <span class="tooltip-wrap tooltip-right">
-                        <span class="tooltip-icon" title="Número de sequências temporais processadas em paralelo por mini-batch no PPO recorrente.">ⓘ</span>
-                        <span class="tooltip-bubble"><strong>--chunk-batch-size</strong>: Tamanho do batch de sequências temporais processadas conjuntamente durante as passadas de otimização de gradiente.</span>
-                      </span>
-                    </div>
-                    <input type="number" id="cfg-chunk-batch" value="16" class="hud-input text-center" />
-                    <div class="flex justify-center gap-0.5 mt-1 flex-wrap">
-                      <button type="button" onclick="setChunkBatch(8)" class="badge-btn" title="Batch size 8">8</button>
-                      <button type="button" onclick="setChunkBatch(16)" class="badge-btn" title="Batch size 16">16</button>
-                      <button type="button" onclick="setChunkBatch(32)" class="badge-btn" title="Batch size 32">32</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </details>
-        </div>
-
-        <!-- HIPERPARÂMETROS DE AVALIAÇÃO (RUN) -->
-        <div id="param-eval-group" class="hidden border-t border-gray-800/80 pt-2 flex flex-col gap-2">
-          <div class="flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-            <span>Configuração de Avaliação</span>
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <div class="flex justify-between items-center mb-0.5">
-                <div class="flex items-center gap-1">
-                  <span class="text-[10px] text-gray-400">Episódios (--episodes)</span>
-                  <span class="tooltip-wrap tooltip-left">
-                    <span class="tooltip-icon" title="Quantidade de episódios completos a executar no modo Avaliar para medir estatísticas de retorno.">ⓘ</span>
-                    <span class="tooltip-bubble"><strong>--episodes</strong>: Quantidade de episódios completos a rodar no modo <em>Avaliar</em> (--mode run) para computar média e desvio padrão do retorno.</span>
-                  </span>
-                </div>
-                <div class="flex gap-0.5">
-                  <button type="button" onclick="setEpisodes(1)" class="badge-btn">1</button>
-                  <button type="button" onclick="setEpisodes(5)" class="badge-btn">5</button>
-                  <button type="button" onclick="setEpisodes(20)" class="badge-btn">20</button>
-                </div>
-              </div>
-              <input type="number" id="cfg-episodes" value="5" min="1" max="1000" class="hud-input" />
-            </div>
-            <div>
-              <div class="flex justify-between items-center mb-0.5">
-                <div class="flex items-center gap-1">
-                  <span class="text-[10px] text-gray-400">Cadência (--fps)</span>
-                  <span class="tooltip-wrap tooltip-left">
-                    <span class="tooltip-icon" title="Taxa de reprodução para observação visual. 50 = tempo real; 0 = velocidade máxima.">ⓘ</span>
-                    <span class="tooltip-bubble"><strong>--fps</strong>: Cadência de visualização na avaliação.<br>• <em>50</em>: Velocidade natural para inspeção visual.<br>• <em>0</em>: Executa à máxima velocidade do hardware.</span>
-                  </span>
-                </div>
-                <div class="flex gap-0.5">
-                  <button type="button" onclick="setFPS(0)" class="badge-btn">⚡ 0</button>
-                  <button type="button" onclick="setFPS(30)" class="badge-btn">30</button>
-                  <button type="button" onclick="setFPS(50)" class="badge-btn">👁️ 50</button>
-                </div>
-              </div>
-              <input type="number" id="cfg-fps" value="50" min="0" max="120" class="hud-input" />
-            </div>
-          </div>
-
+        <!-- CARREGAMENTO DE CHECKPOINT / TRANSFERÊNCIA (--load / --transfer-from) - Modo Treino -->
+        <div id="group-transfer" class="bg-[#0b101c] p-2 rounded border border-gray-800/80 flex flex-col gap-2">
           <div>
             <div class="flex items-center gap-1.5 mb-1">
-              <label class="text-[10px] text-gray-400 font-semibold">Perfil de Ação na Avaliação</label>
-              <span class="tooltip-wrap tooltip-left">
-                <span class="tooltip-icon" title="Controla a política de ação na avaliação. Em ambientes contínuos (como Ant-v5), 'Estocástica Calibrada' previne bloqueios em equilíbrios estáticos, garantindo locomoção contínua e fluida.">ⓘ</span>
-                <span class="tooltip-bubble"><strong>Perfil de Ação</strong>:<br>• <strong>Estocástica Calibrada (Recomendado)</strong>: Adiciona ruído suave (0.25σ) evitando bloqueios em equilíbrios estáticos da física MuJoCo.<br>• <strong>Determinística Pura</strong>: Ação puramente determinística (média μ da política contínua / argmax discreto).<br>• <strong>Estocástica de Treino</strong>: Amostragem completa da distribuição normal (1.0σ).</span>
+              <label class="text-[11px] text-purple-400 font-semibold">Checkpoint Base / Transferência</label>
+              <span class="tooltip-wrap tooltip-down tooltip-left">
+                <span class="tooltip-icon" title="Checkpoint para warm-start (mesmo ambiente) ou transferência de tronco (cross-domain).">ⓘ</span>
+                <span class="tooltip-bubble"><strong>Checkpoint Base no Treino</strong>:<br>• <strong>Mesmo Ambiente</strong>: Restaura 100% dos parâmetros (percepção, tronco, política e valor) para continuar o treino sem regredir.<br>• <strong>Outro Ambiente</strong>: Transfere exclusivamente os 18 tensores do tronco universal reflexivo.</span>
               </span>
             </div>
-            <select id="cfg-eval-action-mode" onchange="onEvalActionModeChange(this.value)" class="hud-input">
-              <option value="auto" selected>⚡ Auto / Homeostase (Auto-Ajuste Termodinâmico S1 — Recomendado)</option>
-              <option value="calibrated">Estocástica Calibrada (Fluidez e Locomoção Suave)</option>
-              <option value="deterministic">Determinística Pura (Média μ / Argmax)</option>
-              <option value="stochastic">Estocástica Total (Exploração σ de Treino)</option>
+            <select id="cfg-transfer" class="hud-input" onchange="onTransferCheckpointChange()">
+              <option value="">Nenhum (Treinar do zero)</option>
             </select>
+            <div id="transfer-meta" class="text-[10px] text-gray-400 font-mono italic mt-1">Nenhum checkpoint selecionado (treinar do zero).</div>
+            <div id="transfer-status-box" class="hidden mt-1.5"></div>
+          </div>
+          <div class="flex items-center justify-between border-t border-gray-800/80 pt-1.5 px-0.5">
+            <div class="flex flex-col">
+              <div class="flex items-center gap-1.5">
+                <span class="text-[10px] text-gray-300 font-semibold">Congelar Tronco (--freeze-trunk)</span>
+                <span class="tooltip-wrap tooltip-left">
+                  <span class="tooltip-icon" title="Bloqueia requires_grad=False nos 18 tensores do tronco compartilhado para 0% de Esquecimento Catastrófico.">ⓘ</span>
+                  <span class="tooltip-bubble"><strong>--freeze-trunk</strong>: Congelamento do Tronco.<br>Bloqueia a atualização de gradientes nos 18 tensores compartilhados. Apenas as novas cabeças de política/valor aprendem, garantindo 0% de interferência nos conhecimentos prévios.</span>
+                </span>
+              </div>
+              <span id="freeze-desc" class="text-[9px] text-amber-400">Fine-Tuning Ativo (Trunk adaptativo livre)</span>
+            </div>
+            <input type="checkbox" id="cfg-freeze-trunk" onchange="onFreezeTrunkChange()" class="w-4 h-4 rounded bg-gray-900 border-gray-700 text-purple-500 focus:ring-0" />
+          </div>
+          <div class="flex items-center justify-between border-t border-gray-800/80 pt-1 px-0.5">
+            <div class="flex flex-col">
+              <span class="text-[10px] text-gray-400">Apenas Tronco (Descartar cabeças)</span>
+              <span class="text-[9px] text-gray-500">Força reinício da política com pesos aleatórios</span>
+            </div>
+            <input type="checkbox" id="cfg-force-trunk-only" class="w-4 h-4 rounded bg-gray-900 border-gray-700 text-amber-500 focus:ring-0" />
+          </div>
+        </div>
+      </div>
+
+      <!-- HIPERPARÂMETROS DE TREINAMENTO (PPO & BPTT) -->
+      <div id="param-train-group" class="card p-3 flex flex-col gap-2.5 bg-gray-950/60 border-gray-800">
+        <div class="flex justify-between items-center text-[11px] font-bold text-gray-300 uppercase tracking-wider">
+          <span>Hiperparâmetros PPO</span>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2 text-xs">
+          <div>
+            <div class="flex justify-between items-center mb-0.5">
+              <div class="flex items-center gap-1">
+                <span class="text-[10px] text-gray-400">Passos</span>
+                <span class="tooltip-wrap tooltip-left">
+                  <span class="tooltip-icon" title="Quantidade total de timesteps de ambiente a coletar e otimizar no PPO.">ⓘ</span>
+                  <span class="tooltip-bubble"><strong>--steps</strong>: Horizonte total de passos de ambiente a coletar e otimizar durante a sessão de treino PPO.</span>
+                </span>
+              </div>
+              <div class="flex gap-0.5">
+                <button type="button" onclick="setSteps(10000)" class="badge-btn">10k</button>
+                <button type="button" onclick="setSteps(40000)" class="badge-btn">40k</button>
+              </div>
+            </div>
+            <input type="number" id="cfg-steps" value="40000" class="hud-input" />
           </div>
           <div>
             <div class="flex justify-between items-center mb-0.5">
               <div class="flex items-center gap-1">
-                <label class="text-[10px] text-gray-400 font-semibold">Calibração de Ação (0.0 a 1.0)</label>
-                <span class="tooltip-wrap tooltip-left">
-                  <span class="tooltip-icon" title="Calibração contínua de amostragem na avaliação. Interpola suavemente entre determinismo puro (0.0 = argmax/μ) e estocasticidade total (1.0 = Boltzmann T=1.0 / 1.0σ), prevenindo ciclos repetitivos e preservando fluidez ergodicamente.">ⓘ</span>
-                  <span class="tooltip-bubble"><strong>Calibração Contínua [0.0, 1.0]</strong>:<br>• <strong>⚡ Auto</strong>: Homeostase termodinâmica S1: eleva temperatura quando estagnado e resfria com recompensa.<br>• <strong>0.0 (Determinístico)</strong>: Argmax para ações discretas / Média μ para contínuas.<br>• <strong>0.25 - 0.5 (Calibrado)</strong>: Temperatura suave fixa.<br>• <strong>1.0 (Estocástico Total)</strong>: Distribuição raw completa da política neural.</span>
+                <span class="text-[10px] text-gray-400">Target Return</span>
+                <span class="tooltip-wrap tooltip-right">
+                  <span class="tooltip-icon" title="Critério de parada antecipada (early stopping) baseado na média dos últimos 20 episódios.">ⓘ</span>
+                  <span class="tooltip-bubble"><strong>--target-return</strong>: Critério de parada antecipada.<br>Se a média móvel dos últimos 20 episódios atingir este valor, o treino é finalizado com sucesso imediatamente.</span>
                 </span>
               </div>
               <div class="flex gap-0.5">
-                <button type="button" onclick="setEvalCalibration('auto')" class="badge-btn">⚡ Auto</button>
-                <button type="button" onclick="setEvalCalibration(0.0)" class="badge-btn">0.0 [Det]</button>
-                <button type="button" onclick="setEvalCalibration(0.5)" class="badge-btn">0.5 [Calib]</button>
-                <button type="button" onclick="setEvalCalibration(1.0)" class="badge-btn">1.0 [Estoc]</button>
+                <button type="button" onclick="setTargetReturn(12.0)" class="badge-btn">12</button>
+                <button type="button" onclick="setTargetReturn(475.0)" class="badge-btn">475</button>
               </div>
             </div>
-            <div class="flex items-center gap-2">
-              <input type="range" id="cfg-eval-calib-range" min="0.0" max="1.0" step="0.05" value="0.5" oninput="onEvalCalibRangeChange(this.value)" class="w-full accent-cyan-500 cursor-pointer" />
-              <input type="text" id="cfg-eval-calibration" value="auto" oninput="onEvalCalibNumChange(this.value)" class="hud-input w-16 text-center font-mono text-[11px]" />
-            </div>
+            <input type="number" id="cfg-target-return" value="12.0" step="1" class="hud-input" />
           </div>
-        </div>
-
-
-      </div>
-    </section>
-
-    <!-- COLUNA 2: CENTRO OPERACIONAL ADAPTATIVO (TREINO: LOGS & STATUS | AVALIAÇÃO: VIEWPORT, SCORES & INTERAÇÃO) -->
-    <section class="lg:col-span-4 flex flex-col gap-4">
-      
-      <!-- [FOCO AVALIAÇÃO] HERO SCOREBOARD EM TEMPO REAL -->
-      <div id="eval-scoreboard" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <!-- Card 1: Score / Retorno Atual -->
-        <div class="card p-2.5 flex flex-col bg-gradient-to-br from-[#0c1424] to-[#070b14] border border-cyan-500/50 shadow-md">
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">🎯 Score Atual</span>
-            <span id="eval-score-badge" class="px-1.5 py-0.2 rounded text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 font-mono">EPISÓDIO</span>
-          </div>
-          <span id="eval-current-score" class="text-2xl font-black font-mono text-cyan-300 mt-1">0.00</span>
-          <div class="flex items-center justify-between text-[9px] text-gray-400 font-mono mt-0.5">
-            <span>Pico Recorde:</span>
-            <span id="eval-peak-score" class="font-bold text-cyan-400">0.00</span>
-          </div>
-        </div>
-
-        <!-- Card 2: Passos & Duração -->
-        <div class="card p-2.5 flex flex-col bg-gradient-to-br from-[#121622] to-[#070b14] border border-yellow-500/40 shadow-md">
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] text-yellow-400 font-bold uppercase tracking-wider">⏱️ Passos</span>
-            <span class="text-[9px] text-gray-400 font-mono">Duração</span>
-          </div>
-          <span id="eval-steps-counter" class="text-2xl font-black font-mono text-yellow-400 mt-1">0</span>
-          <span id="eval-steps-sub" class="text-[9px] text-gray-400 font-mono truncate mt-0.5">Progresso: 0.0%</span>
-        </div>
-
-        <!-- Card 3: Confiança da Decisão -->
-        <div class="card p-2.5 flex flex-col bg-gradient-to-br from-[#0b1c18] to-[#070b14] border border-emerald-500/40 shadow-md">
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">🧠 Confiança</span>
-            <span id="eval-calib-badge" class="px-1 py-0.2 rounded text-[9px] bg-purple-950 text-purple-300 border border-purple-800 font-mono">Auto</span>
-          </div>
-          <span id="eval-confidence-val" class="text-2xl font-black font-mono text-emerald-400 mt-1">--%</span>
-          <div class="w-full bg-gray-950 h-1.5 rounded-full overflow-hidden mt-1 border border-gray-800">
-            <div id="eval-confidence-bar" class="bg-emerald-500 h-full rounded-full transition-all duration-150" style="width: 0%"></div>
-          </div>
-        </div>
-
-        <!-- Card 4: Latência de Decisão -->
-        <div class="card p-2.5 flex flex-col bg-gradient-to-br from-[#1c0f1f] to-[#070b14] border border-pink-500/40 shadow-md">
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] text-pink-400 font-bold uppercase tracking-wider">⚡ Latência P50</span>
-            <span class="text-[9px] text-emerald-400 font-mono font-bold">✓ Reflex</span>
-          </div>
-          <span id="eval-latency-val" class="text-2xl font-black font-mono text-pink-300 mt-1">-- µs</span>
-          <span class="text-[9px] text-gray-400 font-mono mt-0.5">&le; 800µs Hardware Real</span>
-        </div>
-      </div>
-
-      <!-- [FOCO TREINO] BANNER COMPACTO DE SIMULAÇÃO HEADLESS -->
-      <div id="train-headless-compact" class="p-2.5 rounded bg-gradient-to-r from-amber-950/40 via-cyan-950/30 to-purple-950/40 border border-amber-500/40 flex items-center justify-between text-xs shadow-md">
-        <div class="flex items-center gap-2">
-          <span class="text-xl">⚡</span>
           <div>
-            <div class="font-bold text-amber-300 flex items-center gap-1.5">
-              <span>Simulação Headless de Ultra-Velocidade</span>
-              <span class="px-1.5 py-0.2 rounded text-[9px] bg-green-950 text-green-300 border border-green-800 font-mono">MAX FPS</span>
+            <div class="flex justify-between items-center mb-0.5">
+              <div class="flex items-center gap-1">
+                <span class="text-[10px] text-gray-400">LR</span>
+                <span class="tooltip-wrap tooltip-left">
+                  <span class="tooltip-icon" title="Taxa de aprendizado (Learning Rate) do otimizador Adam.">ⓘ</span>
+                  <span class="tooltip-bubble"><strong>--lr</strong>: Learning Rate do otimizador Adam.<br>Controla a magnitude de passo dos gradientes. Valores típicos: <em>0.0003</em> a <em>0.0007</em>.</span>
+                </span>
+              </div>
+              <div class="flex gap-0.5">
+                <button type="button" onclick="setLR('0.0003')" class="badge-btn">3e-4</button>
+                <button type="button" onclick="setLR('0.0007')" class="badge-btn">7e-4</button>
+              </div>
             </div>
-            <div class="text-[10px] text-gray-400">Zero overhead de renderização gráfica. Toda a CPU/GPU dedicada à convergência de gradientes.</div>
+            <input type="text" id="cfg-lr" value="0.0003" class="hud-input" />
           </div>
         </div>
-        <div class="flex items-center gap-2 font-mono text-[11px]">
-          <span class="text-gray-400">FPS: <strong id="headless-live-fps" class="text-green-400 font-bold">0.0</strong></span>
-          <button type="button" onclick="toggleTrainViewportPreview()" id="btn-toggle-train-viewport" class="badge-btn flex items-center gap-1" title="Expandir/Recolher prévia visual do frame">
-            <span>👁️</span> Prévia Viewport
-          </button>
-        </div>
+
+        <!-- Hiperparâmetros Avançados -->
+        <details class="group bg-gray-950/80 p-2.5 rounded border border-gray-800">
+          <summary class="cursor-pointer text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center justify-between hover:text-gray-300 select-none">
+            <span class="flex items-center gap-1.5">
+              <span>⚙️</span> Entropia, Exploração e BPTT
+            </span>
+            <span class="text-[9px] text-gray-500 font-mono transition-transform group-open:rotate-180">▼</span>
+          </summary>
+          <div class="flex flex-col gap-2.5 mt-2 pt-2 border-t border-gray-800/60">
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <div class="flex items-center gap-1 mb-0.5">
+                  <span class="text-[10px] text-gray-400 block">Entropia (--entropy-coef)</span>
+                  <span class="tooltip-wrap tooltip-right">
+                    <span class="tooltip-icon" title="Bônus de entropia no PPO para encorajar exploração do agente.">ⓘ</span>
+                    <span class="tooltip-bubble"><strong>--entropy-coef</strong>: Bônus de entropia da política.</span>
+                  </span>
+                </div>
+                <input type="number" id="cfg-entropy" value="0.003" step="0.001" min="0" max="0.1" class="hud-input" />
+              </div>
+              <div>
+                <div class="flex justify-between items-center mb-0.5">
+                  <div class="flex items-center gap-1">
+                    <span class="text-[10px] text-gray-400 block">Exploração Treino</span>
+                    <span class="tooltip-wrap tooltip-left">
+                      <span class="tooltip-icon" title="Escala de exploração dos rollouts no treino PPO.">ⓘ</span>
+                      <span class="tooltip-bubble"><strong>Exploração no Treino</strong>: Auto ajusta dinamicamente via homeostase S1.</span>
+                    </span>
+                  </div>
+                  <div class="flex gap-0.5">
+                    <button type="button" onclick="setTrainCalibration('auto')" class="badge-btn">⚡ Auto</button>
+                    <button type="button" onclick="setTrainCalibration(1.0)" class="badge-btn">1.0</button>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <input type="range" id="cfg-train-calib-range" min="0.05" max="1.0" step="0.05" value="0.8" oninput="onTrainCalibRangeChange(this.value)" class="w-full accent-emerald-500 cursor-pointer" />
+                  <input type="text" id="cfg-train-calibration" value="auto" oninput="onTrainCalibNumChange(this.value)" class="hud-input w-16 text-center font-mono text-[11px]" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Self-Imitation Learning (SIL Replay) -->
+            <div class="bg-[#090d16] p-2 rounded border border-gray-800/60 flex flex-col gap-1.5 text-xs">
+              <div class="flex justify-between items-center text-[10px] text-gray-400 font-semibold px-0.5">
+                <span class="flex items-center gap-1"><span class="text-indigo-400">🧠</span> Self-Imitation Learning (SIL Replay)</span>
+                <label class="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input type="checkbox" id="cfg-sil" checked class="accent-indigo-500 rounded cursor-pointer" />
+                  <span class="text-[10px] text-indigo-300 font-semibold">Ativo</span>
+                </label>
+              </div>
+              <div class="grid grid-cols-2 gap-2 mt-0.5">
+                <div>
+                  <div class="flex items-center gap-1 mb-0.5">
+                    <span class="text-[10px] text-gray-400 block">Coeficiente SIL</span>
+                  </div>
+                  <input type="number" id="cfg-sil-coef" value="0.10" step="0.02" min="0.01" max="1.0" class="hud-input text-center" />
+                </div>
+                <div>
+                  <div class="flex items-center gap-1 mb-0.5">
+                    <span class="text-[10px] text-gray-400 block">Taxa Mixed Replay</span>
+                  </div>
+                  <input type="number" id="cfg-mixed-replay-rate" value="0.05" step="0.01" min="0" max="0.5" class="hud-input text-center" />
+                </div>
+              </div>
+            </div>
+
+            <!-- BPTT Recorrente Chunking -->
+            <div class="bg-[#090d16] p-2 rounded border border-gray-800/60 flex flex-col gap-1.5 text-xs">
+              <div class="flex justify-between items-center text-[10px] text-gray-400 font-semibold px-0.5">
+                <span>BPTT Recorrente & Rollouts</span>
+                <span class="text-[9px] text-gray-500 font-mono italic">Memória & Gradientes</span>
+              </div>
+              <div class="grid grid-cols-3 gap-1.5">
+                <div>
+                  <span class="text-[9px] text-gray-400 block text-center mb-0.5">Rollout</span>
+                  <input type="number" id="cfg-rollout-steps" value="2048" class="hud-input text-center" />
+                </div>
+                <div>
+                  <span class="text-[9px] text-gray-400 block text-center mb-0.5">Chunk Len</span>
+                  <input type="number" id="cfg-chunk-length" value="32" class="hud-input text-center" />
+                </div>
+                <div>
+                  <span class="text-[9px] text-gray-400 block text-center mb-0.5">Batch Chunks</span>
+                  <input type="number" id="cfg-chunk-batch" value="16" class="hud-input text-center" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
 
-      <!-- [FOCO TREINO] PAINEL DE STATUS & CONVERGÊNCIA AO VIVO -->
-      <div id="train-status-deck" class="card p-3 flex flex-col gap-2.5 bg-gradient-to-br from-[#0c1322] to-[#080d19] border border-cyan-800/60 shadow-lg">
-        <div class="flex justify-between items-center border-b border-gray-800/80 pb-1.5">
-          <span class="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
-            <span>📊</span> Painel de Status & Convergência do Treino
-          </span>
-          <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 font-bold">TEMPO REAL</span>
+      <!-- HIPERPARÂMETROS DE AVALIAÇÃO (RUN) -->
+      <div id="param-eval-group" class="hidden card p-3 flex flex-col gap-2.5 bg-gray-950/60 border-gray-800">
+        <div class="flex justify-between items-center text-[11px] font-bold text-gray-300 uppercase tracking-wider">
+          <span>Configuração de Avaliação</span>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <div class="flex justify-between items-center mb-0.5">
+              <span class="text-[10px] text-gray-400">Episódios</span>
+              <div class="flex gap-0.5">
+                <button type="button" onclick="setEpisodes(1)" class="badge-btn">1</button>
+                <button type="button" onclick="setEpisodes(5)" class="badge-btn">5</button>
+              </div>
+            </div>
+            <input type="number" id="cfg-episodes" value="5" min="1" max="1000" class="hud-input" />
+          </div>
+          <div>
+            <div class="flex justify-between items-center mb-0.5">
+              <span class="text-[10px] text-gray-400">Cadência (--fps)</span>
+              <div class="flex gap-0.5">
+                <button type="button" onclick="setFPS(0)" class="badge-btn">⚡ 0</button>
+                <button type="button" onclick="setFPS(50)" class="badge-btn">50</button>
+              </div>
+            </div>
+            <input type="number" id="cfg-fps" value="50" min="0" max="120" class="hud-input" />
+          </div>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <!-- Card 1: Currículo & Nível -->
-          <div class="p-2.5 rounded bg-gray-950/70 border border-purple-800/50 flex flex-col justify-between gap-1.5">
-            <div class="flex items-center justify-between">
-              <span class="text-[10px] text-purple-300 font-bold uppercase tracking-wider flex items-center gap-1">
-                <span>🎓 Currículo</span>
-              </span>
-              <span id="train-deck-depth" class="px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-700 font-mono text-[10px] font-black">D1</span>
-            </div>
-            <div>
-              <div class="flex justify-between items-center text-[10px] font-mono text-gray-300">
-                <span>Taxa de Vitória:</span>
-                <span id="train-deck-rate" class="font-bold text-purple-300">0% vitórias</span>
-              </div>
-              <div class="w-full bg-gray-900 h-1.5 rounded-full overflow-hidden mt-1 border border-gray-800">
-                <div id="train-deck-rate-bar" class="bg-purple-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
-              </div>
-            </div>
-            <div class="flex justify-between items-center text-[9px] font-mono text-gray-400 pt-0.5 border-t border-gray-800/60">
-              <span>Pico Nível:</span>
-              <span id="train-deck-peak" class="font-bold text-cyan-300">0.00</span>
-            </div>
-          </div>
-
-          <!-- Card 2: Progresso & Throughput -->
-          <div class="p-2.5 rounded bg-gray-950/70 border border-yellow-800/50 flex flex-col justify-between gap-1.5">
-            <div class="flex items-center justify-between">
-              <span class="text-[10px] text-yellow-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                <span>⚡ Passos & FPS</span>
-              </span>
-              <span id="train-deck-fps" class="px-1.5 py-0.2 rounded bg-yellow-950 text-yellow-300 border border-yellow-700 font-mono text-[10px] font-bold">0.0 FPS</span>
-            </div>
-            <div>
-              <div class="flex justify-between items-center text-[10px] font-mono text-gray-300">
-                <span>Meta de Passos:</span>
-                <span id="train-deck-steps-pct" class="font-bold text-yellow-400">0.0%</span>
-              </div>
-              <div class="w-full bg-gray-900 h-1.5 rounded-full overflow-hidden mt-1 border border-gray-800">
-                <div id="train-deck-steps-bar" class="bg-yellow-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
-              </div>
-            </div>
-            <div class="text-[9px] font-mono text-gray-400 truncate pt-0.5 border-t border-gray-800/60" id="train-deck-steps-text" title="Progresso de passos">
-              0 / 40.000 passos
-            </div>
-          </div>
-
-          <!-- Card 3: Memórias Reflexivas S1 -->
-          <div class="p-2.5 rounded bg-gray-950/70 border border-indigo-800/50 flex flex-col justify-between gap-1.5">
-            <div class="flex items-center justify-between">
-              <span class="text-[10px] text-indigo-300 font-bold uppercase tracking-wider flex items-center gap-1">
-                <span>🧠 Memória S1</span>
-              </span>
-              <span class="px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-700 font-mono text-[9px]">SIL + Sterility</span>
-            </div>
-            <div>
-              <div class="flex justify-between items-center text-[10px] font-mono text-gray-300">
-                <span>SIL Vitórias:</span>
-                <span id="train-deck-sil" class="font-bold text-indigo-300">0 vitórias</span>
-              </div>
-              <div class="flex justify-between items-center text-[10px] font-mono text-gray-300 mt-0.5">
-                <span>Perdas PPO:</span>
-                <span id="train-deck-loss" class="font-bold text-pink-300 text-[9px]">P: -- | V: --</span>
-              </div>
-            </div>
-            <div class="flex justify-between items-center text-[9px] font-mono text-gray-400 pt-0.5 border-t border-gray-800/60">
-              <span>Esterilidade:</span>
-              <span class="text-emerald-400 font-bold">Estratificada (Nível)</span>
-            </div>
-          </div>
+        <div>
+          <label class="text-[10px] text-gray-400 font-semibold block mb-1">Perfil de Ação na Avaliação</label>
+          <select id="cfg-eval-action-mode" onchange="onEvalActionModeChange(this.value)" class="hud-input">
+            <option value="auto" selected>⚡ Auto / Homeostase (Auto-Ajuste Termodinâmico S1 — Recomendado)</option>
+            <option value="calibrated">Estocástica Calibrada (Fluidez e Locomoção Suave)</option>
+            <option value="deterministic">Determinística Pura (Média μ / Argmax)</option>
+            <option value="stochastic">Estocástica Total (Exploração σ de Treino)</option>
+          </select>
         </div>
-      </div>
-
-      <!-- CARD DO VIEWPORT DE VÍDEO DO JOGO (VISÍVEL NO FOCO AVALIAÇÃO / PRÉVIA NO TREINO) -->
-      <div id="train-viewport-card" class="card p-3 flex flex-col">
-        <div class="flex justify-between items-center border-b border-gray-800 pb-2 mb-2">
+        <div>
+          <div class="flex justify-between items-center mb-0.5">
+            <label class="text-[10px] text-gray-400 font-semibold">Calibração de Ação (0.0 a 1.0)</label>
+            <div class="flex gap-0.5">
+              <button type="button" onclick="setEvalCalibration('auto')" class="badge-btn">⚡ Auto</button>
+              <button type="button" onclick="setEvalCalibration(0.0)" class="badge-btn">0.0</button>
+              <button type="button" onclick="setEvalCalibration(0.5)" class="badge-btn">0.5</button>
+              <button type="button" onclick="setEvalCalibration(1.0)" class="badge-btn">1.0</button>
+            </div>
+          </div>
           <div class="flex items-center gap-2">
-            <span class="text-xs font-bold text-yellow-400 uppercase tracking-wider flex items-center gap-1.5">
-              <span>🎮</span> Viewport do Jogo
-            </span>
-            <span id="feed-status" class="px-1.5 py-0.5 rounded text-[9px] bg-gray-800 text-gray-400 font-mono">STANDBY</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <select id="sel-viewport-engine" onchange="onViewportEngineChange()" class="px-1.5 py-0.5 rounded text-[9px] bg-gray-900 border border-gray-700 text-gray-300 font-mono cursor-pointer" title="Motor de renderização de vídeo no HUD">
-              <option value="auto">⚡ Auto (Resiliente)</option>
-              <option value="direct">🔥 Direct Frame (Anti-Freeze)</option>
-              <option value="mjpeg">📼 MJPEG Stream</option>
-            </select>
-            <button type="button" onclick="refreshVideoFeed(true)" class="px-1.5 py-0.5 rounded text-[9px] bg-gray-800 hover:bg-gray-700 text-gray-300 font-mono transition" title="Reconectar ou forçar atualização">↻ Reconectar</button>
-          </div>
-        </div>
-
-        <!-- Seletor de Perspectiva 3D / 2D para Cubo Mágico -->
-        <div id="rubiks-view-controls" class="mb-2 py-1.5 px-2.5 rounded bg-indigo-950/40 border border-indigo-700/50 flex items-center justify-between transition hidden">
-          <span class="text-[10px] font-bold text-indigo-300 flex items-center gap-1">
-            <span>🎲</span> Visualização Cubo:
-          </span>
-          <div class="flex items-center gap-1">
-            <button type="button" id="btn-cube-view-3d" onclick="setCubeViewMode('3d')" class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-600 text-white border border-indigo-400 shadow-sm transition">
-              🎲 3D Isometric
-            </button>
-            <button type="button" id="btn-cube-view-2d" onclick="setCubeViewMode('2d')" class="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-900 text-gray-400 border border-gray-800 hover:bg-gray-800 transition">
-              🗺️ 2D Net
-            </button>
-          </div>
-        </div>
-
-        <div id="train-viewport-frame" class="relative bg-black rounded overflow-hidden aspect-[4/3] flex items-center justify-center border border-gray-800/80">
-          <img id="game-feed" src="/video_feed" alt="System 1 Game Viewport" class="w-full h-full object-contain" onerror="handleVideoFeedError()" />
-          <!-- Headless State Overlay for Training / Benchmark -->
-          <div id="train-headless-placeholder" class="hidden absolute inset-0 bg-gray-950/90 backdrop-blur-sm flex flex-col items-center justify-center text-center p-4 z-10">
-            <span class="text-3xl mb-1.5">⚡</span>
-            <span class="text-xs font-bold text-amber-400 uppercase tracking-wider">Treinamento Headless Ativo</span>
-            <p class="text-[10px] text-gray-400 mt-1 max-w-[240px] leading-relaxed">
-              Simulação de ultra-alta velocidade sem overhead gráfico. Monitore a convergência pelos gráficos e telemetria.
-            </p>
-          </div>
-          <div id="video-overlay" class="absolute bottom-2 left-2 right-2 flex justify-between items-center px-2 py-1 rounded bg-black/60 backdrop-blur-sm text-[10px] font-mono text-gray-400 pointer-events-none">
-            <span id="overlay-env" class="text-cyan-400 font-bold">RubiksCube-v0</span>
-            <span id="overlay-fps">50.0 FPS</span>
-          </div>
-        </div>
-
-        <!-- Barra de Controle de Modos de Visão & Atenção Visual (Grad-CAM / XAI) -->
-        <div id="group-vision-controls" class="mt-2.5 pt-2 border-t border-gray-800/80 flex flex-col gap-1.5">
-          <div class="flex justify-between items-center">
-            <span class="text-[10px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1">
-              <span>👁️</span> Atenção Visual (XAI)
-            </span>
-            <span id="vision-mode-badge" class="text-[9px] font-mono text-gray-400 uppercase">NORMAL</span>
-          </div>
-          <div class="grid grid-cols-4 gap-1">
-            <button type="button" id="btn-vis-normal" onclick="setVisionMode('normal')" title="Transmissão padrão sem overlay térmico" class="py-1 px-1 rounded text-[10px] font-semibold tracking-tight transition flex items-center justify-center gap-1 bg-cyan-600 text-white shadow-sm shadow-cyan-950">
-              Normal
-            </button>
-            <button type="button" id="btn-vis-gradcam_policy" onclick="setVisionMode('gradcam_policy')" title="Grad-CAM guiado pela ação: onde a política foca para decidir" class="py-1 px-1 rounded text-[10px] font-semibold tracking-tight transition flex items-center justify-center gap-1 bg-gray-900 hover:bg-gray-800 text-gray-400 border border-gray-800">
-              🎯 Ação
-            </button>
-            <button type="button" id="btn-vis-saliency_value" onclick="setVisionMode('saliency_value')" title="Saliência do Crítico V(s): regiões que geram ameaça ou recompensa" class="py-1 px-1 rounded text-[10px] font-semibold tracking-tight transition flex items-center justify-center gap-1 bg-gray-900 hover:bg-gray-800 text-gray-400 border border-gray-800">
-              🧭 Valor
-            </button>
-            <button type="button" id="btn-vis-saliency_entropy" onclick="setVisionMode('saliency_entropy')" title="Incerteza/Entropia: regiões visuais que causam confusão" class="py-1 px-1 rounded text-[10px] font-semibold tracking-tight transition flex items-center justify-center gap-1 bg-gray-900 hover:bg-gray-800 text-gray-400 border border-gray-800">
-              ❓ Dúvida
-            </button>
+            <input type="range" id="cfg-eval-calib-range" min="0.0" max="1.0" step="0.05" value="0.5" oninput="onEvalCalibRangeChange(this.value)" class="w-full accent-cyan-500 cursor-pointer" />
+            <input type="text" id="cfg-eval-calibration" value="auto" oninput="onEvalCalibNumChange(this.value)" class="hud-input w-16 text-center font-mono text-[11px]" />
           </div>
         </div>
       </div>
 
-      <!-- [FOCO AVALIAÇÃO] DECK DE INTERAÇÃO E CONTROLE MANUAL -->
-      <div id="eval-interaction-deck" class="hidden card p-3 flex flex-col gap-2.5 bg-[#0a0f1d] border border-cyan-800/60 shadow-lg">
-        <div class="flex justify-between items-center border-b border-gray-800/80 pb-1.5">
-          <span class="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
-            <span>🎮</span> Controles Interativos de Avaliação
-          </span>
-          <div class="flex items-center gap-1 text-[10px] text-gray-400">
-            <span>Velocidade:</span>
-            <span id="eval-fps-label" class="font-bold text-green-400 font-mono">50 FPS</span>
+    </div>
+
+    <!-- Rodapé da Gaveta com Ações -->
+    <div class="p-3 bg-[#0b1222] border-t border-gray-800 flex items-center justify-between gap-2">
+      <button type="button" onclick="toggleSettingsDrawer(false)" class="px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-semibold transition cursor-pointer">
+        Fechar
+      </button>
+      <button type="button" onclick="startExecution(); toggleSettingsDrawer(false);" class="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow cursor-pointer">
+        <span>▶️</span> Iniciar com Esta Configuração
+      </button>
+    </div>
+  </aside>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: GERENCIAMENTO DE CHECKPOINTS SALVOS               -->
+  <!-- ======================================================== -->
+  <div id="modal-checkpoints" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-3 sm:p-4">
+    <div class="bg-[#080d19] border border-purple-800/80 rounded-xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-3.5 bg-[#0b1222] border-b border-gray-800 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">💾</span>
+          <div>
+            <h3 class="text-sm font-bold text-white tracking-wide">Checkpoints Salvos no Projeto</h3>
+            <p class="text-[10px] text-gray-400">Gerencie, avalie ou continue o treinamento a partir dos pesos salvos</p>
           </div>
         </div>
-
-        <!-- Ações Rápidas: Iniciar / Parar / Reset / Reconectar -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-          <button type="button" onclick="startExecution()" class="py-1.5 px-2 rounded bg-emerald-600 hover:bg-emerald-500 font-bold text-white text-xs uppercase flex items-center justify-center gap-1 transition shadow cursor-pointer">
-            <span>▶️</span> Iniciar
-          </button>
-          <button type="button" onclick="stopExecution()" class="py-1.5 px-2 rounded bg-rose-800 hover:bg-rose-700 font-bold text-white text-xs uppercase flex items-center justify-center gap-1 transition shadow cursor-pointer">
-            <span>⏹️</span> Parar
-          </button>
-          <button type="button" onclick="clearLogs()" class="py-1.5 px-2 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer" title="Limpar contadores e logs">
-            <span>🔄</span> Reset
-          </button>
-          <button type="button" onclick="refreshVideoFeed(true)" class="py-1.5 px-2 rounded bg-gray-800 hover:bg-gray-700 text-cyan-300 border border-cyan-700/60 text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer" title="Forçar reconexão do stream">
-            <span>↻</span> Reconectar
-          </button>
-        </div>
-
-        <!-- Controle de Cadência / Velocidade da Simulação -->
-        <div class="flex flex-col gap-1 p-2 rounded bg-gray-950/80 border border-gray-800/80 text-[10px]">
-          <div class="flex items-center justify-between">
-            <span class="text-gray-300 font-semibold flex items-center gap-1">
-              <span>⏱️ Cadência de Visualização:</span>
-            </span>
-            <div class="flex gap-1">
-              <button type="button" onclick="setFPS(0)" class="badge-btn">⚡ Turbo (0)</button>
-              <button type="button" onclick="setFPS(5)" class="badge-btn">🐢 5 FPS (Lento)</button>
-              <button type="button" onclick="setFPS(30)" class="badge-btn">30 FPS</button>
-              <button type="button" onclick="setFPS(50)" class="badge-btn font-bold text-cyan-300 border-cyan-700 bg-cyan-950">👁️ 50 FPS</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Move Pad Interativo para Cubo Mágico (se aplicável) -->
-        <div id="eval-rubiks-move-pad" class="flex flex-col gap-1.5 pt-1 border-t border-gray-800/80">
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-bold text-amber-300 flex items-center gap-1">
-              <span>🎲</span> Ações Manuais do Cubo (Move Pad):
-            </span>
-            <a href="/web/" target="_blank" rel="noopener noreferrer" class="text-[9px] font-mono text-cyan-400 hover:underline flex items-center gap-0.5">
-              <span>🌐</span> Abrir HUD Web 3D ↗
-            </a>
-          </div>
-          <!-- 6 Pares de Ações Atômicas -->
-          <div class="grid grid-cols-6 gap-1">
-            <button type="button" onclick="hintCubeAction('U')" class="py-1 px-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-300 text-slate-100 font-mono font-bold text-[11px] transition shadow-sm cursor-pointer" title="Giro Topo Horário (U)">U</button>
-            <button type="button" onclick="hintCubeAction('U_prime')" class="py-1 px-1 rounded bg-slate-950 hover:bg-slate-900 border border-slate-500/80 text-slate-300 font-mono font-bold text-[11px] transition cursor-pointer" title="Giro Topo Anti-horário (U')">U'</button>
-            <button type="button" onclick="hintCubeAction('D')" class="py-1 px-1 rounded bg-yellow-950/70 hover:bg-yellow-900/90 border border-yellow-400 text-yellow-300 font-mono font-bold text-[11px] transition shadow-sm cursor-pointer" title="Giro Base Horário (D)">D</button>
-            <button type="button" onclick="hintCubeAction('D_prime')" class="py-1 px-1 rounded bg-yellow-950/40 hover:bg-yellow-950/80 border border-yellow-600/80 text-yellow-400/80 font-mono font-bold text-[11px] transition cursor-pointer" title="Giro Base Anti-horário (D')">D'</button>
-            <button type="button" onclick="hintCubeAction('F')" class="py-1 px-1 rounded bg-emerald-950/70 hover:bg-emerald-900/90 border border-emerald-400 text-emerald-300 font-mono font-bold text-[11px] transition shadow-sm cursor-pointer" title="Giro Frente Horário (F)">F</button>
-            <button type="button" onclick="hintCubeAction('F_prime')" class="py-1 px-1 rounded bg-emerald-950/40 hover:bg-emerald-950/80 border border-emerald-600/80 text-emerald-400/80 font-mono font-bold text-[11px] transition cursor-pointer" title="Giro Frente Anti-horário (F')">F'</button>
-          </div>
-          <div class="grid grid-cols-6 gap-1">
-            <button type="button" onclick="hintCubeAction('B')" class="py-1 px-1 rounded bg-blue-950/70 hover:bg-blue-900/90 border border-blue-400 text-blue-300 font-mono font-bold text-[11px] transition shadow-sm cursor-pointer" title="Giro Trás Horário (B)">B</button>
-            <button type="button" onclick="hintCubeAction('B_prime')" class="py-1 px-1 rounded bg-blue-950/40 hover:bg-blue-950/80 border border-blue-600/80 text-blue-400/80 font-mono font-bold text-[11px] transition cursor-pointer" title="Giro Trás Anti-horário (B')">B'</button>
-            <button type="button" onclick="hintCubeAction('R')" class="py-1 px-1 rounded bg-rose-950/70 hover:bg-rose-900/90 border border-rose-400 text-rose-300 font-mono font-bold text-[11px] transition shadow-sm cursor-pointer" title="Giro Direita Horário (R)">R</button>
-            <button type="button" onclick="hintCubeAction('R_prime')" class="py-1 px-1 rounded bg-rose-950/40 hover:bg-rose-900/80 border border-rose-600/80 text-rose-400/80 font-mono font-bold text-[11px] transition cursor-pointer" title="Giro Direita Anti-horário (R')">R'</button>
-            <button type="button" onclick="hintCubeAction('L')" class="py-1 px-1 rounded bg-orange-950/70 hover:bg-orange-900/90 border border-orange-400 text-orange-300 font-mono font-bold text-[11px] transition shadow-sm cursor-pointer" title="Giro Esquerda Horário (L)">L</button>
-            <button type="button" onclick="hintCubeAction('L_prime')" class="py-1 px-1 rounded bg-orange-950/40 hover:bg-orange-950/80 border border-orange-600/80 text-orange-400/80 font-mono font-bold text-[11px] transition cursor-pointer" title="Giro Esquerda Anti-horário (L')">L'</button>
-          </div>
+        <div class="flex items-center gap-2">
+          <span id="ckpt-count-badge" class="text-[10px] px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800 font-mono">0 encontrados</span>
+          <button type="button" onclick="closeCheckpointsModal()" class="w-7 h-7 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 flex items-center justify-center text-sm font-bold transition cursor-pointer" title="Fechar (Esc)">✕</button>
         </div>
       </div>
-
-      <!-- CONSOLE / TERMINAL DE LOGS EM TEMPO REAL (HERO NO TREINO, COMPACTO NA AVALIAÇÃO) -->
-      <div id="terminal-logs-card" class="card p-3 flex flex-col transition-all duration-200">
-        <div class="flex flex-wrap justify-between items-center border-b border-gray-800 pb-2 mb-2 gap-2">
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-bold text-green-400 uppercase tracking-wider flex items-center gap-1.5">
-              <span>💻</span> Logs & Stdout do Processo
-            </span>
-            <span id="log-count-badge" class="px-1.5 py-0.2 rounded text-[9px] bg-gray-900 text-gray-400 border border-gray-800 font-mono">0 linhas</span>
-          </div>
-
-          <!-- Filtros Rápidos de Log & Busca -->
-          <div class="flex items-center gap-1.5 flex-wrap">
-            <div class="flex items-center gap-0.5 bg-gray-950 p-0.5 rounded border border-gray-800 text-[10px]">
-              <button type="button" onclick="setLogFilter('all')" id="btn-log-all" class="px-1.5 py-0.5 rounded font-semibold bg-cyan-600 text-white shadow-sm transition">Todos</button>
-              <button type="button" onclick="setLogFilter('wins')" id="btn-log-wins" class="px-1.5 py-0.5 rounded font-semibold text-emerald-400 hover:bg-gray-800 transition">Vitórias 🏁</button>
-              <button type="button" onclick="setLogFilter('metrics')" id="btn-log-metrics" class="px-1.5 py-0.5 rounded font-semibold text-yellow-400 hover:bg-gray-800 transition">PPO/Loss ⚡</button>
-              <button type="button" onclick="setLogFilter('checkpoints')" id="btn-log-checkpoints" class="px-1.5 py-0.5 rounded font-semibold text-purple-400 hover:bg-gray-800 transition">Checkpoints 💾</button>
-              <button type="button" onclick="setLogFilter('alerts')" id="btn-log-alerts" class="px-1.5 py-0.5 rounded font-semibold text-rose-400 hover:bg-gray-800 transition">Alertas ⚠️</button>
-            </div>
-            <input type="text" id="log-search-input" oninput="onLogSearchInput(this.value)" placeholder="🔍 Filtrar logs..." class="hud-input w-28 text-[10px] py-0.5 px-1.5" />
-            <button type="button" onclick="copyLogsToClipboard()" id="btn-copy-logs" class="px-2 py-0.5 rounded text-[10px] bg-gray-800 hover:bg-gray-700 text-cyan-300 font-mono transition flex items-center gap-1" title="Copiar logs filtrados para a área de transferência">
-              <span>📋</span> Copiar
-            </button>
-            <button type="button" onclick="clearLogs()" class="px-2 py-0.5 rounded text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-300 font-mono transition">Limpar</button>
-            <label class="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
-              <input type="checkbox" id="chk-autoscroll" checked class="w-3 h-3 rounded bg-gray-900 border-gray-700 text-cyan-500 focus:ring-0" /> Auto-scroll
-            </label>
-          </div>
-        </div>
-
-        <div id="terminal-logs" class="flex-1 bg-[#050811] p-2.5 rounded font-mono text-[11px] text-gray-300 overflow-y-auto leading-relaxed select-text space-y-0.5 border border-gray-900 transition-all duration-200" style="max-height: 520px; min-height: 420px;">
-          <div class="text-gray-500 italic">Central HUD pronta. Configure os parâmetros e clique em Iniciar.</div>
-        </div>
+      <div class="p-3 bg-[#070b14] border-b border-gray-800 flex justify-between items-center text-xs">
+        <span class="text-gray-400 text-[11px]">Selecione um checkpoint para carregar na avaliação ou continuar o treino:</span>
+        <button type="button" onclick="refreshCheckpoints()" class="px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 text-cyan-300 text-[10px] font-mono transition">↻ Atualizar Lista</button>
       </div>
-
-    </section>
-
-    <!-- COLUNA 3: TELEMETRIA GRÁFICA & GESTÃO DE CHECKPOINTS (4 Colunas) -->
-    <section class="lg:col-span-4 flex flex-col gap-4">
-      <!-- 1. Latência CPU & Incerteza -->
-      <div class="card p-3">
-        <div class="flex justify-between items-center border-b border-gray-800 pb-1 mb-2">
-          <h3 class="text-xs font-semibold text-cyan-400">FASE 1: LATÊNCIA CPU (µs)</h3>
-          <span class="text-[10px] text-gray-500">Reflex Budget &le; 800µs</span>
-        </div>
-        <div class="h-28"><canvas id="chartLatency"></canvas></div>
+      <div id="checkpoints-table-container" class="p-3.5 overflow-y-auto flex-1 space-y-1.5 max-h-[60vh]">
+        <div class="text-[11px] text-gray-500 italic p-2">Carregando lista de checkpoints...</div>
       </div>
-
-      <!-- 2. Retorno por Episódio -->
-      <div class="card p-3">
-        <div class="flex justify-between items-center border-b border-gray-800 pb-1 mb-2">
-          <h3 class="text-xs font-semibold text-yellow-400">FASE 2: RETORNO MÉDIO (20 EP)</h3>
-          <span class="text-[10px] text-gray-500">Curva de Desempenho</span>
-        </div>
-        <div class="h-28"><canvas id="chartReward"></canvas></div>
-      </div>
-
-      <!-- 3. Perdas PPO -->
-      <div class="card p-3">
-        <div class="flex justify-between items-center border-b border-gray-800 pb-1 mb-2">
-          <h3 class="text-xs font-semibold text-purple-400">FASE 3: PERDAS PPO (POLICY & VALUE)</h3>
-          <span class="text-[10px] text-gray-500">BPTT Recorrente</span>
-        </div>
-        <div class="h-28"><canvas id="chartLoss"></canvas></div>
-      </div>
-
-      <!-- 4. Normas de Gradiente -->
-      <div class="card p-3">
-        <div class="flex justify-between items-center border-b border-gray-800 pb-1 mb-2">
-          <h3 class="text-xs font-semibold text-pink-400">ESTABILIDADE DE GRADIENTES (||∇||)</h3>
-          <span class="text-[10px] text-gray-500">Por Módulo</span>
-        </div>
-        <div class="h-24"><canvas id="chartGrads"></canvas></div>
-      </div>
-
-      <!-- 5. Card de Checkpoints Detectados no Projeto -->
-      <div id="card-checkpoints" class="card p-3 flex flex-col">
-        <div class="flex justify-between items-center border-b border-gray-800 pb-1.5 mb-2">
-          <span class="text-xs font-bold text-purple-400 uppercase tracking-wider flex items-center gap-1.5">
-            <span>📦</span> Checkpoints Salvos no Projeto
-          </span>
-          <span id="ckpt-count-badge" class="text-[10px] px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-800 font-mono">0 encontrados</span>
-        </div>
-        <div id="checkpoints-table-container" class="max-h-48 overflow-y-auto space-y-1">
-          <div class="text-[11px] text-gray-500 italic">Nenhum checkpoint encontrado no diretório.</div>
-        </div>
-      </div>
-    </section>
-
-  </main>
+    </div>
+  </div>
 
   <!-- MODAL: CATÁLOGO COMPLETO DE JOGOS & AMBIENTES GYMNASIUM -->
   <div id="modal-gym-catalog" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-3 sm:p-4">
@@ -1632,133 +1618,185 @@
       }
     });
 
-    // Gerenciamento de Foco de Layout Contextual: 'train' (Logs & Status) vs 'eval' (Visualização, Scores & Interação)
+    // Gerenciamento de Foco Contextual: 'train' (Logs & Status) vs 'eval' (Visualização, Scores & Interação)
     let currentLayoutFocus = 'train';
     let isLayoutManuallyPinned = false;
     let _logsHistory = [];
-    let _activeLogFilter = 'all';
+    let _currentLogCategory = 'all';
     let _logSearchQuery = '';
 
-    function setLayoutFocus(focus, isManual = false) {
-      currentLayoutFocus = focus;
+    function selectAppMode(mode, isManual = false) {
+      currentLayoutFocus = mode;
       if (isManual) {
         isLayoutManuallyPinned = true;
       }
 
-      const btnTrain = document.getElementById('tab-layout-train');
-      const btnEval = document.getElementById('tab-layout-eval');
-      if (btnTrain && btnEval) {
-        if (focus === 'train') {
-          btnTrain.className = 'px-2.5 py-1 rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-cyan-600 text-white shadow';
-          btnEval.className = 'px-2.5 py-1 rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-gray-900 text-gray-400 hover:text-gray-200 border border-transparent hover:border-gray-800';
-        } else {
-          btnEval.className = 'px-2.5 py-1 rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-cyan-600 text-white shadow';
-          btnTrain.className = 'px-2.5 py-1 rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-gray-900 text-gray-400 hover:text-gray-200 border border-transparent hover:border-gray-800';
+      const viewTrain = document.getElementById('view-training');
+      const viewEval = document.getElementById('view-evaluation');
+      const tabTrain = document.getElementById('tab-mode-train');
+      const tabEval = document.getElementById('tab-mode-eval');
+      const tabLegacyTrain = document.getElementById('tab-layout-train');
+      const tabLegacyEval = document.getElementById('tab-layout-eval');
+
+      if (mode === 'train') {
+        if (viewTrain) viewTrain.classList.remove('hidden');
+        if (viewEval) viewEval.classList.add('hidden');
+        if (tabTrain) {
+          tabTrain.className = 'px-3.5 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-cyan-600 text-white shadow';
         }
-      }
-
-      // Painéis e Cards Condicionais
-      const evalScoreboard = document.getElementById('eval-scoreboard');
-      const trainCompact = document.getElementById('train-headless-compact');
-      const trainStatusDeck = document.getElementById('train-status-deck');
-      const trainViewportCard = document.getElementById('train-viewport-card');
-      const evalInteractionDeck = document.getElementById('eval-interaction-deck');
-      const terminalLogs = document.getElementById('terminal-logs');
-
-      if (focus === 'train') {
-        if (evalScoreboard) evalScoreboard.classList.add('hidden');
-        if (trainCompact) trainCompact.classList.remove('hidden');
-        if (trainStatusDeck) trainStatusDeck.classList.remove('hidden');
-        if (evalInteractionDeck) evalInteractionDeck.classList.add('hidden');
-
-        // No foco treino, o viewport de vídeo fica recolhido por padrão (economiza altura para logs)
-        if (trainViewportCard && !trainViewportCard.dataset.forceVisible) {
-          trainViewportCard.classList.add('hidden');
-        } else if (trainViewportCard) {
-          trainViewportCard.classList.remove('hidden');
+        if (tabEval) {
+          tabEval.className = 'px-3.5 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-gray-900 text-gray-400 hover:text-gray-200 border border-transparent hover:border-gray-800';
         }
-
-        // Terminal de logs expandido com conforto visual para acompanhar gradientes e passos
-        if (terminalLogs) {
-          terminalLogs.style.maxHeight = '520px';
-          terminalLogs.style.minHeight = '420px';
+        if (tabLegacyTrain) tabLegacyTrain.className = 'px-2.5 py-1 rounded text-xs font-bold bg-cyan-600 text-white shadow';
+        if (tabLegacyEval) tabLegacyEval.className = 'px-2.5 py-1 rounded text-xs font-bold bg-gray-900 text-gray-400';
+        if (isManual) {
+          setMode('train');
         }
       } else { // 'eval'
-        if (evalScoreboard) evalScoreboard.classList.remove('hidden');
-        if (trainCompact) trainCompact.classList.add('hidden');
-        if (trainStatusDeck) trainStatusDeck.classList.add('hidden');
-        if (evalInteractionDeck) evalInteractionDeck.classList.remove('hidden');
-
-        // No foco avaliação, o viewport de jogo é o herói central
-        if (trainViewportCard) {
-          trainViewportCard.classList.remove('hidden');
+        if (viewTrain) viewTrain.classList.add('hidden');
+        if (viewEval) viewEval.classList.remove('hidden');
+        if (tabEval) {
+          tabEval.className = 'px-3.5 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-cyan-600 text-white shadow';
         }
-
-        // Terminal de logs fica em gaveta compacta para priorizar tela
-        if (terminalLogs) {
-          terminalLogs.style.maxHeight = '180px';
-          terminalLogs.style.minHeight = '120px';
+        if (tabTrain) {
+          tabTrain.className = 'px-3.5 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1.5 cursor-pointer bg-gray-900 text-gray-400 hover:text-gray-200 border border-transparent hover:border-gray-800';
         }
+        if (tabLegacyEval) tabLegacyEval.className = 'px-2.5 py-1 rounded text-xs font-bold bg-cyan-600 text-white shadow';
+        if (tabLegacyTrain) tabLegacyTrain.className = 'px-2.5 py-1 rounded text-xs font-bold bg-gray-900 text-gray-400';
+        if (isManual) {
+          setMode('run');
+        }
+        refreshVideoFeed(true);
       }
     }
 
-    function toggleTrainViewportPreview() {
-      const card = document.getElementById('train-viewport-card');
-      const btn = document.getElementById('btn-toggle-train-viewport');
-      if (!card) return;
-      const isHidden = card.classList.contains('hidden');
-      if (isHidden) {
-        card.classList.remove('hidden');
-        card.dataset.forceVisible = 'true';
-        if (btn) btn.innerHTML = '<span>✕</span> Ocultar Viewport';
+    // Alias de compatibilidade com scripts legados
+    function setLayoutFocus(focus, isManual = false) {
+      selectAppMode(focus, isManual);
+    }
+
+    // Gerenciamento da Gaveta Lateral de Configurações
+    function toggleSettingsDrawer(force) {
+      const drawer = document.getElementById('drawer-settings');
+      const backdrop = document.getElementById('drawer-settings-backdrop');
+      if (!drawer) return;
+      const isCurrentlyOpen = !drawer.classList.contains('translate-x-full');
+      const shouldOpen = (force !== undefined) ? force : !isCurrentlyOpen;
+
+      if (shouldOpen) {
+        drawer.classList.remove('translate-x-full');
+        if (backdrop) backdrop.classList.remove('hidden');
       } else {
-        card.classList.add('hidden');
-        delete card.dataset.forceVisible;
-        if (btn) btn.innerHTML = '<span>👁️</span> Prévia Viewport';
+        drawer.classList.add('translate-x-full');
+        if (backdrop) backdrop.classList.add('hidden');
       }
     }
+
+    // Gerenciamento do Modal de Checkpoints
+    function openCheckpointsModal() {
+      const modal = document.getElementById('modal-checkpoints');
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        refreshCheckpoints();
+      }
+    }
+
+    function closeCheckpointsModal() {
+      const modal = document.getElementById('modal-checkpoints');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+    }
+
+    // Fechar gaveta ou modais com a tecla Esc
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        toggleSettingsDrawer(false);
+        closeCheckpointsModal();
+        if (typeof closeGymCatalogModal === 'function') closeGymCatalogModal();
+      }
+    });
 
     // Filtros e Gestão Avançada de Logs no Terminal
-    function setLogFilter(filter) {
-      _activeLogFilter = filter;
-      const filterBtns = ['all', 'wins', 'metrics', 'checkpoints', 'alerts'];
-      filterBtns.forEach(f => {
-        const btn = document.getElementById(`btn-log-${f}`);
+    function setLogCategoryFilter(cat) {
+      _currentLogCategory = cat;
+      const cats = ['all', 'ppo', 'rollout', 'sil', 'ckpt', 'err'];
+      cats.forEach(c => {
+        const btn = document.getElementById(`log-filter-${c}`);
         if (!btn) return;
-        if (f === filter) {
-          btn.className = 'px-1.5 py-0.5 rounded font-semibold bg-cyan-600 text-white shadow-sm transition';
+        if (c === cat) {
+          btn.className = 'px-2 py-0.5 rounded font-semibold bg-cyan-600 text-white transition';
         } else {
-          let textCol = 'text-gray-400';
-          if (f === 'wins') textCol = 'text-emerald-400';
-          else if (f === 'metrics') textCol = 'text-yellow-400';
-          else if (f === 'checkpoints') textCol = 'text-purple-400';
-          else if (f === 'alerts') textCol = 'text-rose-400';
-          btn.className = `px-1.5 py-0.5 rounded font-semibold ${textCol} hover:bg-gray-800 transition`;
+          btn.className = 'px-2 py-0.5 rounded font-semibold bg-slate-900 text-gray-400 hover:bg-slate-800 transition';
         }
       });
-      rebuildLogsView();
+      filterLogs();
+    }
+
+    function setLogFilter(filter) {
+      setLogCategoryFilter(filter === 'wins' ? 'sil' : (filter === 'alerts' ? 'err' : (filter === 'checkpoints' ? 'ckpt' : (filter === 'metrics' ? 'ppo' : 'all'))));
     }
 
     function onLogSearchInput(val) {
       _logSearchQuery = (val || '').toLowerCase().trim();
-      rebuildLogsView();
+      filterLogs();
     }
 
-    function matchesLogFilter(cleanLine, filter, query) {
-      if (query && !cleanLine.toLowerCase().includes(query)) {
-        return false;
+    function filterLogs() {
+      const query = (document.getElementById('log-search-input')?.value || '').toLowerCase().trim();
+      const term = document.getElementById('terminal-logs');
+      if (!term) return;
+
+      term.innerHTML = '';
+      if (_logsHistory.length === 0) {
+        term.innerHTML = '<div class="text-gray-500 italic">Central HUD pronta. Configure os parâmetros e clique em Iniciar.</div>';
+        return;
       }
-      if (filter === 'wins') {
-        return cleanLine.includes('win: true') || cleanLine.includes('win: <span') || cleanLine.includes('APROVADO') || cleanLine.includes('concluído') || cleanLine.includes('vitória') || cleanLine.includes('🏁');
+
+      const frag = document.createDocumentFragment();
+      let matchedCount = 0;
+      _logsHistory.forEach(item => {
+        if (matchesLogCategory(item.cleanLine, _currentLogCategory, query)) {
+          const { div } = createLogDiv(item.raw);
+          frag.appendChild(div);
+          matchedCount++;
+        }
+      });
+
+      if (matchedCount === 0) {
+        const noDiv = document.createElement('div');
+        noDiv.className = 'text-gray-500 italic py-2';
+        noDiv.innerText = 'Nenhuma linha encontrada para o filtro selecionado.';
+        term.appendChild(noDiv);
+      } else {
+        term.appendChild(frag);
       }
-      if (filter === 'alerts') {
-        return cleanLine.includes('❌') || cleanLine.includes('⚠️') || cleanLine.includes('Erro') || cleanLine.includes('Traceback') || cleanLine.includes('Exception');
+
+      if (document.getElementById('chk-autoscroll')?.checked) {
+        term.scrollTop = term.scrollHeight;
       }
-      if (filter === 'metrics') {
-        return cleanLine.includes('loss') || cleanLine.includes('PPO') || cleanLine.includes('Passos') || cleanLine.includes('Rollout') || cleanLine.includes('Época') || cleanLine.includes('Retorno:') || cleanLine.includes('FPS') || cleanLine.includes('Currículo');
+    }
+
+    function matchesLogCategory(cleanLine, cat, query) {
+      const cleanLower = cleanLine.toLowerCase();
+      if (query && !cleanLower.includes(query)) return false;
+
+      if (cat === 'ppo') {
+        return cleanLower.includes('ppo') || cleanLower.includes('loss') || cleanLower.includes('policy') || cleanLower.includes('value') || cleanLower.includes('entropy');
       }
-      if (filter === 'checkpoints') {
-        return cleanLine.includes('salvo') || cleanLine.includes('checkpoint') || cleanLine.includes('.pt') || cleanLine.includes('ONNX') || cleanLine.includes('Transferência');
+      if (cat === 'rollout') {
+        return cleanLower.includes('rollout') || cleanLower.includes('passos') || cleanLower.includes('step') || cleanLower.includes('fps') || cleanLower.includes('época');
+      }
+      if (cat === 'sil') {
+        return cleanLower.includes('sil') || cleanLower.includes('imitation') || cleanLower.includes('buffer') || cleanLower.includes('vitória') || cleanLower.includes('win: true') || cleanLower.includes('win: <span');
+      }
+      if (cat === 'ckpt') {
+        return cleanLower.includes('salvo') || cleanLower.includes('checkpoint') || cleanLower.includes('.pt') || cleanLower.includes('onnx') || cleanLower.includes('transfer');
+      }
+      if (cat === 'err') {
+        return cleanLower.includes('❌') || cleanLower.includes('⚠️') || cleanLower.includes('erro') || cleanLower.includes('error') || cleanLower.includes('traceback') || cleanLower.includes('exception');
       }
       return true;
     }
@@ -1792,57 +1830,19 @@
       return { div, cleanLine };
     }
 
-    function rebuildLogsView() {
-      const term = document.getElementById('terminal-logs');
-      if (!term) return;
-      term.innerHTML = '';
-      if (_logsHistory.length === 0) {
-        term.innerHTML = '<div class="text-gray-500 italic">Central HUD pronta. Configure os parâmetros e clique em Iniciar.</div>';
-        return;
-      }
-
-      const frag = document.createDocumentFragment();
-      let matchedCount = 0;
-      _logsHistory.forEach(item => {
-        if (matchesLogFilter(item.cleanLine, _activeLogFilter, _logSearchQuery)) {
-          const { div } = createLogDiv(item.raw);
-          frag.appendChild(div);
-          matchedCount++;
-        }
-      });
-
-      if (matchedCount === 0) {
-        const noDiv = document.createElement('div');
-        noDiv.className = 'text-gray-500 italic py-2';
-        noDiv.innerText = 'Nenhuma linha encontrada para o filtro selecionado.';
-        term.appendChild(noDiv);
-      } else {
-        term.appendChild(frag);
-      }
-
-      if (document.getElementById('chk-autoscroll')?.checked) {
-        term.scrollTop = term.scrollHeight;
-      }
-    }
-
     async function copyLogsToClipboard() {
-      const btn = document.getElementById('btn-copy-logs');
       if (!_logsHistory || _logsHistory.length === 0) {
         alert('Nenhum log disponível para copiar.');
         return;
       }
+      const query = (document.getElementById('log-search-input')?.value || '').toLowerCase().trim();
       const textToCopy = _logsHistory
-        .filter(item => matchesLogFilter(item.cleanLine, _activeLogFilter, _logSearchQuery))
+        .filter(item => matchesLogCategory(item.cleanLine, _currentLogCategory, query))
         .map(item => item.cleanLine)
         .join('\n');
 
       try {
         await navigator.clipboard.writeText(textToCopy);
-        if (btn) {
-          const orig = btn.innerHTML;
-          btn.innerHTML = '<span class="text-emerald-400">✓</span> Copiado!';
-          setTimeout(() => { btn.innerHTML = orig; }, 1500);
-        }
       } catch (err) {
         console.error('Falha ao copiar logs:', err);
       }
@@ -2504,7 +2504,13 @@
       _logsHistory = [];
       const countBadge = document.getElementById('log-count-badge');
       if (countBadge) countBadge.innerText = '0 linhas';
-      document.getElementById('terminal-logs').innerHTML = '<div class="text-gray-500 italic">Central HUD limpa. Configure os parâmetros e clique em Iniciar.</div>';
+      
+      const term = document.getElementById('terminal-logs');
+      if (term) term.innerHTML = '<div class="text-gray-500 italic">Central HUD limpa. Configure os parâmetros e clique em Iniciar.</div>';
+      
+      const evalLogs = document.getElementById('eval-mini-logs');
+      if (evalLogs) evalLogs.innerHTML = '<div class="text-gray-500 italic">Logs do episódio limpos.</div>';
+
       try {
         [chartLat, chartRew, chartLoss].forEach(c => {
           c.data.datasets.forEach(d => { d.data = []; });
@@ -2513,6 +2519,8 @@
         chartGrads.data.datasets[0].data = [0, 0, 0];
         chartGrads.update('none');
       } catch (e) {}
+
+      // Reset dos KPIs gerais
       const elemSteps = document.getElementById('kpi-steps');
       if (elemSteps) {
         elemSteps.innerText = '0.0%';
@@ -2527,6 +2535,26 @@
       if (curPeakBadge) curPeakBadge.classList.add('hidden');
       document.getElementById('kpi-latency').innerText = '0.0 µs';
       document.getElementById('kpi-confidence').innerText = '0.0%';
+
+      // Reset dos cards dedicados de Treino
+      const trainSteps = document.getElementById('train-metric-steps');
+      if (trainSteps) trainSteps.innerText = '0';
+      const trainPct = document.getElementById('train-metric-pct');
+      if (trainPct) trainPct.innerText = '0.0%';
+      const trainBar = document.getElementById('train-metric-progress-bar');
+      if (trainBar) trainBar.style.width = '0%';
+      const trainFps = document.getElementById('train-metric-fps');
+      if (trainFps) trainFps.innerText = '0.0';
+      const trainRet = document.getElementById('train-metric-return');
+      if (trainRet) trainRet.innerText = '0.00';
+      const trainEps = document.getElementById('train-metric-episodes');
+      if (trainEps) trainEps.innerText = '0 episódios';
+      const trainLoss = document.getElementById('train-metric-loss');
+      if (trainLoss) trainLoss.innerText = '0.00';
+      const trainEnt = document.getElementById('train-metric-entropy');
+      if (trainEnt) trainEnt.innerText = '0.00';
+      const trainSil = document.getElementById('train-metric-sil');
+      if (trainSil) trainSil.innerText = '0';
 
       // Reset dos cards dedicados do Foco Avaliação
       const evalCurScore = document.getElementById('eval-current-score');
@@ -2556,23 +2584,36 @@
     function appendLog(line) {
       const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
       _logsHistory.push({ raw: line, cleanLine: cleanLine });
-      if (_logsHistory.length > 2500) _logsHistory.shift();
+      if (_logsHistory.length > 3000) _logsHistory.shift();
 
       const countBadge = document.getElementById('log-count-badge');
       if (countBadge) countBadge.innerText = `${_logsHistory.length} linhas`;
 
-      if (matchesLogFilter(cleanLine, _activeLogFilter, _logSearchQuery)) {
+      const query = (document.getElementById('log-search-input')?.value || '').toLowerCase().trim();
+      if (matchesLogCategory(cleanLine, _currentLogCategory, query)) {
         const term = document.getElementById('terminal-logs');
-        if (!term) return;
-        if (term.children.length === 1 && term.children[0].classList.contains('italic')) {
-          term.innerHTML = '';
+        if (term) {
+          if (term.children.length === 1 && term.children[0].classList.contains('italic')) {
+            term.innerHTML = '';
+          }
+          const { div } = createLogDiv(line);
+          term.appendChild(div);
+
+          if (document.getElementById('chk-autoscroll')?.checked) {
+            term.scrollTop = term.scrollHeight;
+          }
+        }
+      }
+
+      // Append ao mini-logs da avaliação
+      const evalLogs = document.getElementById('eval-mini-logs');
+      if (evalLogs) {
+        if (evalLogs.children.length === 1 && evalLogs.children[0].classList.contains('italic')) {
+          evalLogs.innerHTML = '';
         }
         const { div } = createLogDiv(line);
-        term.appendChild(div);
-
-        if (document.getElementById('chk-autoscroll')?.checked) {
-          term.scrollTop = term.scrollHeight;
-        }
+        evalLogs.appendChild(div);
+        evalLogs.scrollTop = evalLogs.scrollHeight;
       }
     }
 
@@ -2823,7 +2864,68 @@
             }
           }
 
-          // Foco Treino: Status Deck SIL & PPO Loss
+          // =========================================================
+          // Atualização da Barra de Métricas de Alto Impacto (Treino)
+          // =========================================================
+          const trainFps = document.getElementById('train-metric-fps');
+          if (trainFps) trainFps.innerText = liveFps;
+
+          const trainPct = document.getElementById('train-metric-pct');
+          if (trainPct) trainPct.innerText = `${pct.toFixed(1)}%`;
+
+          const trainSteps = document.getElementById('train-metric-steps');
+          if (trainSteps) trainSteps.innerText = curSteps.toLocaleString();
+
+          const trainTotalSteps = document.getElementById('train-metric-total-steps');
+          if (trainTotalSteps) trainTotalSteps.innerText = `/ ${(targetSteps >= 1000 ? (targetSteps/1000).toFixed(0) + 'k' : targetSteps)}`;
+
+          const trainBar = document.getElementById('train-metric-progress-bar');
+          if (trainBar) trainBar.style.width = `${pct}%`;
+
+          const trainDepth = document.getElementById('train-metric-depth');
+          if (trainDepth) {
+            const currD = telemetry.curriculum_depth || 1;
+            const maxD = telemetry.curriculum_max_depth ? `/${telemetry.curriculum_max_depth}` : '';
+            trainDepth.innerText = `D${currD}${maxD}`;
+          }
+
+          const trainWinRate = document.getElementById('train-metric-winrate');
+          if (trainWinRate) {
+            const winRate = (telemetry.curriculum_success_rate !== undefined && telemetry.curriculum_success_rate !== null)
+              ? (telemetry.curriculum_success_rate * 100)
+              : 0;
+            trainWinRate.innerText = `${winRate.toFixed(1)}%`;
+          }
+
+          const trainPeak = document.getElementById('train-metric-peak');
+          if (trainPeak) {
+            const currD = telemetry.curriculum_depth || 1;
+            const curP = _clientCurriculumPeak !== null ? Number(_clientCurriculumPeak).toFixed(2) : Number(peakVal).toFixed(2);
+            trainPeak.innerText = `D${currD} (${curP})`;
+          }
+
+          const trainRet = document.getElementById('train-metric-return');
+          if (trainRet) trainRet.innerText = Number(telemetry.mean_return_20 || 0).toFixed(2);
+
+          const trainEps = document.getElementById('train-metric-episodes');
+          if (trainEps) trainEps.innerText = `${(telemetry.total_episodes || 0)} episódios`;
+
+          const trainLoss = document.getElementById('train-metric-loss');
+          if (trainLoss) {
+            const pLoss = (telemetry.policy_loss !== undefined && telemetry.policy_loss !== null) ? Number(telemetry.policy_loss).toFixed(3) : '--';
+            trainLoss.innerText = pLoss;
+          }
+
+          const trainEnt = document.getElementById('train-metric-entropy');
+          if (trainEnt) {
+            const ent = (telemetry.entropy !== undefined && telemetry.entropy !== null) ? Number(telemetry.entropy).toFixed(3) : '0.00';
+            trainEnt.innerText = ent;
+          }
+
+          const trainSil = document.getElementById('train-metric-sil');
+          if (trainSil) trainSil.innerText = (telemetry.sil_trajectories || 0).toLocaleString();
+
+          // Foco Treino: Compatibilidade com deck antigo
           const trainDeckSil = document.getElementById('train-deck-sil');
           if (trainDeckSil) {
             trainDeckSil.innerText = `${telemetry.sil_trajectories || 0} vitórias`;
@@ -3116,12 +3218,16 @@
         }
       }
       onLoadCheckpointChange();
+      closeCheckpointsModal();
+      selectAppMode('eval', true);
     }
 
     function selectCheckpointForTransfer(path) {
       setMode('train');
       document.getElementById('cfg-transfer').value = path;
       onTransferCheckpointChange();
+      closeCheckpointsModal();
+      selectAppMode('train', true);
     }
 
 
