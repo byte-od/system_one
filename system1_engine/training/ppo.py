@@ -17,6 +17,7 @@ from system1_engine.training.buffer import (
     SuccessReplayBuffer,
     SuccessfulTrajectory,
 )
+from system1_engine.training.sterility import LatentSterilityMemory
 
 
 class RecurrentPPOTrainer:
@@ -49,6 +50,11 @@ class RecurrentPPOTrainer:
         sil_max_trajectories: int = 5120,
         sil_max_per_depth: int = 512,
         sil_min_samples: int = 8,
+        sterility_memory_enabled: bool = True,
+        sterility_capacity: int = 1024,
+        sterility_sim_threshold: float = 0.85,
+        sterility_penalty_scale: float = 2.0,
+        sterility_step_increment: float = 1.0,
     ) -> None:
         self.agent = agent.to(device)
         self.env = env
@@ -150,6 +156,29 @@ class RecurrentPPOTrainer:
             frontier_slicing=True,
             frontier_ratio=0.75,
         )
+
+        # Memória Latente Estéril Auto-Corretiva (Self-Healing Latent Tabu)
+        self.sterility_memory_enabled = bool(sterility_memory_enabled)
+        if self.sterility_memory_enabled and is_discrete:
+            if hasattr(self.env.action_space, "n"):
+                n_acts = int(self.env.action_space.n)
+            elif hasattr(self.agent.action_space, "n"):
+                n_acts = int(self.agent.action_space.n)
+            else:
+                n_acts = 12
+            self.sterility_memory: Optional[LatentSterilityMemory] = LatentSterilityMemory(
+                capacity=sterility_capacity,
+                latent_dim=self.trunk_hidden_dim,
+                num_actions=n_acts,
+                sim_threshold=sterility_sim_threshold,
+                penalty_scale=sterility_penalty_scale,
+                step_increment=sterility_step_increment,
+                device=self.device,
+            )
+            self.agent.set_sterility_memory(self.sterility_memory)
+        else:
+            self.sterility_memory = None
+
         self._active_vec_trajectories: List[List[Dict[str, Any]]] = [[] for _ in range(self.num_envs)]
         self._active_single_trajectory: List[Dict[str, Any]] = []
 
@@ -600,6 +629,11 @@ class RecurrentPPOTrainer:
                     num_acts = logits.shape[-1]
                     penalized_logits = logits.clone()
 
+                    # Aplica resistência suave da Memória Latente Estéril Auto-Corretiva
+                    if self.sterility_memory is not None and self.agent.last_latent is not None:
+                        res = self.sterility_memory.query_resistance(self.agent.last_latent)
+                        penalized_logits = penalized_logits - res.view_as(penalized_logits)
+
                     # Vectorized Action Quality Filter & Generic Reversible Move Pruning
                     raw_env = getattr(self.env, "unwrapped", self.env)
                     inv_map: Optional[Dict[int, int]] = getattr(raw_env, "inverse_action_map", None)
@@ -702,11 +736,26 @@ class RecurrentPPOTrainer:
                             calibration=curr_scale,
                         )
 
+                step_latents = self.agent.last_latent
+
                 # Environment step vetorizado
                 next_obs_dict, rewards, terminateds, truncateds, env_infos = self.env.step(env_action)
                 dones = terminateds | truncateds
                 if stored_env_infos is not None:
                     stored_env_infos.append(env_infos)
+
+                # Atualização Auto-Corretiva da Memória de Esterilidade Latente
+                if self.sterility_memory is not None and step_latents is not None:
+                    for e in range(E):
+                        e_info = env_infos[e] if isinstance(env_infos, list) and e < len(env_infos) else {}
+                        e_solved = bool(e_info.get("is_solved", False)) if isinstance(e_info, dict) else False
+                        e_win = e_solved or (bool(terminateds[e]) and float(rewards[e]) >= 5.0)
+                        e_productive = e_win or (float(rewards[e]) > 0.01)
+                        self.sterility_memory.record_transition(
+                            latent=step_latents[e],
+                            action=env_action[e],
+                            is_productive=e_productive,
+                        )
 
                 if self.sil_enabled:
                     for e in range(E):
@@ -1059,6 +1108,9 @@ class RecurrentPPOTrainer:
                 if self.agent.is_discrete:
                     logits = dist.logits
                     num_acts = logits.shape[-1]
+                    if self.sterility_memory is not None and self.agent.last_latent is not None:
+                        res = self.sterility_memory.query_resistance(self.agent.last_latent)
+                        logits = logits - res.view_as(logits)
                     if num_acts == 12:
                         penalized_logits = logits.clone()
                         if len(self._recent_actions) >= 1:
@@ -1133,12 +1185,25 @@ class RecurrentPPOTrainer:
                         calibration=curr_scale,
                     )
 
+                step_latent = self.agent.last_latent
+
                 # Environment step
                 next_obs_dict, reward, terminated, truncated, env_info = self.env.step(env_action)
                 done = terminated or truncated
                 last_env_info = env_info
                 if stored_step_infos is not None:
                     stored_step_infos.append(env_info)
+
+                # Atualização Auto-Corretiva da Memória de Esterilidade Latente
+                if self.sterility_memory is not None and step_latent is not None:
+                    s_solved = bool(env_info.get("is_solved", False)) if isinstance(env_info, dict) else False
+                    s_win = s_solved or (bool(terminated) and float(reward) >= 5.0)
+                    s_productive = s_win or (float(reward) > 0.01)
+                    self.sterility_memory.record_transition(
+                        latent=step_latent,
+                        action=env_action,
+                        is_productive=s_productive,
+                    )
 
                 if self.sil_enabled:
                     delta_v = (
@@ -1425,6 +1490,9 @@ class RecurrentPPOTrainer:
         if self.scheduler is not None:
             self.scheduler.step()
 
+        ster_prototypes = len(self.sterility_memory) if self.sterility_memory is not None else 0
+        ster_rehab = self.sterility_memory.total_rehabilitated if self.sterility_memory is not None else 0
+
         return {
             "policy_loss": total_policy_loss / max(1, n_updates),
             "value_loss": total_val_loss / max(1, n_updates),
@@ -1432,6 +1500,8 @@ class RecurrentPPOTrainer:
             "sil_policy_loss": sil_p_loss,
             "sil_value_loss": sil_v_loss,
             "sil_trajectories": len(self.sil_buffer),
+            "sterility_prototypes": ster_prototypes,
+            "sterility_rehabilitated": ster_rehab,
         }
 
     def train(

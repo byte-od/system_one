@@ -13,4 +13,4 @@ _vizdoom.ini
 .checkpoints_backup/
 target/
 crates/**/target/
-
+*.pt

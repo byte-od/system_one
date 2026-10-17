@@ -114,6 +114,17 @@ class UniversalS1Agent(nn.Module):
         self._reward_ema: float = 0.0
         self._stagnation_count: int = 0
         self._action_history: List[int] = []
+        self._last_latent: Optional[torch.Tensor] = None
+        self.sterility_memory: Optional[Any] = None
+
+    @property
+    def last_latent(self) -> Optional[torch.Tensor]:
+        """Returns the most recent latent decision state tensor h from the trunk."""
+        return self._last_latent
+
+    def set_sterility_memory(self, memory: Optional[Any]) -> None:
+        """Configura a memória de esterilidade latente para o agente."""
+        self.sterility_memory = memory
 
     @property
     def device(self) -> torch.device:
@@ -169,12 +180,16 @@ class UniversalS1Agent(nn.Module):
         obs_dict: Dict[str, Any],
         hx: Optional[torch.Tensor] = None,
         dones: Optional[torch.Tensor] = None,
-    ) -> Tuple[Distribution, torch.Tensor, torch.Tensor]:
+        return_latent: bool = False,
+    ) -> Union[Tuple[Distribution, torch.Tensor, torch.Tensor], Tuple[Distribution, torch.Tensor, torch.Tensor, torch.Tensor]]:
         """Unified forward pass returning action distribution, state value, and next hidden state."""
         z_in = self.extract_features(obs_dict)
         h, next_hx = self.trunk(z_in, hx=hx, dones=dones)
         dist = self.policy_head(h)
         val = self.value_head(h)
+        self._last_latent = h
+        if return_latent:
+            return dist, val, next_hx, h
         return dist, val, next_hx
 
     def get_action(
@@ -340,6 +355,7 @@ class UniversalS1Agent(nn.Module):
 
         # Recurrent pass through trunk with internal persistent memory
         h, self.hx = self.trunk(z_in, hx=self.hx, dones=None)
+        self._last_latent = h
 
         # Resolve sampling parameters based on homeostatic auto-calibration, fixed calibration, or legacy flags
         is_auto_calib = auto_calibrate or (
@@ -381,6 +397,9 @@ class UniversalS1Agent(nn.Module):
         # Policy decision
         if self.is_discrete:
             logits_sq = self.policy_head.linear(h).squeeze(0).squeeze(0)
+            if self.sterility_memory is not None:
+                resistance = self.sterility_memory.query_resistance(h.squeeze(0).squeeze(0))
+                logits_sq = logits_sq - resistance.view_as(logits_sq)
             probs = torch.softmax(logits_sq, dim=-1)
             best_action = int(torch.argmax(probs, dim=-1).item())
             n_acts = probs.shape[0]
