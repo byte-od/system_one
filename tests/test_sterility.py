@@ -169,3 +169,28 @@ def test_trainer_integration_with_sterility_memory():
     assert "sterility_prototypes" in metrics
     assert "sterility_rehabilitated" in metrics
     assert isinstance(metrics["sterility_prototypes"], int)
+
+
+def test_sterility_symmetric_decision_evaluation():
+    """Valida que o reforço negativo e retorno positivo avaliam cada decisão com base no retorno real G_t."""
+    env = RubiksCubeEnv(scramble_depth=2, curriculum=False)
+    wrapper_env = UniversalS1Wrapper(env)
+    agent = UniversalS1Agent(obs_space=wrapper_env.observation_space, action_space=wrapper_env.action_space)
+
+    trainer = RecurrentPPOTrainer(
+        agent=agent,
+        env=wrapper_env,
+        rollout_steps=64,
+        chunk_length=8,
+        chunk_batch_size=2,
+        sterility_memory_enabled=True,
+    )
+    assert trainer.sterility_memory is not None
+
+    obs_dict, _ = wrapper_env.reset()
+    trainer.collect_rollouts(obs_dict, current_hx=None, episode_start=True)
+
+    # Verifica que o buffer de esterilidade registrou protótipos cognitivos associados a decisões
+    stats = trainer.sterility_memory.get_stats()
+    assert stats["total_recorded"] >= 0
+

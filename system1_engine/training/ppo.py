@@ -765,6 +765,7 @@ class RecurrentPPOTrainer:
                             "action": act_v,
                             "reward": float(rewards[e]),
                             "latent": step_latents[e].detach().cpu() if step_latents is not None else None,
+                            "value": float(value[e, 0, 0].item()),
                         })
                         if len(self._active_vec_trajectories[e]) > 200:
                             self._active_vec_trajectories[e].pop(0)
@@ -809,40 +810,8 @@ class RecurrentPPOTrainer:
                         is_solved = bool(d_info.get("is_solved", False)) if isinstance(d_info, dict) else False
                         is_win = is_solved or (bool(terminateds[d_i]) and float(rewards[d_i]) >= 5.0)
 
-                        # Atualização de Esterilidade Latente Baseada no Desfecho do Episódio (Princípio Generalista)
-                        if self.sterility_memory is not None and len(traj_steps) > 0:
-                            traj_lats = [s["latent"] for s in traj_steps if s.get("latent") is not None]
-                            traj_acts = [s["action"] for s in traj_steps if s.get("latent") is not None]
-                            if len(traj_lats) > 0:
-                                t_lats_tensor = torch.stack(traj_lats, dim=0)
-                                if is_win:
-                                    # Sucesso episódico: Reabilita todas as ações da trajetória
-                                    self.sterility_memory.record_batch(
-                                        latents=t_lats_tensor,
-                                        actions=traj_acts,
-                                        is_productive=[True] * len(traj_acts),
-                                    )
-                                else:
-                                    # Falha episódica: Marca como estéreis os passos finais que falharam em resolver a tarefa
-                                    k_tail = min(len(traj_acts), 8)
-                                    self.sterility_memory.record_batch(
-                                        latents=t_lats_tensor[-k_tail:],
-                                        actions=traj_acts[-k_tail:],
-                                        is_productive=[False] * k_tail,
-                                    )
-
-                        if self.sil_enabled and is_win and len(traj_steps) > 0:
+                        if len(traj_steps) > 0:
                             T_traj = len(traj_steps)
-                            traj_obs = np.array([s["obs"] for s in traj_steps], dtype=np.float32)
-                            has_delta = any(s["delta_obs"] is not None for s in traj_steps)
-                            traj_delta = (
-                                np.array([s["delta_obs"] for s in traj_steps], dtype=np.float32)
-                                if has_delta
-                                else None
-                            )
-                            traj_prev_act = np.array([s["prev_action"] for s in traj_steps])
-                            traj_prev_rew = np.array([s["prev_reward"] for s in traj_steps], dtype=np.float32)
-                            traj_act = np.array([s["action"] for s in traj_steps])
                             traj_rews = [s["reward"] for s in traj_steps]
                             traj_returns = np.zeros(T_traj, dtype=np.float32)
                             running_r = 0.0
@@ -850,20 +819,51 @@ class RecurrentPPOTrainer:
                                 running_r = traj_rews[t_idx] + self.gamma * running_r
                                 traj_returns[t_idx] = running_r
 
-                            cur_d = int(d_info.get("scramble_depth", d_info.get("current_depth", 1))) if isinstance(d_info, dict) else 1
-                            self.sil_buffer.add(
-                                FrontierTransition(
-                                    obs=traj_obs,
-                                    delta_obs=traj_delta,
-                                    prev_actions=traj_prev_act,
-                                    prev_rewards=traj_prev_rew,
-                                    actions=traj_act,
-                                    returns=traj_returns,
-                                    depth=cur_d,
-                                    length=T_traj,
-                                    td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
+                            # Princípio Generalista: Decisão e Estado avaliados pelo Retorno (Simetria Positivo / Negativo)
+                            traj_lats = [s["latent"] for s in traj_steps if s.get("latent") is not None]
+                            traj_acts = [s["action"] for s in traj_steps if s.get("latent") is not None]
+                            traj_vals = [s.get("value", 0.0) for s in traj_steps if s.get("latent") is not None]
+
+                            if self.sterility_memory is not None and len(traj_lats) > 0:
+                                # A decisão tomada naquele estado é produtiva se o retorno superar a expectativa de valor (V) ou for positivo
+                                is_productive = [
+                                    bool(traj_returns[t] > traj_vals[t] or traj_returns[t] > 0.0)
+                                    for t in range(len(traj_acts))
+                                ]
+                                t_lats_tensor = torch.stack(traj_lats, dim=0)
+                                self.sterility_memory.record_batch(
+                                    latents=t_lats_tensor,
+                                    actions=traj_acts,
+                                    is_productive=is_productive,
                                 )
-                            )
+
+                            has_positive_return = is_win or any(r > 0.0 for r in traj_returns)
+                            if self.sil_enabled and has_positive_return:
+                                traj_obs = np.array([s["obs"] for s in traj_steps], dtype=np.float32)
+                                has_delta = any(s["delta_obs"] is not None for s in traj_steps)
+                                traj_delta = (
+                                    np.array([s["delta_obs"] for s in traj_steps], dtype=np.float32)
+                                    if has_delta
+                                    else None
+                                )
+                                traj_prev_act = np.array([s["prev_action"] for s in traj_steps])
+                                traj_prev_rew = np.array([s["prev_reward"] for s in traj_steps], dtype=np.float32)
+                                traj_act = np.array([s["action"] for s in traj_steps])
+
+                                cur_d = int(d_info.get("scramble_depth", d_info.get("current_depth", 1))) if isinstance(d_info, dict) else 1
+                                self.sil_buffer.add(
+                                    FrontierTransition(
+                                        obs=traj_obs,
+                                        delta_obs=traj_delta,
+                                        prev_actions=traj_prev_act,
+                                        prev_rewards=traj_prev_rew,
+                                        actions=traj_act,
+                                        returns=traj_returns,
+                                        depth=cur_d,
+                                        length=T_traj,
+                                        td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
+                                    )
+                                )
                         self._active_vec_trajectories[d_i].clear()
 
                     next_hx[:, done_indices, :] = 0.0
@@ -1224,6 +1224,7 @@ class RecurrentPPOTrainer:
                         "action": act_v,
                         "reward": float(reward),
                         "latent": step_latent.detach().cpu() if step_latent is not None else None,
+                        "value": float(value.squeeze(0).squeeze(0).item()),
                     })
                     if len(self._active_single_trajectory) > 200:
                         self._active_single_trajectory.pop(0)
@@ -1257,38 +1258,8 @@ class RecurrentPPOTrainer:
                     is_solved = bool(env_info.get("is_solved", False)) if isinstance(env_info, dict) else False
                     is_win = is_solved or (bool(terminated) and float(reward) >= 5.0)
 
-                    # Atualização de Esterilidade Latente Baseada no Desfecho do Episódio (Princípio Generalista)
-                    if self.sterility_memory is not None and len(traj_steps) > 0:
-                        traj_lats = [s["latent"] for s in traj_steps if s.get("latent") is not None]
-                        traj_acts = [s["action"] for s in traj_steps if s.get("latent") is not None]
-                        if len(traj_lats) > 0:
-                            t_lats_tensor = torch.stack(traj_lats, dim=0)
-                            if is_win:
-                                self.sterility_memory.record_batch(
-                                    latents=t_lats_tensor,
-                                    actions=traj_acts,
-                                    is_productive=[True] * len(traj_acts),
-                                )
-                            else:
-                                k_tail = min(len(traj_acts), 8)
-                                self.sterility_memory.record_batch(
-                                    latents=t_lats_tensor[-k_tail:],
-                                    actions=traj_acts[-k_tail:],
-                                    is_productive=[False] * k_tail,
-                                )
-
-                    if self.sil_enabled and is_win and len(traj_steps) > 0:
+                    if len(traj_steps) > 0:
                         T_traj = len(traj_steps)
-                        traj_obs = np.array([s["obs"] for s in traj_steps], dtype=np.float32)
-                        has_delta = any(s["delta_obs"] is not None for s in traj_steps)
-                        traj_delta = (
-                            np.array([s["delta_obs"] for s in traj_steps], dtype=np.float32)
-                            if has_delta
-                            else None
-                        )
-                        traj_prev_act = np.array([s["prev_action"] for s in traj_steps])
-                        traj_prev_rew = np.array([s["prev_reward"] for s in traj_steps], dtype=np.float32)
-                        traj_act = np.array([s["action"] for s in traj_steps])
                         traj_rews = [s["reward"] for s in traj_steps]
                         traj_returns = np.zeros(T_traj, dtype=np.float32)
                         running_r = 0.0
@@ -1296,20 +1267,50 @@ class RecurrentPPOTrainer:
                             running_r = traj_rews[t_idx] + self.gamma * running_r
                             traj_returns[t_idx] = running_r
 
-                        cur_d = int(env_info.get("scramble_depth", env_info.get("current_depth", 1))) if isinstance(env_info, dict) else 1
-                        self.sil_buffer.add(
-                            FrontierTransition(
-                                obs=traj_obs,
-                                delta_obs=traj_delta,
-                                prev_actions=traj_prev_act,
-                                prev_rewards=traj_prev_rew,
-                                actions=traj_act,
-                                returns=traj_returns,
-                                depth=cur_d,
-                                length=T_traj,
-                                td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
+                        # Princípio Generalista: Decisão e Estado avaliados pelo Retorno (Simetria Positivo / Negativo)
+                        traj_lats = [s["latent"] for s in traj_steps if s.get("latent") is not None]
+                        traj_acts = [s["action"] for s in traj_steps if s.get("latent") is not None]
+                        traj_vals = [s.get("value", 0.0) for s in traj_steps if s.get("latent") is not None]
+
+                        if self.sterility_memory is not None and len(traj_lats) > 0:
+                            is_productive = [
+                                bool(traj_returns[t] > traj_vals[t] or traj_returns[t] > 0.0)
+                                for t in range(len(traj_acts))
+                            ]
+                            t_lats_tensor = torch.stack(traj_lats, dim=0)
+                            self.sterility_memory.record_batch(
+                                latents=t_lats_tensor,
+                                actions=traj_acts,
+                                is_productive=is_productive,
                             )
-                        )
+
+                        has_positive_return = is_win or any(r > 0.0 for r in traj_returns)
+                        if self.sil_enabled and has_positive_return:
+                            traj_obs = np.array([s["obs"] for s in traj_steps], dtype=np.float32)
+                            has_delta = any(s["delta_obs"] is not None for s in traj_steps)
+                            traj_delta = (
+                                np.array([s["delta_obs"] for s in traj_steps], dtype=np.float32)
+                                if has_delta
+                                else None
+                            )
+                            traj_prev_act = np.array([s["prev_action"] for s in traj_steps])
+                            traj_prev_rew = np.array([s["prev_reward"] for s in traj_steps], dtype=np.float32)
+                            traj_act = np.array([s["action"] for s in traj_steps])
+
+                            cur_d = int(env_info.get("scramble_depth", env_info.get("current_depth", 1))) if isinstance(env_info, dict) else 1
+                            self.sil_buffer.add(
+                                FrontierTransition(
+                                    obs=traj_obs,
+                                    delta_obs=traj_delta,
+                                    prev_actions=traj_prev_act,
+                                    prev_rewards=traj_prev_rew,
+                                    actions=traj_act,
+                                    returns=traj_returns,
+                                    depth=cur_d,
+                                    length=T_traj,
+                                    td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
+                                )
+                            )
                     self._active_single_trajectory.clear()
 
                     current_obs_dict, _ = self.env.reset()
