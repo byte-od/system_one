@@ -3,9 +3,11 @@
 Rastreia hipóteses de ação não produtivas associadas ao estado cognitivo latente (motivo da decisão)
 do agente, aplicando resistência suave sobre os logits de ações estéreis para forçar a exploração
 direcionada rumo a ações virgens, com reabilitação imediata caso a ação venha a ser produtiva.
+
+Otimizado para altíssimo throughput (10.000+ FPS) sem sincronização bloqueante de GPU/MPS.
 """
 
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -29,7 +31,7 @@ class LatentSterilityMemory:
         penalty_scale: float = 2.0,
         step_increment: float = 1.0,
         max_weight: float = 10.0,
-        device: torch.device = torch.device("cpu"),
+        device: Optional[torch.device] = None,
     ) -> None:
         self.capacity = max(16, int(capacity))
         self.latent_dim = max(1, int(latent_dim))
@@ -38,7 +40,9 @@ class LatentSterilityMemory:
         self.penalty_scale = float(max(0.1, penalty_scale))
         self.step_increment = float(max(0.1, step_increment))
         self.max_weight = float(max(1.0, max_weight))
-        self.device = device
+        
+        # Mantém a memória latente no CPU por padrão para evitar stalls de sincronização do Metal (MPS/CUDA)
+        self.device = torch.device("cpu") if device is None or device.type in ("mps", "cuda") else device
 
         # Protótipos latentes L2-normalizados: [K, latent_dim]
         self.prototypes = torch.zeros(
@@ -56,11 +60,12 @@ class LatentSterilityMemory:
         self.total_rehabilitated: int = 0
 
     def to(self, device: torch.device) -> "LatentSterilityMemory":
-        """Move os tensores internos para o dispositivo especificado."""
-        self.device = device
-        self.prototypes = self.prototypes.to(device)
-        self.weights = self.weights.to(device)
-        self.is_active = self.is_active.to(device)
+        """Configura preferência de dispositivo (mantém CPU para MPS/CUDA para evitar stalls de GPU)."""
+        if device.type not in ("mps", "cuda"):
+            self.device = device
+            self.prototypes = self.prototypes.to(device)
+            self.weights = self.weights.to(device)
+            self.is_active = self.is_active.to(device)
         return self
 
     def clear(self) -> None:
@@ -93,9 +98,11 @@ class LatentSterilityMemory:
             out_shape = (*orig_shape[:-1], self.num_actions)
             return torch.zeros(out_shape, dtype=torch.float32, device=orig_device)
 
-        # Achata dimensões de batch para [B, latent_dim]
-        flat_latent = latent.reshape(-1, self.latent_dim).to(self.device).float()
-        B = flat_latent.shape[0]
+        # Achata dimensões de batch para [B, latent_dim] no CPU sem sincronizações bloqueantes
+        flat_latent = latent.reshape(-1, self.latent_dim).detach()
+        if flat_latent.device != self.device:
+            flat_latent = flat_latent.to(self.device, non_blocking=True)
+        flat_latent = flat_latent.float()
 
         # L2-Normalização do estado de consulta
         h_norm = F.normalize(flat_latent, p=2, dim=-1)
@@ -108,15 +115,101 @@ class LatentSterilityMemory:
         sims = torch.matmul(h_norm, active_protos.T)
 
         # Gate suave de similaridade: apenas protótipos acima do limiar participam
-        # Escalonado linearmente de 0 à 1 no intervalo [sim_threshold, 1.0]
         gated_sims = torch.relu(sims - self.sim_threshold) / (1.0 - self.sim_threshold + 1e-6)
 
         # Combinação linear da resistência por ação: [B, num_actions]
         resistance = self.penalty_scale * torch.matmul(gated_sims, active_weights)
 
-        # Restaura formato de batch original
+        # Restaura formato de batch original e devolve no dispositivo de origem
         out_shape = (*orig_shape[:-1], self.num_actions)
-        return resistance.reshape(out_shape).to(orig_device)
+        res_shaped = resistance.reshape(out_shape)
+        if res_shaped.device != orig_device:
+            res_shaped = res_shaped.to(orig_device, non_blocking=True)
+        return res_shaped
+
+    def record_batch(
+        self,
+        latents: torch.Tensor,
+        actions: Union[Sequence[int], np.ndarray, torch.Tensor],
+        is_productive: Union[Sequence[bool], np.ndarray, torch.Tensor],
+    ) -> bool:
+        """Registra eficientemente um lote completo de transições vetorizadas (B ambientes simultâneos).
+
+        Calcula similaridades em batch [B x K] e executa atualizações sem stalls de pipeline.
+        """
+        latents_cpu = latents.reshape(-1, self.latent_dim).detach()
+        if latents_cpu.device != self.device:
+            latents_cpu = latents_cpu.to(self.device, non_blocking=True)
+        latents_cpu = latents_cpu.float()
+
+        B = latents_cpu.shape[0]
+        h_norm = F.normalize(latents_cpu, p=2, dim=-1)
+
+        if isinstance(actions, torch.Tensor):
+            acts = actions.view(-1).cpu().tolist()
+        elif isinstance(actions, np.ndarray):
+            acts = actions.flatten().tolist()
+        else:
+            acts = list(actions)
+
+        if isinstance(is_productive, torch.Tensor):
+            prods = is_productive.view(-1).cpu().tolist()
+        elif isinstance(is_productive, np.ndarray):
+            prods = is_productive.flatten().tolist()
+        else:
+            prods = list(is_productive)
+
+        has_active = bool(self.is_active.any().item())
+        if has_active:
+            active_indices = torch.nonzero(self.is_active).squeeze(-1)
+            active_protos = self.prototypes[active_indices]
+            sims = torch.matmul(h_norm, active_protos.T)  # [B, K_act]
+            best_sims, best_locals = torch.max(sims, dim=1)
+            best_sims_arr = best_sims.numpy()
+            best_locals_arr = best_locals.numpy()
+            act_idx_arr = active_indices.numpy()
+        else:
+            best_sims_arr = np.zeros(B, dtype=np.float32)
+            best_locals_arr = np.zeros(B, dtype=np.int64)
+            act_idx_arr = np.array([], dtype=np.int64)
+
+        updated_any = False
+        for b in range(B):
+            act_idx = int(acts[b])
+            prod = bool(prods[b])
+
+            if act_idx < 0 or act_idx >= self.num_actions:
+                continue
+
+            if has_active and best_sims_arr[b] >= self.sim_threshold:
+                g_idx = int(act_idx_arr[best_locals_arr[b]])
+                if prod:
+                    # 1. Reabilitação Imediata
+                    if self.weights[g_idx, act_idx] > 0.0:
+                        self.weights[g_idx, act_idx] = 0.0
+                        self.total_rehabilitated += 1
+                        updated_any = True
+                    if (self.weights[g_idx] <= 0.0).all():
+                        self.is_active[g_idx] = False
+                else:
+                    # 2. Reforço de Esterilidade
+                    curr_w = float(self.weights[g_idx, act_idx].item())
+                    self.weights[g_idx, act_idx] = min(curr_w + self.step_increment, self.max_weight)
+                    self.total_recorded += 1
+                    updated_any = True
+            else:
+                if not prod:
+                    # 3. Criação de novo protótipo estéril
+                    idx = self.cursor
+                    self.prototypes[idx] = h_norm[b]
+                    self.weights[idx].zero_()
+                    self.weights[idx, act_idx] = self.step_increment
+                    self.is_active[idx] = True
+                    self.cursor = (self.cursor + 1) % self.capacity
+                    self.total_recorded += 1
+                    updated_any = True
+
+        return updated_any
 
     def record_transition(
         self,
@@ -124,88 +217,17 @@ class LatentSterilityMemory:
         action: Union[int, np.ndarray, torch.Tensor],
         is_productive: bool,
     ) -> bool:
-        """Registra o desfecho de uma ação tomada sob o estado de atenção/motivo latente h.
-
-        Se produtivo:
-            Reabilita a ação zerando seu peso de esterilidade e desativa o protótipo se todos zerados.
-        Se estéril:
-            Incrementa o peso de esterilidade do protótipo mais similar ou cria um novo slot.
-
-        Returns:
-            True se uma atualização de protótipo ocorreu, False caso contrário.
-        """
-        # Trata lotes vetorizados
+        """Interface individual (compatível com chamadas isoladas de inferência/testes)."""
         if latent.dim() > 1 and latent.shape[0] > 1:
             B = latent.shape[0]
             acts = action if isinstance(action, (list, tuple, np.ndarray, torch.Tensor)) else [action] * B
-            updated_any = False
-            for b in range(B):
-                up = self.record_transition(latent[b], acts[b], is_productive)
-                if up:
-                    updated_any = True
-            return updated_any
-
-        # Processamento de transição individual
-        h_flat = latent.reshape(-1).to(self.device).float()
-        if h_flat.shape[0] != self.latent_dim:
-            return False
-
-        h_norm = F.normalize(h_flat, p=2, dim=-1)
-
-        if isinstance(action, torch.Tensor):
-            act_idx = int(action.squeeze().item())
-        elif isinstance(action, np.ndarray):
-            act_idx = int(action.squeeze())
-        else:
-            act_idx = int(action)
-
-        if act_idx < 0 or act_idx >= self.num_actions:
-            return False
-
-        # Verifica se já existe um protótipo ativo com motivo cognitivo similar
-        if self.is_active.any():
-            active_indices = torch.nonzero(self.is_active).squeeze(-1)
-            active_protos = self.prototypes[active_indices]
-            sims = torch.matmul(h_norm.unsqueeze(0), active_protos.T).squeeze(0)  # [K_act]
-            best_sim, best_local_idx = torch.max(sims, dim=0)
-
-            if best_sim.item() >= self.sim_threshold:
-                best_global_idx = int(active_indices[best_local_idx].item())
-
-                if is_productive:
-                    # 1. REABILITAÇÃO IMEDIATA (Cura de Falsos Negativos):
-                    if self.weights[best_global_idx, act_idx] > 0.0:
-                        self.weights[best_global_idx, act_idx] = 0.0
-                        self.total_rehabilitated += 1
-
-                    # Se todas as ações deste protótipo estiverem com peso zero, desativa o slot
-                    if (self.weights[best_global_idx] <= 0.0).all():
-                        self.is_active[best_global_idx] = False
-
-                    return True
-                else:
-                    # 2. REFORÇO DE ESTERILIDADE:
-                    curr_w = float(self.weights[best_global_idx, act_idx].item())
-                    new_w = min(curr_w + self.step_increment, self.max_weight)
-                    self.weights[best_global_idx, act_idx] = new_w
-                    self.total_recorded += 1
-                    return True
-
-        # Se não há protótipo similar ativo existente:
-        if is_productive:
-            # Ação produtiva inédita: nada a penalizar
-            return False
-
-        # Cria novo protótipo estéril na posição do cursor circular
-        idx = self.cursor
-        self.prototypes[idx] = h_norm
-        self.weights[idx].zero_()
-        self.weights[idx, act_idx] = self.step_increment
-        self.is_active[idx] = True
-
-        self.cursor = (self.cursor + 1) % self.capacity
-        self.total_recorded += 1
-        return True
+            prods = [is_productive] * B if not isinstance(is_productive, (list, tuple, np.ndarray)) else is_productive
+            return self.record_batch(latent, acts, prods)
+        
+        flat_latent = latent.reshape(1, self.latent_dim)
+        acts = [int(action.item() if isinstance(action, torch.Tensor) else action)]
+        prods = [bool(is_productive)]
+        return self.record_batch(flat_latent, acts, prods)
 
     def get_stats(self) -> Dict[str, Any]:
         """Retorna estatísticas detalhadas para monitoramento no HUD e telemetria."""

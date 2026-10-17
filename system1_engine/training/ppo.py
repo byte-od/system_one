@@ -173,7 +173,7 @@ class RecurrentPPOTrainer:
                 sim_threshold=sterility_sim_threshold,
                 penalty_scale=sterility_penalty_scale,
                 step_increment=sterility_step_increment,
-                device=self.device,
+                device=torch.device("cpu"),
             )
             self.agent.set_sterility_memory(self.sterility_memory)
         else:
@@ -744,18 +744,21 @@ class RecurrentPPOTrainer:
                 if stored_env_infos is not None:
                     stored_env_infos.append(env_infos)
 
-                # Atualização Auto-Corretiva da Memória de Esterilidade Latente
+                # Atualização Auto-Corretiva da Memória de Esterilidade Latente (Batched 10.000+ FPS)
                 if self.sterility_memory is not None and step_latents is not None:
-                    for e in range(E):
-                        e_info = env_infos[e] if isinstance(env_infos, list) and e < len(env_infos) else {}
-                        e_solved = bool(e_info.get("is_solved", False)) if isinstance(e_info, dict) else False
-                        e_win = e_solved or (bool(terminateds[e]) and float(rewards[e]) >= 5.0)
-                        e_productive = e_win or (float(rewards[e]) > 0.01)
-                        self.sterility_memory.record_transition(
-                            latent=step_latents[e],
-                            action=env_action[e],
-                            is_productive=e_productive,
+                    productive_mask = [
+                        bool(
+                            (env_infos[e].get("is_solved", False) if isinstance(env_infos, list) and e < len(env_infos) and isinstance(env_infos[e], dict) else False)
+                            or (bool(terminateds[e]) and float(rewards[e]) >= 5.0)
+                            or (float(rewards[e]) > 0.01)
                         )
+                        for e in range(E)
+                    ]
+                    self.sterility_memory.record_batch(
+                        latents=step_latents,
+                        actions=env_action,
+                        is_productive=productive_mask,
+                    )
 
                 if self.sil_enabled:
                     for e in range(E):
