@@ -118,7 +118,13 @@ class LatentSterilityMemory:
         gated_sims = torch.relu(sims - self.sim_threshold) / (1.0 - self.sim_threshold + 1e-6)
 
         # Combinação linear da resistência por ação: [B, num_actions]
-        resistance = self.penalty_scale * torch.matmul(gated_sims, active_weights)
+        raw_resistance = self.penalty_scale * torch.matmul(gated_sims, active_weights)
+
+        # Resistência Relativa de Contraste (Princípio Generalista):
+        # Desconta a resistência mínima do estado para incentivar ações virgens
+        # sem bloquear globalmente todas as ações caso todas tenham histórico estéril.
+        min_r = raw_resistance.min(dim=-1, keepdim=True).values
+        resistance = (raw_resistance - min_r).clamp(min=0.0, max=2.5)
 
         # Restaura formato de batch original e devolve no dispositivo de origem
         out_shape = (*orig_shape[:-1], self.num_actions)
