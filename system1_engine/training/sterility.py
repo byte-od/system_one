@@ -52,6 +52,8 @@ class LatentSterilityMemory:
         self.weights = torch.zeros(
             (self.capacity, self.num_actions), dtype=torch.float32, device=self.device
         )
+        # Nível curricular ou profundidade associada a cada protótipo (separação por estratos)
+        self.levels = torch.zeros(self.capacity, dtype=torch.int64, device=self.device)
         # Máscara de ativação dos slots do buffer circular
         self.is_active = torch.zeros(self.capacity, dtype=torch.bool, device=self.device)
 
@@ -65,6 +67,7 @@ class LatentSterilityMemory:
             self.device = device
             self.prototypes = self.prototypes.to(device)
             self.weights = self.weights.to(device)
+            self.levels = self.levels.to(device)
             self.is_active = self.is_active.to(device)
         return self
 
@@ -72,6 +75,7 @@ class LatentSterilityMemory:
         """Limpa toda a memória de esterilidade."""
         self.prototypes.zero_()
         self.weights.zero_()
+        self.levels.zero_()
         self.is_active.zero_()
         self.cursor = 0
         self.total_recorded = 0
@@ -81,11 +85,13 @@ class LatentSterilityMemory:
         """Retorna o número de protótipos cognitivos ativos na memória."""
         return int(self.is_active.sum().item())
 
-    def query_resistance(self, latent: torch.Tensor) -> torch.Tensor:
+    def query_resistance(self, latent: torch.Tensor, level: Optional[int] = None) -> torch.Tensor:
         """Calcula a penalidade de resistência sobre os logits das ações para o estado latente h.
 
         Args:
             latent: Vetor latente com formato [latent_dim], [B, latent_dim] ou [B, 1, latent_dim].
+            level: Nível / estrato de profundidade curricular. Se fornecido, restringe a busca
+                   apenas aos protótipos daquele nível, isolando o aprendizado entre estágios.
 
         Returns:
             Tensor de penalidade com mesmo batch shape: [B, num_actions] ou [B, 1, num_actions].
@@ -98,6 +104,15 @@ class LatentSterilityMemory:
             out_shape = (*orig_shape[:-1], self.num_actions)
             return torch.zeros(out_shape, dtype=torch.float32, device=orig_device)
 
+        active_indices = torch.nonzero(self.is_active).squeeze(-1)
+        if level is not None:
+            lvl_mask = (self.levels[active_indices] == int(level))
+            active_indices = active_indices[lvl_mask]
+
+        if len(active_indices) == 0:
+            out_shape = (*orig_shape[:-1], self.num_actions)
+            return torch.zeros(out_shape, dtype=torch.float32, device=orig_device)
+
         # Achata dimensões de batch para [B, latent_dim] no CPU sem sincronizações bloqueantes
         flat_latent = latent.reshape(-1, self.latent_dim).detach()
         if flat_latent.device != self.device:
@@ -107,7 +122,6 @@ class LatentSterilityMemory:
         # L2-Normalização do estado de consulta
         h_norm = F.normalize(flat_latent, p=2, dim=-1)
 
-        active_indices = torch.nonzero(self.is_active).squeeze(-1)
         active_protos = self.prototypes[active_indices]  # [K_act, latent_dim]
         active_weights = self.weights[active_indices]    # [K_act, num_actions]
 
@@ -138,10 +152,12 @@ class LatentSterilityMemory:
         latents: torch.Tensor,
         actions: Union[Sequence[int], np.ndarray, torch.Tensor],
         is_productive: Union[Sequence[bool], np.ndarray, torch.Tensor],
+        level: Optional[int] = None,
     ) -> bool:
         """Registra eficientemente um lote completo de transições vetorizadas (B ambientes simultâneos).
 
-        Calcula similaridades em batch [B x K] e executa atualizações sem stalls de pipeline.
+        Calcula similaridades em batch [B x K] e executa atualizações sem stalls de pipeline,
+        estratificando protótipos pelo nível curricular informado.
         """
         latents_cpu = latents.reshape(-1, self.latent_dim).detach()
         if latents_cpu.device != self.device:
@@ -165,15 +181,27 @@ class LatentSterilityMemory:
         else:
             prods = list(is_productive)
 
+        target_level = int(level) if level is not None else 1
+
         has_active = bool(self.is_active.any().item())
         if has_active:
             active_indices = torch.nonzero(self.is_active).squeeze(-1)
-            active_protos = self.prototypes[active_indices]
-            sims = torch.matmul(h_norm, active_protos.T)  # [B, K_act]
-            best_sims, best_locals = torch.max(sims, dim=1)
-            best_sims_arr = best_sims.numpy()
-            best_locals_arr = best_locals.numpy()
-            act_idx_arr = active_indices.numpy()
+            if level is not None:
+                lvl_mask = (self.levels[active_indices] == target_level)
+                active_indices = active_indices[lvl_mask]
+
+            if len(active_indices) > 0:
+                active_protos = self.prototypes[active_indices]
+                sims = torch.matmul(h_norm, active_protos.T)  # [B, K_act]
+                best_sims, best_locals = torch.max(sims, dim=1)
+                best_sims_arr = best_sims.numpy()
+                best_locals_arr = best_locals.numpy()
+                act_idx_arr = active_indices.numpy()
+            else:
+                has_active = False
+                best_sims_arr = np.zeros(B, dtype=np.float32)
+                best_locals_arr = np.zeros(B, dtype=np.int64)
+                act_idx_arr = np.array([], dtype=np.int64)
         else:
             best_sims_arr = np.zeros(B, dtype=np.float32)
             best_locals_arr = np.zeros(B, dtype=np.int64)
@@ -205,11 +233,12 @@ class LatentSterilityMemory:
                     updated_any = True
             else:
                 if not prod:
-                    # 3. Criação de novo protótipo estéril
+                    # 3. Criação de novo protótipo estéril estratificado pelo nível
                     idx = self.cursor
                     self.prototypes[idx] = h_norm[b]
                     self.weights[idx].zero_()
                     self.weights[idx, act_idx] = self.step_increment
+                    self.levels[idx] = target_level
                     self.is_active[idx] = True
                     self.cursor = (self.cursor + 1) % self.capacity
                     self.total_recorded += 1
@@ -222,18 +251,19 @@ class LatentSterilityMemory:
         latent: torch.Tensor,
         action: Union[int, np.ndarray, torch.Tensor],
         is_productive: bool,
+        level: Optional[int] = None,
     ) -> bool:
         """Interface individual (compatível com chamadas isoladas de inferência/testes)."""
         if latent.dim() > 1 and latent.shape[0] > 1:
             B = latent.shape[0]
             acts = action if isinstance(action, (list, tuple, np.ndarray, torch.Tensor)) else [action] * B
             prods = [is_productive] * B if not isinstance(is_productive, (list, tuple, np.ndarray)) else is_productive
-            return self.record_batch(latent, acts, prods)
+            return self.record_batch(latent, acts, prods, level=level)
         
         flat_latent = latent.reshape(1, self.latent_dim)
         acts = [int(action.item() if isinstance(action, torch.Tensor) else action)]
         prods = [bool(is_productive)]
-        return self.record_batch(flat_latent, acts, prods)
+        return self.record_batch(flat_latent, acts, prods, level=level)
 
     def get_stats(self) -> Dict[str, Any]:
         """Retorna estatísticas detalhadas para monitoramento no HUD e telemetria."""
@@ -243,12 +273,15 @@ class LatentSterilityMemory:
             pos_weights = active_weights[active_weights > 0.0]
             mean_w = float(pos_weights.mean().item()) if pos_weights.numel() > 0 else 0.0
             max_w = float(pos_weights.max().item()) if pos_weights.numel() > 0 else 0.0
+            active_lvls = sorted(list(set(self.levels[self.is_active].tolist())))
         else:
             mean_w = 0.0
             max_w = 0.0
+            active_lvls = []
 
         return {
             "num_active_prototypes": num_act,
+            "active_levels": active_lvls,
             "total_recorded": self.total_recorded,
             "total_rehabilitated": self.total_rehabilitated,
             "mean_sterility_weight": mean_w,

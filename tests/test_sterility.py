@@ -194,3 +194,74 @@ def test_sterility_symmetric_decision_evaluation():
     stats = trainer.sterility_memory.get_stats()
     assert stats["total_recorded"] >= 0
 
+
+def test_sterility_level_separation():
+    """Valida que a esterilidade registrada em um nível (ex: D5) não contamina outros níveis (ex: D1)."""
+    mem = LatentSterilityMemory(
+        capacity=32,
+        latent_dim=256,
+        num_actions=12,
+        sim_threshold=0.85,
+        penalty_scale=3.0,
+    )
+
+    h = torch.randn(256)
+
+    # 1. Registra a ação 2 como estéril especificamente no nível 5
+    mem.record_transition(latent=h, action=2, is_productive=False, level=5)
+    assert len(mem) == 1
+
+    # 2. Consulta no Nível 5: a ação 2 deve sofrer resistência positiva
+    res_lvl5 = mem.query_resistance(h, level=5)
+    assert res_lvl5[2].item() > 0.0
+
+    # 3. Consulta no Nível 1: a ação 2 NÃO DEVE sofrer resistência (resistência = 0)
+    res_lvl1 = mem.query_resistance(h, level=1)
+    assert res_lvl1[2].item() == 0.0
+    assert (res_lvl1 == 0.0).all()
+
+    # 4. Consulta no Nível 2: também limpa
+    res_lvl2 = mem.query_resistance(h, level=2)
+    assert res_lvl2[2].item() == 0.0
+
+    # 5. Valida que get_stats reporta o nível ativo
+    stats = mem.get_stats()
+    assert 5 in stats["active_levels"]
+
+
+def test_agent_act_fast_level_isolation():
+    """Garante que UniversalS1Agent.act_fast isola resistências entre níveis distintos."""
+    obs_space = gym.spaces.Box(-np.inf, np.inf, shape=(324,), dtype=np.float32)
+    act_space = gym.spaces.Discrete(12)
+    agent = UniversalS1Agent(obs_space=obs_space, action_space=act_space)
+    agent.eval()
+
+    obs_dict = {
+        "obs": np.zeros(324, dtype=np.float32),
+        "delta_obs": np.zeros(324, dtype=np.float32),
+        "prev_action": 0,
+        "prev_reward": 0.0,
+    }
+
+    # Gera decisão base para capturar latent
+    dec1 = agent.act_fast(obs_dict, return_decision=True, quality_filter=False)
+    h_latent = agent.last_latent
+    assert h_latent is not None
+
+    mem = LatentSterilityMemory(latent_dim=256, num_actions=12, penalty_scale=10.0)
+    agent.set_sterility_memory(mem)
+
+    chosen_act = int(dec1.action)
+    # Marca como estéril no nível 6
+    for _ in range(3):
+        mem.record_transition(latent=h_latent, action=chosen_act, is_productive=False, level=6)
+
+    # Executa act_fast no nível 1: deve ignorar a esterilidade do nível 6 e manter a ação!
+    dec_lvl1 = agent.act_fast(obs_dict, return_decision=True, quality_filter=False, level=1)
+    assert dec_lvl1.action == chosen_act
+
+    # Executa act_fast no nível 6: com resistência alta, deve evitar a ação estéril!
+    dec_lvl6 = agent.act_fast(obs_dict, return_decision=True, quality_filter=False, level=6)
+    assert dec_lvl6.action != chosen_act
+
+

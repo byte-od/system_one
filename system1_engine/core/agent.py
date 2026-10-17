@@ -252,6 +252,7 @@ class UniversalS1Agent(nn.Module):
         avoid_action: Optional[Union[int, List[int], Set[int]]] = None,
         quality_filter: bool = True,
         ensemble_fallback: bool = False,
+        level: Optional[int] = None,
     ) -> Union[int, np.ndarray, ReflexDecision]:
         """Ultra-fast single-forward reflex inference.
 
@@ -262,6 +263,13 @@ class UniversalS1Agent(nn.Module):
         If ensemble_fallback=True and is_uncertain=True, triggers ConfidenceGatedEnsemble sub-millisecond fallback.
         """
         t0 = time.perf_counter()
+        resolved_level = level or (
+            obs_dict.get("current_depth")
+            or obs_dict.get("scramble_depth")
+            or obs_dict.get("level")
+            if isinstance(obs_dict, dict)
+            else None
+        )
         raw_obs = obs_dict["obs"]
         raw_action = obs_dict["prev_action"]
         raw_reward = obs_dict["prev_reward"]
@@ -398,7 +406,7 @@ class UniversalS1Agent(nn.Module):
         if self.is_discrete:
             logits_sq = self.policy_head.linear(h).squeeze(0).squeeze(0)
             if self.sterility_memory is not None:
-                resistance = self.sterility_memory.query_resistance(h.squeeze(0).squeeze(0))
+                resistance = self.sterility_memory.query_resistance(h.squeeze(0).squeeze(0), level=resolved_level)
                 logits_sq = logits_sq - resistance.view_as(logits_sq)
             probs = torch.softmax(logits_sq, dim=-1)
             best_action = int(torch.argmax(probs, dim=-1).item())

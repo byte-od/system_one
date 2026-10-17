@@ -629,9 +629,10 @@ class RecurrentPPOTrainer:
                     num_acts = logits.shape[-1]
                     penalized_logits = logits.clone()
 
-                    # Aplica resistência suave da Memória Latente Estéril Auto-Corretiva
+                    # Aplica resistência suave da Memória Latente Estéril Auto-Corretiva estratificada pelo nível
                     if self.sterility_memory is not None and self.agent.last_latent is not None:
-                        res = self.sterility_memory.query_resistance(self.agent.last_latent)
+                        cur_lvl = self._get_current_curriculum_depth()
+                        res = self.sterility_memory.query_resistance(self.agent.last_latent, level=cur_lvl)
                         penalized_logits = penalized_logits - res.view_as(penalized_logits)
 
                     # Vectorized Action Quality Filter & Generic Reversible Move Pruning
@@ -824,6 +825,8 @@ class RecurrentPPOTrainer:
                             traj_acts = [s["action"] for s in traj_steps if s.get("latent") is not None]
                             traj_vals = [s.get("value", 0.0) for s in traj_steps if s.get("latent") is not None]
 
+                            cur_d = int(d_info.get("scramble_depth", d_info.get("current_depth", self._get_current_curriculum_depth()))) if isinstance(d_info, dict) else self._get_current_curriculum_depth()
+
                             if self.sterility_memory is not None and len(traj_lats) > 0:
                                 # A decisão tomada naquele estado é produtiva se o retorno superar a expectativa de valor (V) ou for positivo
                                 is_productive = [
@@ -835,6 +838,7 @@ class RecurrentPPOTrainer:
                                     latents=t_lats_tensor,
                                     actions=traj_acts,
                                     is_productive=is_productive,
+                                    level=cur_d,
                                 )
 
                             has_positive_return = is_win or any(r > 0.0 for r in traj_returns)
@@ -1119,7 +1123,8 @@ class RecurrentPPOTrainer:
                     logits = dist.logits
                     num_acts = logits.shape[-1]
                     if self.sterility_memory is not None and self.agent.last_latent is not None:
-                        res = self.sterility_memory.query_resistance(self.agent.last_latent)
+                        cur_lvl = self._get_current_curriculum_depth()
+                        res = self.sterility_memory.query_resistance(self.agent.last_latent, level=cur_lvl)
                         logits = logits - res.view_as(logits)
                     if num_acts == 12:
                         penalized_logits = logits.clone()
@@ -1272,6 +1277,8 @@ class RecurrentPPOTrainer:
                         traj_acts = [s["action"] for s in traj_steps if s.get("latent") is not None]
                         traj_vals = [s.get("value", 0.0) for s in traj_steps if s.get("latent") is not None]
 
+                        cur_d = int(env_info.get("scramble_depth", env_info.get("current_depth", self._get_current_curriculum_depth()))) if isinstance(env_info, dict) else self._get_current_curriculum_depth()
+
                         if self.sterility_memory is not None and len(traj_lats) > 0:
                             is_productive = [
                                 bool(traj_returns[t] > traj_vals[t] or traj_returns[t] > 0.0)
@@ -1282,6 +1289,7 @@ class RecurrentPPOTrainer:
                                 latents=t_lats_tensor,
                                 actions=traj_acts,
                                 is_productive=is_productive,
+                                level=cur_d,
                             )
 
                         has_positive_return = is_win or any(r > 0.0 for r in traj_returns)

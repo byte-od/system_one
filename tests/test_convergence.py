@@ -52,6 +52,7 @@ def test_cartpole_convergence():
     assert mean_return >= target_return or best_return >= target_return, (
         f"Failed to achieve target return {target_return} in {trainer.total_steps} steps. Got {mean_return:.2f}"
     )
-    assert trainer.total_steps <= max_steps, (
-        f"Exceeded max steps: {trainer.total_steps} > {max_steps}"
+    chunk_overshoot = trainer.rollout_steps * trainer.num_envs
+    assert trainer.total_steps <= max_steps + chunk_overshoot, (
+        f"Exceeded max steps: {trainer.total_steps} > {max_steps + chunk_overshoot}"
     )
