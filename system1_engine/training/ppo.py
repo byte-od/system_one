@@ -50,7 +50,7 @@ class RecurrentPPOTrainer:
         sil_max_trajectories: int = 5120,
         sil_max_per_depth: int = 512,
         sil_min_samples: int = 8,
-        sterility_memory_enabled: bool = True,
+        sterility_memory_enabled: bool = False,
         sterility_capacity: int = 1024,
         sterility_sim_threshold: float = 0.85,
         sterility_penalty_scale: float = 2.0,
@@ -737,7 +737,7 @@ class RecurrentPPOTrainer:
                             calibration=curr_scale,
                         )
 
-                step_latents = self.agent.last_latent
+                step_latents = self.agent.last_latent if self.sterility_memory is not None else None
 
                 # Environment step vetorizado
                 next_obs_dict, rewards, terminateds, truncateds, env_infos = self.env.step(env_action)
@@ -766,7 +766,7 @@ class RecurrentPPOTrainer:
                             "action": act_v,
                             "reward": float(rewards[e]),
                             "latent": step_latents[e].detach().cpu() if step_latents is not None else None,
-                            "value": float(value[e, 0, 0].item()),
+                            "value": float(value[e, 0, 0].item()) if self.sterility_memory is not None else 0.0,
                         })
                         if len(self._active_vec_trajectories[e]) > 200:
                             self._active_vec_trajectories[e].pop(0)
@@ -1200,7 +1200,7 @@ class RecurrentPPOTrainer:
                         calibration=curr_scale,
                     )
 
-                step_latent = self.agent.last_latent
+                step_latent = self.agent.last_latent if self.sterility_memory is not None else None
 
                 # Environment step
                 next_obs_dict, reward, terminated, truncated, env_info = self.env.step(env_action)
@@ -1229,7 +1229,7 @@ class RecurrentPPOTrainer:
                         "action": act_v,
                         "reward": float(reward),
                         "latent": step_latent.detach().cpu() if step_latent is not None else None,
-                        "value": float(value.squeeze(0).squeeze(0).item()),
+                        "value": float(value.squeeze(0).squeeze(0).item()) if self.sterility_memory is not None else 0.0,
                     })
                     if len(self._active_single_trajectory) > 200:
                         self._active_single_trajectory.pop(0)

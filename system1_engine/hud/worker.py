@@ -427,6 +427,12 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     else:
         print("⚡ Self-Imitation Learning (SIL Replay): DESATIVADO")
 
+    sterility_memory_enabled = bool(config.get("sterility_memory_enabled", False))
+    if sterility_memory_enabled:
+        print("🧠 Memória de Esterilidade Latente: ATIVA")
+    else:
+        print("⚡ Memória de Esterilidade Latente: DESATIVADA (Pura inferência de alta velocidade)")
+
     trainer = RecurrentPPOTrainer(
         agent=agent,
         env=env,
@@ -446,6 +452,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         sil_batch_size=sil_batch_size,
         sil_max_trajectories=sil_max_trajectories,
         sil_max_per_depth=sil_max_per_depth,
+        sterility_memory_enabled=sterility_memory_enabled,
     )
 
     raw_env = getattr(env, "unwrapped", env)
