@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 import numpy as np
@@ -287,7 +287,7 @@ class RecurrentRolloutBuffer:
 
 @dataclass
 class SuccessfulTrajectory:
-    """Trajetória completa de um episódio vitorioso/resolvido."""
+    """Trajetória completa de um episódio vitorioso/resolvido ou negativo (falha)."""
     obs: np.ndarray                  # [T, obs_dim]
     delta_obs: Optional[np.ndarray]  # [T, obs_dim] ou None
     prev_actions: np.ndarray         # [T, ...]
@@ -296,6 +296,7 @@ class SuccessfulTrajectory:
     returns: np.ndarray              # [T] retornos descontados reais
     depth: int                       # Profundidade curricular ou do scramble
     length: int                      # Duração T em passos
+    log_probs: Optional[np.ndarray] = None  # [T] log_probs da política de rollout (pi_old / pi_ref)
 
 
 @dataclass
@@ -315,6 +316,7 @@ class FrontierTransition(SuccessfulTrajectory):
         prev_action: Union[int, np.ndarray] = 0,
         prev_reward: float = 0.0,
         td_error: float = 0.0,
+        log_probs: Optional[np.ndarray] = None,
     ) -> "FrontierTransition":
         """Cria uma transição atômica 1-step formatada como micro-trajetória de comprimento 1."""
         obs_arr = np.asarray(obs)
@@ -346,6 +348,7 @@ class FrontierTransition(SuccessfulTrajectory):
             returns=np.array([target_return], dtype=np.float32),
             depth=int(depth),
             length=1,
+            log_probs=log_probs,
             td_error=float(td_error),
         )
 
@@ -373,6 +376,8 @@ class SuccessReplayBuffer:
         hidden_dim: int = 512,
         frontier_slicing: bool = False,
         frontier_ratio: float = 0.75,
+        progressive_capacity: bool = True,
+        max_failures_per_depth: int = 256,
     ) -> None:
         self.max_trajectories = max(2, int(max_trajectories))
         self.max_per_depth = max(1, min(int(max_per_depth), self.max_trajectories))
@@ -384,10 +389,16 @@ class SuccessReplayBuffer:
         self.hidden_dim = hidden_dim
         self.frontier_slicing = frontier_slicing
         self.frontier_ratio = float(frontier_ratio)
+        self.progressive_capacity = bool(progressive_capacity)
+        self.max_failures_per_depth = max(1, int(max_failures_per_depth))
+
         self._depth_buffers: Dict[int, List[SuccessfulTrajectory]] = defaultdict(list)
+        self._failure_buffers: Dict[int, deque[SuccessfulTrajectory]] = defaultdict(
+            lambda: deque(maxlen=self.max_failures_per_depth)
+        )
         self.total_added: int = 0
         self.total_pruned: int = 0
-
+        self.total_failures_added: int = 0
 
     @property
     def trajectories(self) -> List[SuccessfulTrajectory]:
@@ -403,18 +414,63 @@ class SuccessReplayBuffer:
         for t in trajs:
             self.add(t)
 
+    @property
+    def failures(self) -> List[SuccessfulTrajectory]:
+        """Retorna uma lista plana de todas as trajetórias de falha em todas as profundidades."""
+        all_fails: List[SuccessfulTrajectory] = []
+        for depth in sorted(self._failure_buffers.keys()):
+            all_fails.extend(list(self._failure_buffers[depth]))
+        return all_fails
+
     def clear(self) -> None:
-        """Limpa todos os estratos do buffer."""
+        """Limpa todos os estratos vitoriosos e negativos do buffer."""
         self._depth_buffers.clear()
+        self._failure_buffers.clear()
         self.total_added = 0
         self.total_pruned = 0
+        self.total_failures_added = 0
 
     def get_depth_distribution(self) -> Dict[int, int]:
         """Retorna a contagem de trajetórias armazenadas por profundidade."""
         return {d: len(trajs) for d, trajs in sorted(self._depth_buffers.items()) if len(trajs) > 0}
 
+    def get_failure_depth_distribution(self) -> Dict[int, int]:
+        """Retorna a contagem de falhas armazenadas por profundidade."""
+        return {d: len(fails) for d, fails in sorted(self._failure_buffers.items()) if len(fails) > 0}
+
+    def get_capacity_for_depth(self, depth: int) -> int:
+        """Calcula a cota máxima de trajetórias para um estrato específico.
+
+        No modo progressivo, aloca capacidade proporcional à entropia do nível:
+        estratos rasos com pouquíssimos estados recebem cota reduzida, liberando
+        espaço para estratos profundos de fronteira onde a variedade combinatorial é vasta.
+        """
+        if not self.progressive_capacity or depth <= 0 or self.max_per_depth <= 4:
+            return self.max_per_depth
+        cap = 32 * (2 ** max(0, depth - 1))
+        return max(1, min(self.max_per_depth, cap))
+
     def __len__(self) -> int:
         return sum(len(b) for b in self._depth_buffers.values())
+
+    def add_failure(self, trajectory: SuccessfulTrajectory) -> None:
+        """Adiciona uma trajetória de falha/erro ao buffer negativo estratificado para DPO contrastivo."""
+        depth = int(getattr(trajectory, "depth", 1))
+
+        # Compressão de Observações Visuais para uint8 [0, 255]
+        if self.is_visual and trajectory.obs.dtype != np.uint8:
+            if np.issubdtype(trajectory.obs.dtype, np.floating):
+                max_val = float(np.max(trajectory.obs)) if trajectory.obs.size > 0 else 1.0
+                if max_val <= 1.0 + 1e-4:
+                    comp_obs = np.clip(trajectory.obs * 255.0, 0, 255).astype(np.uint8)
+                else:
+                    comp_obs = np.clip(trajectory.obs, 0, 255).astype(np.uint8)
+            else:
+                comp_obs = np.clip(trajectory.obs, 0, 255).astype(np.uint8)
+            trajectory.obs = comp_obs
+
+        self._failure_buffers[depth].append(trajectory)
+        self.total_failures_added += 1
 
     def add(self, trajectory: SuccessfulTrajectory, slice_frontier: Optional[bool] = None) -> None:
         """Adiciona uma trajetória ou micro-manobra de vitória ao estrato correspondente.
@@ -447,6 +503,11 @@ class SuccessReplayBuffer:
                     sliced_prev_rewards = trajectory.prev_rewards[:L]
                     sliced_actions = trajectory.actions[:L]
                     sliced_returns = trajectory.returns[:L]
+                    sliced_logp = (
+                        trajectory.log_probs[:L]
+                        if getattr(trajectory, "log_probs", None) is not None
+                        else None
+                    )
                     td_err = getattr(trajectory, "td_error", 0.0)
                     if isinstance(trajectory, FrontierTransition):
                         trajectory = FrontierTransition(
@@ -458,6 +519,7 @@ class SuccessReplayBuffer:
                             returns=sliced_returns,
                             depth=depth,
                             length=L,
+                            log_probs=sliced_logp,
                             td_error=td_err,
                         )
                     else:
@@ -470,6 +532,7 @@ class SuccessReplayBuffer:
                             returns=sliced_returns,
                             depth=depth,
                             length=L,
+                            log_probs=sliced_logp,
                         )
                 else:
                     self.total_pruned += 1
@@ -492,8 +555,8 @@ class SuccessReplayBuffer:
         new_quality = (t_ret, -t_len)
 
         # 3. Quota local por estrato com substituição prioritária por qualidade:
-        # Em vez de FIFO cego que descarta demonstrações ótimas antigas, mantém as melhores trajetórias.
-        if len(d_buf) >= self.max_per_depth:
+        quota = self.get_capacity_for_depth(depth)
+        if len(d_buf) >= quota:
             worst_idx = min(
                 range(len(d_buf)),
                 key=lambda i: (
@@ -532,6 +595,77 @@ class SuccessReplayBuffer:
             self._depth_buffers[min_d].pop(worst_idx)
             if len(self._depth_buffers[min_d]) == 0:
                 del self._depth_buffers[min_d]
+
+    def _collate_trajectories(
+        self,
+        sampled_trajs: List[SuccessfulTrajectory],
+    ) -> Dict[str, torch.Tensor]:
+        """Empacota uma lista de trajetórias heterogêneas em lote pré-alocado no dispositivo."""
+        k = len(sampled_trajs)
+        max_len = max(t.length for t in sampled_trajs)
+
+        # Prealocação de tensores padronizados com zeros
+        b_obs = np.zeros((k, max_len, *self.obs_shape), dtype=np.float32)
+        has_delta = any(t.delta_obs is not None for t in sampled_trajs)
+        b_delta = np.zeros((k, max_len, *self.obs_shape), dtype=np.float32) if has_delta else None
+
+        act_dtype = np.int64 if self.is_discrete else np.float32
+        b_prev_act = np.zeros((k, max_len, *self.action_shape), dtype=act_dtype)
+        b_prev_rew = np.zeros((k, max_len, 1), dtype=np.float32)
+        b_act = np.zeros((k, max_len, *self.action_shape), dtype=act_dtype)
+        b_ret = np.zeros((k, max_len), dtype=np.float32)
+        b_logp = np.zeros((k, max_len), dtype=np.float32)
+        b_mask = np.zeros((k, max_len), dtype=np.float32)
+
+        for i, t in enumerate(sampled_trajs):
+            L = t.length
+            if self.is_visual and t.obs.dtype == np.uint8:
+                b_obs[i, :L] = t.obs.astype(np.float32) / 255.0
+            else:
+                b_obs[i, :L] = t.obs
+            if has_delta and t.delta_obs is not None:
+                b_delta[i, :L] = t.delta_obs
+            b_prev_act[i, :L] = t.prev_actions
+            b_prev_rew[i, :L, 0] = t.prev_rewards
+            b_act[i, :L] = t.actions
+            b_ret[i, :L] = t.returns
+            if getattr(t, "log_probs", None) is not None:
+                b_logp[i, :min(L, len(t.log_probs))] = t.log_probs[:min(L, len(t.log_probs))]
+            b_mask[i, :L] = 1.0
+
+        tensor_obs = torch.tensor(b_obs, dtype=torch.float32, device=self.device)
+        tensor_delta = torch.tensor(b_delta, dtype=torch.float32, device=self.device) if has_delta else None
+        tensor_prev_act = torch.tensor(
+            b_prev_act,
+            dtype=torch.long if self.is_discrete else torch.float32,
+            device=self.device,
+        )
+        if self.is_discrete and tensor_prev_act.dim() == 2:
+            tensor_prev_act = tensor_prev_act.unsqueeze(-1)
+
+        tensor_prev_rew = torch.tensor(b_prev_rew, dtype=torch.float32, device=self.device)
+        tensor_act = torch.tensor(
+            b_act,
+            dtype=torch.long if self.is_discrete else torch.float32,
+            device=self.device,
+        )
+        tensor_ret = torch.tensor(b_ret, dtype=torch.float32, device=self.device)
+        tensor_old_logp = torch.tensor(b_logp, dtype=torch.float32, device=self.device)
+        tensor_mask = torch.tensor(b_mask, dtype=torch.float32, device=self.device)
+        tensor_hx = torch.zeros(1, k, self.hidden_dim, device=self.device, dtype=torch.float32)
+
+        return {
+            "obs": tensor_obs,
+            "delta_obs": tensor_delta,
+            "prev_actions": tensor_prev_act,
+            "prev_rewards": tensor_prev_rew,
+            "actions": tensor_act,
+            "returns": tensor_ret,
+            "old_log_probs": tensor_old_logp,
+            "mask": tensor_mask,
+            "hx": tensor_hx,
+            "dones": None,
+        }
 
     def sample_batch(
         self,
@@ -572,65 +706,67 @@ class SuccessReplayBuffer:
                 a_indices = np.random.choice(len(anchors), size=k, replace=(k > len(anchors)))
                 sampled_trajs = [anchors[j] for j in a_indices]
 
-        max_len = max(t.length for t in sampled_trajs)
+        return self._collate_trajectories(sampled_trajs)
 
-        # Prealocação de tensores padronizados com zeros
-        b_obs = np.zeros((k, max_len, *self.obs_shape), dtype=np.float32)
-        has_delta = any(t.delta_obs is not None for t in sampled_trajs)
-        b_delta = np.zeros((k, max_len, *self.obs_shape), dtype=np.float32) if has_delta else None
+    def sample_contrastive_pairs(
+        self,
+        batch_size: int = 8,
+        target_depth: Optional[int] = None,
+    ) -> Optional[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]]:
+        """Amostra pares contrastivos (vitória, falha) emparelhados pelo MESMO estrato (d_w == d_l).
+        
+        Garante simetria de contexto ecológico: nunca contrasta uma vitória trivial (D1)
+        com uma falha complexa (D7), evitando viés espúrio de horizonte.
+        
+        Retorna (batch_win, batch_loss) ou None se não houver pares elegíveis suficientes.
+        """
+        eligible_depths = [
+            d for d in self._depth_buffers.keys()
+            if len(self._depth_buffers[d]) > 0 and len(self._failure_buffers.get(d, [])) > 0
+        ]
+        if not eligible_depths:
+            return None
 
-        act_dtype = np.int64 if self.is_discrete else np.float32
-        b_prev_act = np.zeros((k, max_len, *self.action_shape), dtype=act_dtype)
-        b_prev_rew = np.zeros((k, max_len, 1), dtype=np.float32)
-        b_act = np.zeros((k, max_len, *self.action_shape), dtype=act_dtype)
-        b_ret = np.zeros((k, max_len), dtype=np.float32)
-        b_mask = np.zeros((k, max_len), dtype=np.float32)
+        total_pairs = sum(min(len(self._depth_buffers[d]), len(self._failure_buffers[d])) for d in eligible_depths)
+        k = max(1, min(batch_size, total_pairs))
 
-        for i, t in enumerate(sampled_trajs):
-            L = t.length
-            if self.is_visual and t.obs.dtype == np.uint8:
-                b_obs[i, :L] = t.obs.astype(np.float32) / 255.0
-            else:
-                b_obs[i, :L] = t.obs
-            if has_delta and t.delta_obs is not None:
-                b_delta[i, :L] = t.delta_obs
-            b_prev_act[i, :L] = t.prev_actions
-            b_prev_rew[i, :L, 0] = t.prev_rewards
-            b_act[i, :L] = t.actions
-            b_ret[i, :L] = t.returns
-            b_mask[i, :L] = 1.0
+        # Separação entre fronteira e âncoras se target_depth fornecido
+        if target_depth is not None:
+            frontier_min = max(1, target_depth - 1)
+            frontier_depths = [d for d in eligible_depths if d >= frontier_min]
+            anchor_depths = [d for d in eligible_depths if d < frontier_min]
+        else:
+            frontier_depths = eligible_depths
+            anchor_depths = []
 
-        tensor_obs = torch.tensor(b_obs, dtype=torch.float32, device=self.device)
-        tensor_delta = torch.tensor(b_delta, dtype=torch.float32, device=self.device) if has_delta else None
-        tensor_prev_act = torch.tensor(
-            b_prev_act,
-            dtype=torch.long if self.is_discrete else torch.float32,
-            device=self.device,
-        )
-        if self.is_discrete and tensor_prev_act.dim() == 2:
-            tensor_prev_act = tensor_prev_act.unsqueeze(-1)
+        chosen_depths: List[int] = []
+        if frontier_depths and anchor_depths:
+            n_front = max(1, int(round(k * self.frontier_ratio)))
+            if n_front >= k and k > 1:
+                n_front = k - 1
+            n_anc = k - n_front
+            chosen_depths.extend(np.random.choice(frontier_depths, size=n_front, replace=True))
+            chosen_depths.extend(np.random.choice(anchor_depths, size=n_anc, replace=True))
+        elif frontier_depths:
+            chosen_depths.extend(np.random.choice(frontier_depths, size=k, replace=True))
+        else:
+            chosen_depths.extend(np.random.choice(anchor_depths, size=k, replace=True))
 
-        tensor_prev_rew = torch.tensor(b_prev_rew, dtype=torch.float32, device=self.device)
-        tensor_act = torch.tensor(
-            b_act,
-            dtype=torch.long if self.is_discrete else torch.float32,
-            device=self.device,
-        )
-        tensor_ret = torch.tensor(b_ret, dtype=torch.float32, device=self.device)
-        tensor_mask = torch.tensor(b_mask, dtype=torch.float32, device=self.device)
-        tensor_hx = torch.zeros(1, k, self.hidden_dim, device=self.device, dtype=torch.float32)
+        sampled_wins: List[SuccessfulTrajectory] = []
+        sampled_losses: List[SuccessfulTrajectory] = []
 
-        return {
-            "obs": tensor_obs,
-            "delta_obs": tensor_delta,
-            "prev_actions": tensor_prev_act,
-            "prev_rewards": tensor_prev_rew,
-            "actions": tensor_act,
-            "returns": tensor_ret,
-            "mask": tensor_mask,
-            "hx": tensor_hx,
-            "dones": None,
-        }
+        for d in chosen_depths:
+            w_candidates = self._depth_buffers[d]
+            l_candidates = list(self._failure_buffers[d])
+            w_idx = np.random.randint(0, len(w_candidates))
+            l_idx = np.random.randint(0, len(l_candidates))
+            sampled_wins.append(w_candidates[w_idx])
+            sampled_losses.append(l_candidates[l_idx])
+
+        batch_win = self._collate_trajectories(sampled_wins)
+        batch_loss = self._collate_trajectories(sampled_losses)
+
+        return batch_win, batch_loss
 
 
 # Alias universal para a Arquitetura de Transições de Fronteira

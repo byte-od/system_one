@@ -124,3 +124,35 @@ def test_contract_checkpoint_naming_convention():
         assert source, f"Modelo {key} não declara checkpoint_source"
         assert any(kw in source.lower() for kw in ("trained", "cerberus", "aura")), f"Checkpoint de origem {source} para {key} não possui 'trained', 'cerberus' ou 'aura'"
 
+
+def test_contract_javascript_syntax_cleanliness():
+    """Garante que nenhum script JavaScript no HUD (dashboard.html) ou Web Hub (index.html) possui erros de sintaxe."""
+    import re
+    import shutil
+    import subprocess
+    import tempfile
+
+    node_bin = shutil.which("node")
+    if not node_bin:
+        pytest.skip("Node.js não disponível no ambiente para validação de sintaxe JS")
+
+    files_to_check = [
+        PROJECT_ROOT / "system1_engine" / "hud" / "dashboard.html",
+        PROJECT_ROOT / "web" / "index.html",
+    ]
+
+    for fpath in files_to_check:
+        assert fpath.exists(), f"Arquivo {fpath} não encontrado"
+        content = fpath.read_text(encoding="utf-8")
+        scripts = re.findall(r"<script(?![^>]*src=)[^>]*>(.*?)</script>", content, re.DOTALL)
+        for idx, s in enumerate(scripts):
+            with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as tf:
+                tf.write(s)
+                temp_name = tf.name
+            try:
+                res = subprocess.run([node_bin, "-c", temp_name], capture_output=True, text=True)
+                assert res.returncode == 0, f"Erro de sintaxe JS no script #{idx} de {fpath.name}:\n{res.stderr}"
+            finally:
+                Path(temp_name).unlink(missing_ok=True)
+
+

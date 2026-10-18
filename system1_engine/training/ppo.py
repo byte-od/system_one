@@ -50,6 +50,12 @@ class RecurrentPPOTrainer:
         sil_max_trajectories: int = 5120,
         sil_max_per_depth: int = 512,
         sil_min_samples: int = 8,
+        sil_dpo_enabled: bool = False,
+        dpo_coef: float = 0.05,
+        dpo_beta: float = 0.10,
+        dpo_batch_size: int = 8,
+        progressive_buffer_capacity: bool = True,
+        max_failures_per_depth: int = 256,
         sterility_memory_enabled: bool = False,
         sterility_capacity: int = 1024,
         sterility_sim_threshold: float = 0.85,
@@ -75,13 +81,19 @@ class RecurrentPPOTrainer:
         self.hindsight_bonus = float(hindsight_bonus)
         self.hindsight_min_gain = float(hindsight_min_gain)
 
-        # Self-Imitation Learning (SIL)
+        # Self-Imitation Learning (SIL) & Contrastive Online DPO-SIL (c-SIL)
         self.sil_enabled = bool(sil_enabled)
         self.sil_coef = float(sil_coef)
         self.sil_batch_size = max(2, int(sil_batch_size))
         self.sil_min_samples = max(2, int(sil_min_samples))
         self.sil_max_trajectories = max(2, int(sil_max_trajectories))
         self.sil_max_per_depth = max(1, int(sil_max_per_depth))
+        self.sil_dpo_enabled = bool(sil_dpo_enabled)
+        self.dpo_coef = float(dpo_coef)
+        self.dpo_beta = float(dpo_beta)
+        self.dpo_batch_size = max(1, int(dpo_batch_size))
+        self.progressive_buffer_capacity = bool(progressive_buffer_capacity)
+        self.max_failures_per_depth = max(1, int(max_failures_per_depth))
 
         # Suporte a exploração automática / homeostática no treino PPO (sem limite artificial, 0 à 1)
         self._min_adaptive_scale = 0.08
@@ -155,6 +167,8 @@ class RecurrentPPOTrainer:
             hidden_dim=self.trunk_hidden_dim,
             frontier_slicing=True,
             frontier_ratio=0.75,
+            progressive_capacity=self.progressive_buffer_capacity,
+            max_failures_per_depth=self.max_failures_per_depth,
         )
 
         # Memória Latente Estéril Auto-Corretiva (Self-Healing Latent Tabu)
@@ -746,6 +760,12 @@ class RecurrentPPOTrainer:
                     stored_env_infos.append(env_infos)
 
                 if self.sil_enabled or self.sterility_memory is not None:
+                    step_logp_np = log_prob.squeeze(1).detach().cpu().numpy()
+                    step_vals_np = (
+                        value.squeeze(1).squeeze(1).detach().cpu().numpy()
+                        if self.sterility_memory is not None
+                        else None
+                    )
                     for e in range(E):
                         delta_v = (
                             current_obs_dict["delta_obs"][e].copy()
@@ -765,8 +785,9 @@ class RecurrentPPOTrainer:
                             "prev_reward": float(current_obs_dict["prev_reward"][e]),
                             "action": act_v,
                             "reward": float(rewards[e]),
+                            "log_prob": float(step_logp_np[e]),
                             "latent": step_latents[e].detach().cpu() if step_latents is not None else None,
-                            "value": float(value[e, 0, 0].item()) if self.sterility_memory is not None else 0.0,
+                            "value": float(step_vals_np[e]) if step_vals_np is not None else 0.0,
                         })
                         if len(self._active_vec_trajectories[e]) > 200:
                             self._active_vec_trajectories[e].pop(0)
@@ -842,7 +863,11 @@ class RecurrentPPOTrainer:
                                 )
 
                             has_positive_return = is_win or any(r > 0.0 for r in traj_returns)
-                            if self.sil_enabled and has_positive_return:
+                            cur_d = int(d_info.get("scramble_depth", d_info.get("current_depth", 1))) if isinstance(d_info, dict) else 1
+                            should_store_win = self.sil_enabled and has_positive_return
+                            should_store_loss = self.sil_enabled and getattr(self, "sil_dpo_enabled", False)
+
+                            if should_store_win or should_store_loss:
                                 traj_obs = np.array([s["obs"] for s in traj_steps], dtype=np.float32)
                                 has_delta = any(s["delta_obs"] is not None for s in traj_steps)
                                 traj_delta = (
@@ -853,21 +878,37 @@ class RecurrentPPOTrainer:
                                 traj_prev_act = np.array([s["prev_action"] for s in traj_steps])
                                 traj_prev_rew = np.array([s["prev_reward"] for s in traj_steps], dtype=np.float32)
                                 traj_act = np.array([s["action"] for s in traj_steps])
+                                traj_logp = np.array([s.get("log_prob", 0.0) for s in traj_steps], dtype=np.float32)
 
-                                cur_d = int(d_info.get("scramble_depth", d_info.get("current_depth", 1))) if isinstance(d_info, dict) else 1
-                                self.sil_buffer.add(
-                                    FrontierTransition(
-                                        obs=traj_obs,
-                                        delta_obs=traj_delta,
-                                        prev_actions=traj_prev_act,
-                                        prev_rewards=traj_prev_rew,
-                                        actions=traj_act,
-                                        returns=traj_returns,
-                                        depth=cur_d,
-                                        length=T_traj,
-                                        td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
+                                if should_store_win:
+                                    self.sil_buffer.add(
+                                        FrontierTransition(
+                                            obs=traj_obs,
+                                            delta_obs=traj_delta,
+                                            prev_actions=traj_prev_act,
+                                            prev_rewards=traj_prev_rew,
+                                            actions=traj_act,
+                                            returns=traj_returns,
+                                            depth=cur_d,
+                                            length=T_traj,
+                                            td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
+                                            log_probs=traj_logp,
+                                        )
                                     )
-                                )
+                                elif should_store_loss:
+                                    self.sil_buffer.add_failure(
+                                        SuccessfulTrajectory(
+                                            obs=traj_obs,
+                                            delta_obs=traj_delta,
+                                            prev_actions=traj_prev_act,
+                                            prev_rewards=traj_prev_rew,
+                                            actions=traj_act,
+                                            returns=traj_returns,
+                                            depth=cur_d,
+                                            length=T_traj,
+                                            log_probs=traj_logp,
+                                        )
+                                    )
                         self._active_vec_trajectories[d_i].clear()
 
                     next_hx[:, done_indices, :] = 0.0
@@ -1228,6 +1269,7 @@ class RecurrentPPOTrainer:
                         "prev_reward": float(current_obs_dict["prev_reward"]),
                         "action": act_v,
                         "reward": float(reward),
+                        "log_prob": float(log_prob.squeeze(0).squeeze(0).item()),
                         "latent": step_latent.detach().cpu() if step_latent is not None else None,
                         "value": float(value.squeeze(0).squeeze(0).item()) if self.sterility_memory is not None else 0.0,
                     })
@@ -1293,7 +1335,11 @@ class RecurrentPPOTrainer:
                             )
 
                         has_positive_return = is_win or any(r > 0.0 for r in traj_returns)
-                        if self.sil_enabled and has_positive_return:
+                        cur_d = int(env_info.get("scramble_depth", env_info.get("current_depth", 1))) if isinstance(env_info, dict) else 1
+                        should_store_win = self.sil_enabled and has_positive_return
+                        should_store_loss = self.sil_enabled and getattr(self, "sil_dpo_enabled", False)
+
+                        if should_store_win or should_store_loss:
                             traj_obs = np.array([s["obs"] for s in traj_steps], dtype=np.float32)
                             has_delta = any(s["delta_obs"] is not None for s in traj_steps)
                             traj_delta = (
@@ -1304,21 +1350,37 @@ class RecurrentPPOTrainer:
                             traj_prev_act = np.array([s["prev_action"] for s in traj_steps])
                             traj_prev_rew = np.array([s["prev_reward"] for s in traj_steps], dtype=np.float32)
                             traj_act = np.array([s["action"] for s in traj_steps])
+                            traj_logp = np.array([s.get("log_prob", 0.0) for s in traj_steps], dtype=np.float32)
 
-                            cur_d = int(env_info.get("scramble_depth", env_info.get("current_depth", 1))) if isinstance(env_info, dict) else 1
-                            self.sil_buffer.add(
-                                FrontierTransition(
-                                    obs=traj_obs,
-                                    delta_obs=traj_delta,
-                                    prev_actions=traj_prev_act,
-                                    prev_rewards=traj_prev_rew,
-                                    actions=traj_act,
-                                    returns=traj_returns,
-                                    depth=cur_d,
-                                    length=T_traj,
-                                    td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
+                            if should_store_win:
+                                self.sil_buffer.add(
+                                    FrontierTransition(
+                                        obs=traj_obs,
+                                        delta_obs=traj_delta,
+                                        prev_actions=traj_prev_act,
+                                        prev_rewards=traj_prev_rew,
+                                        actions=traj_act,
+                                        returns=traj_returns,
+                                        depth=cur_d,
+                                        length=T_traj,
+                                        td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
+                                        log_probs=traj_logp,
+                                    )
                                 )
-                            )
+                            elif should_store_loss:
+                                self.sil_buffer.add_failure(
+                                    SuccessfulTrajectory(
+                                        obs=traj_obs,
+                                        delta_obs=traj_delta,
+                                        prev_actions=traj_prev_act,
+                                        prev_rewards=traj_prev_rew,
+                                        actions=traj_act,
+                                        returns=traj_returns,
+                                        depth=cur_d,
+                                        length=T_traj,
+                                        log_probs=traj_logp,
+                                    )
+                                )
                     self._active_single_trajectory.clear()
 
                     current_obs_dict, _ = self.env.reset()
@@ -1509,11 +1571,75 @@ class RecurrentPPOTrainer:
                 sil_p_loss = float(sil_policy_loss.item())
                 sil_v_loss = float(sil_val_loss.item())
 
+        # Contrastive Online DPO-SIL (c-SIL) update step
+        dpo_p_loss = 0.0
+        if self.sil_enabled and self.sil_dpo_enabled:
+            raw_env = getattr(self.env, "unwrapped", self.env)
+            target_depth = getattr(raw_env, "current_depth", getattr(self.env, "current_depth", None))
+            pairs = self.sil_buffer.sample_contrastive_pairs(
+                batch_size=self.dpo_batch_size,
+                target_depth=target_depth,
+            )
+            if pairs is not None:
+                win_batch, loss_batch = pairs
+                win_in = {
+                    "obs": win_batch["obs"],
+                    "prev_action": win_batch["prev_actions"],
+                    "prev_reward": win_batch["prev_rewards"],
+                }
+                if not self.agent.is_visual and win_batch["delta_obs"] is not None:
+                    win_in["delta_obs"] = win_batch["delta_obs"]
+
+                loss_in = {
+                    "obs": loss_batch["obs"],
+                    "prev_action": loss_batch["prev_actions"],
+                    "prev_reward": loss_batch["prev_rewards"],
+                }
+                if not self.agent.is_visual and loss_batch["delta_obs"] is not None:
+                    loss_in["delta_obs"] = loss_batch["delta_obs"]
+
+                win_dist, _, _ = self.agent(win_in, hx=win_batch["hx"], dones=win_batch["dones"])
+                loss_dist, _, _ = self.agent(loss_in, hx=loss_batch["hx"], dones=loss_batch["dones"])
+
+                if self.agent.is_discrete:
+                    win_logp = win_dist.log_prob(win_batch["actions"])
+                    loss_logp = loss_dist.log_prob(loss_batch["actions"])
+                else:
+                    win_logp = win_dist.log_prob(win_batch["actions"]).sum(dim=-1)
+                    loss_logp = loss_dist.log_prob(loss_batch["actions"]).sum(dim=-1)
+
+                win_ref_logp = win_batch["old_log_probs"]
+                loss_ref_logp = loss_batch["old_log_probs"]
+                win_mask = win_batch["mask"]
+                loss_mask = loss_batch["mask"]
+
+                win_len = win_mask.sum(dim=-1).clamp(min=1.0)
+                loss_len = loss_mask.sum(dim=-1).clamp(min=1.0)
+
+                # Length-normalized log-ratios: razão média por passo de decisão
+                h_w = ((win_logp - win_ref_logp) * win_mask).sum(dim=-1) / win_len
+                h_l = ((loss_logp - loss_ref_logp) * loss_mask).sum(dim=-1) / loss_len
+
+                # Logit contrastivo de preferência DPO com escala beta
+                dpo_logits = self.dpo_beta * (h_w - h_l)
+                dpo_loss = -torch.nn.functional.logsigmoid(dpo_logits).mean()
+
+                total_dpo_loss = self.dpo_coef * dpo_loss
+
+                self.optimizer.zero_grad()
+                total_dpo_loss.backward()
+                nn.utils.clip_grad_norm_(self.agent.parameters(), self.max_grad_norm)
+                self.optimizer.step()
+
+                dpo_p_loss = float(dpo_loss.item())
+
         if self.tracker is not None:
             self.tracker.record_sil_step(
                 sil_trajectories=len(self.sil_buffer),
                 sil_policy_loss=sil_p_loss,
                 sil_value_loss=sil_v_loss,
+                sil_dpo_loss=dpo_p_loss,
+                sil_failures=len(self.sil_buffer.failures),
             )
 
         if self.scheduler is not None:
@@ -1528,7 +1654,9 @@ class RecurrentPPOTrainer:
             "entropy_loss": total_ent_loss / max(1, n_updates),
             "sil_policy_loss": sil_p_loss,
             "sil_value_loss": sil_v_loss,
+            "sil_dpo_loss": dpo_p_loss,
             "sil_trajectories": len(self.sil_buffer),
+            "sil_failures": len(self.sil_buffer.failures),
             "sterility_prototypes": ster_prototypes,
             "sterility_rehabilitated": ster_rehab,
         }
@@ -1625,6 +1753,11 @@ class RecurrentPPOTrainer:
                 elif hasattr(raw_env, "current_level"):
                     max_l = getattr(raw_env, "max_level", 4)
                     log_parts.append(f"Nível: {raw_env.current_level}/{max_l}")
+
+                if self.sil_enabled and getattr(self, "sil_dpo_enabled", False):
+                    dpo_l = self.tracker.metrics.sil_dpo_losses[-1] if self.tracker and self.tracker.metrics.sil_dpo_losses else 0.0
+                    n_fail = getattr(self.tracker.metrics, "sil_failures", len(self.sil_buffer.failures))
+                    log_parts.append(f"DPO Loss: {dpo_l:.3f} ({n_fail} falhas)")
 
                 print(" | ".join(log_parts))
 

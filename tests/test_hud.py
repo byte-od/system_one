@@ -46,6 +46,10 @@ def test_hud_server_lifecycle_and_endpoints():
         assert "Visual Control HUD" in html
         assert "openGymCatalogModal()" in html
         assert "https://gymnasium.farama.org/environments/" in html
+        assert "btn-mini-mode" in html
+        assert "openMiniFloatingWindow()" in html
+        assert "mini-mode-toolbar" in html
+        assert "train-status-cards-container" in html
 
         # 2. Test GET /api/state
         conn.request("GET", "/api/state")

@@ -422,8 +422,16 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     sil_max_trajectories = int(config.get("sil_max_trajectories", 5120))
     sil_max_per_depth = int(config.get("sil_max_per_depth", 512))
 
+    sil_dpo_enabled = bool(config.get("sil_dpo_enabled", False))
+    dpo_coef = float(config.get("dpo_coef", 0.05))
+    dpo_beta = float(config.get("dpo_beta", 0.10))
+    dpo_batch_size = int(config.get("dpo_batch_size", 8))
+    progressive_buffer_capacity = bool(config.get("progressive_buffer_capacity", True))
+
     if sil_enabled:
         print(f"🧠 Self-Imitation Learning (SIL Replay): ATIVO (coef={sil_coef:.2f}, batch={sil_batch_size}, max_trajs={sil_max_trajectories}, max_per_depth={sil_max_per_depth})")
+        if sil_dpo_enabled:
+            print(f"⚖️ Contrastive Online DPO-SIL (c-SIL): ATIVO (coef={dpo_coef:.2f}, beta={dpo_beta:.2f}, batch_pairs={dpo_batch_size})")
     else:
         print("⚡ Self-Imitation Learning (SIL Replay): DESATIVADO")
 
@@ -452,6 +460,11 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         sil_batch_size=sil_batch_size,
         sil_max_trajectories=sil_max_trajectories,
         sil_max_per_depth=sil_max_per_depth,
+        sil_dpo_enabled=sil_dpo_enabled,
+        dpo_coef=dpo_coef,
+        dpo_beta=dpo_beta,
+        dpo_batch_size=dpo_batch_size,
+        progressive_buffer_capacity=progressive_buffer_capacity,
         sterility_memory_enabled=sterility_memory_enabled,
     )
 
@@ -504,13 +517,20 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         if not save_path:
             return
         try:
-            best_ret = getattr(trainer, "best_mean_return", None)
+            best_ret = getattr(trainer, "best_depth_mean_return", None)
+            if best_ret is None or best_ret <= -float("inf"):
+                best_ret = getattr(trainer, "best_mean_return", None)
             if best_ret is None and tracker and tracker.metrics.best_mean_return is not None:
                 best_ret = tracker.metrics.best_mean_return
             if best_ret is None:
                 best_ret = getattr(trainer, "final_return", 0.0)
 
             successful_d = tracker.get_successful_depth() if tracker else None
+            best_state_d = getattr(trainer, "best_state_depth", None)
+            if best_state_d is None or best_state_d <= 0:
+                best_state_d = getattr(tracker.metrics, "best_return_depth", None) if tracker else None
+            if best_state_d is None and tracker and tracker.metrics.curriculum_depth is not None:
+                best_state_d = tracker.metrics.curriculum_depth
 
             extra_info = {
                 "env_id": env_id,
@@ -534,7 +554,10 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
             elif config.get("scramble_depth") is not None:
                 extra_info["curriculum_max_depth"] = int(config["scramble_depth"])
 
-            if getattr(tracker.metrics, "best_return_depth", None) is not None:
+            if best_state_d is not None:
+                extra_info["best_return_depth"] = int(best_state_d)
+                extra_info["best_state_depth"] = int(best_state_d)
+            elif getattr(tracker.metrics, "best_return_depth", None) is not None:
                 extra_info["best_return_depth"] = tracker.metrics.best_return_depth
 
             KnowledgeTransferManager.save_checkpoint(

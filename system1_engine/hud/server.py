@@ -429,14 +429,24 @@ class HUDServer:
                     # SSE Real-time Telemetry & Log Stream
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
-                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Cache-Control", "no-cache, no-transform")
                     self.send_header("Connection", "keep-alive")
+                    self.send_header("X-Accel-Buffering", "no")
                     self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
 
+                    # Instrução SSE padrão para reconexão imediata do cliente em 1s caso a conexão oscile
+                    try:
+                        self.wfile.write(b"retry: 1000\n\n")
+                        self.wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError, OSError):
+                        return
+
                     client_log_cursor = 0
+                    tick_count = 0
                     try:
                         while not stop_event.is_set():
+                            tick_count += 1
                             new_logs, client_log_cursor = runner.get_logs(client_log_cursor)
                             snap = server_instance.get_telemetry_snapshot()
                             runner_state = runner.get_state()
@@ -451,6 +461,11 @@ class HUDServer:
 
                             data_line = f"data: {json.dumps(payload)}\n\n"
                             self.wfile.write(data_line.encode("utf-8"))
+
+                            # Heartbeat comment SSE a cada ~3 segundos (36 ticks @ ~12 Hz) para manter sockets e proxies vivos
+                            if tick_count % 36 == 0:
+                                self.wfile.write(b": heartbeat\n\n")
+
                             self.wfile.flush()
                             time.sleep(0.08)  # ~12 Hz
                     except (BrokenPipeError, ConnectionResetError, OSError):

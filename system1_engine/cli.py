@@ -185,6 +185,11 @@ def train_mode(args: argparse.Namespace) -> None:
         sil_coef = float(getattr(args, "sil_coef", 0.10))
         sil_max_trajectories = int(getattr(args, "sil_max_trajectories", 5120))
         sil_max_per_depth = int(getattr(args, "sil_max_per_depth", 512))
+        sil_dpo_enabled = getattr(args, "sil_dpo_enabled", False)
+        dpo_coef = float(getattr(args, "dpo_coef", 0.05))
+        dpo_beta = float(getattr(args, "dpo_beta", 0.10))
+        dpo_batch_size = int(getattr(args, "dpo_batch_size", 8))
+        progressive_buffer = getattr(args, "progressive_buffer_capacity", True)
 
         trainer = RecurrentPPOTrainer(
             agent=agent,
@@ -202,6 +207,11 @@ def train_mode(args: argparse.Namespace) -> None:
             sil_coef=sil_coef,
             sil_max_trajectories=sil_max_trajectories,
             sil_max_per_depth=sil_max_per_depth,
+            sil_dpo_enabled=sil_dpo_enabled,
+            dpo_coef=dpo_coef,
+            dpo_beta=dpo_beta,
+            dpo_batch_size=dpo_batch_size,
+            progressive_buffer_capacity=progressive_buffer,
         )
 
         raw_env = getattr(env, "unwrapped", env)
@@ -637,6 +647,38 @@ def main() -> None:
         type=int,
         default=512,
         help="Capacidade máxima por profundidade no buffer estratificado de SIL (padrão: 512)",
+    )
+    parser.add_argument(
+        "--sil-dpo",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        dest="sil_dpo_enabled",
+        help="Habilita Contrastive Online DPO-SIL (c-SIL) para correção de trajetória com pares (vitória, falha) (padrão: False)",
+    )
+    parser.add_argument(
+        "--dpo-coef",
+        type=float,
+        default=0.05,
+        help="Coeficiente de perda para atualizações de Contrastive DPO (padrão: 0.05)",
+    )
+    parser.add_argument(
+        "--dpo-beta",
+        type=float,
+        default=0.10,
+        help="Parâmetro de temperatura inversa beta para Contrastive DPO (padrão: 0.10)",
+    )
+    parser.add_argument(
+        "--dpo-batch-size",
+        type=int,
+        default=8,
+        help="Tamanho do mini-lote de pares contrastivos no DPO (padrão: 8)",
+    )
+    parser.add_argument(
+        "--progressive-buffer",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        dest="progressive_buffer_capacity",
+        help="Habilita capacidade progressiva proporcional por nível no SuccessReplayBuffer (padrão: True)",
     )
     parser.add_argument(
         "--mixed-replay-rate",

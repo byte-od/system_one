@@ -34,10 +34,12 @@ class PhaseMetrics:
     clip_fractions: deque = field(default_factory=lambda: deque(maxlen=100))
     learning_rate: float = 0.0
 
-    # Métricas de Self-Imitation Learning (SIL)
+    # Métricas de Self-Imitation Learning (SIL) & Contrastive DPO
     sil_trajectories: int = 0
+    sil_failures: int = 0
     sil_policy_losses: deque = field(default_factory=lambda: deque(maxlen=100))
     sil_value_losses: deque = field(default_factory=lambda: deque(maxlen=100))
+    sil_dpo_losses: deque = field(default_factory=lambda: deque(maxlen=100))
 
     # Métricas de Currículo (Progresso Dinâmico)
     curriculum_depth: Optional[int] = None
@@ -126,7 +128,13 @@ class LiveStatsTracker:
             rolling_20 = list(m.episode_returns)[-20:]
             if rolling_20:
                 cur_mean = float(np.mean(rolling_20))
-                if m.best_mean_return is None or cur_mean > m.best_mean_return:
+                # Precedência curricular: um patamar mais profundo tem precedência de rastreamento de pico
+                is_deeper = (
+                    m.curriculum_depth is not None
+                    and m.best_return_depth is not None
+                    and m.curriculum_depth > m.best_return_depth
+                )
+                if m.best_mean_return is None or cur_mean > m.best_mean_return or is_deeper:
                     m.best_mean_return = cur_mean
                     m.best_return_depth = m.curriculum_depth
 
@@ -168,14 +176,20 @@ class LiveStatsTracker:
         sil_trajectories: int,
         sil_policy_loss: float = 0.0,
         sil_value_loss: float = 0.0,
+        sil_dpo_loss: float = 0.0,
+        sil_failures: int = 0,
     ) -> None:
-        """Registra o progresso e perdas do Self-Imitation Learning (SIL)."""
+        """Registra o progresso e perdas do Self-Imitation Learning (SIL) e Contrastive DPO."""
         m = self.metrics
         m.sil_trajectories = int(sil_trajectories)
+        if sil_failures > 0:
+            m.sil_failures = int(sil_failures)
         if sil_policy_loss != 0.0:
             m.sil_policy_losses.append(sil_policy_loss)
         if sil_value_loss != 0.0:
             m.sil_value_losses.append(sil_value_loss)
+        if sil_dpo_loss != 0.0:
+            m.sil_dpo_losses.append(sil_dpo_loss)
 
     def snapshot(self) -> Dict[str, Any]:
         """Extrai um resumo numérico instantâneo de todas as três fases."""
@@ -211,8 +225,10 @@ class LiveStatsTracker:
             "lr": m.learning_rate,
             "grad_norms": dict(m.grad_norms),
             "sil_trajectories": m.sil_trajectories,
+            "sil_failures": m.sil_failures,
             "sil_policy_loss": m.sil_policy_losses[-1] if m.sil_policy_losses else 0.0,
             "sil_value_loss": m.sil_value_losses[-1] if m.sil_value_losses else 0.0,
+            "sil_dpo_loss": m.sil_dpo_losses[-1] if m.sil_dpo_losses else 0.0,
             # Estado do Ciclo de Vida
             "is_completed": m.is_completed,
         }

@@ -607,27 +607,94 @@
         <div class="h-28"><canvas id="chartHomeostasis"></canvas></div>
       </div>
 
-      <!-- 4. Cards de Métricas Instantâneas do Reflexo -->
+      <!-- 4. Cards de Métricas Instantâneas do Reflexo (Barra com Valor Atual & Média, Mín & Máx) -->
       <div class="grid grid-cols-4 gap-2">
-        <div class="card p-2.5 flex flex-col">
-          <span class="text-[10px] text-gray-400 font-mono">LATÊNCIA</span>
+        <div class="card p-2.5 flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] text-gray-400 font-mono">LATÊNCIA</span>
+            <span class="text-[9px] text-gray-500 font-mono">Wasm SIMD</span>
+          </div>
           <span id="metric-latency" class="text-sm font-bold font-mono text-cyan-300 mt-0.5">0.18 ms</span>
-          <span class="text-[9px] text-gray-500">Wasm SIMD</span>
+          <div class="relative w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800 my-1" title="Barra: Latência Atual vs Média">
+            <div id="metric-latency-bar" class="bg-gradient-to-r from-cyan-600 to-cyan-400 h-full rounded-full transition-all duration-150" style="width: 0%"></div>
+            <div id="metric-latency-avg-marker" class="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)] z-10 transition-all duration-150" style="left: 0%" title="Média Latência"></div>
+          </div>
+          <div class="flex flex-col gap-0.5 mt-0.5 font-mono text-[8.5px]">
+            <div class="flex items-center justify-between text-gray-300">
+              <span>Atual: <strong id="metric-latency-cur" class="text-cyan-300 font-semibold">--</strong></span>
+              <span>Média: <strong id="metric-latency-avg" class="text-cyan-400 font-semibold">--</strong></span>
+            </div>
+            <div class="flex items-center justify-between text-[8px] text-gray-500 pt-0.5 border-t border-gray-800/40">
+              <span>Mín: <strong id="metric-latency-min" class="text-gray-400 font-normal">--</strong></span>
+              <span>Máx: <strong id="metric-latency-max" class="text-gray-400 font-normal">--</strong></span>
+            </div>
+          </div>
         </div>
-        <div class="card p-2.5 flex flex-col">
-          <span class="text-[10px] text-gray-400 font-mono">CONFIANÇA</span>
+
+        <div class="card p-2.5 flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] text-gray-400 font-mono">CONFIANÇA</span>
+            <span class="text-[9px] text-gray-500 font-mono">Max softmax</span>
+          </div>
           <span id="metric-confidence" class="text-sm font-bold font-mono text-emerald-400 mt-0.5">--%</span>
-          <span class="text-[9px] text-gray-500">Max softmax</span>
+          <div class="relative w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800 my-1" title="Barra: Confiança Atual vs Média">
+            <div id="metric-confidence-bar" class="bg-gradient-to-r from-emerald-600 to-emerald-400 h-full rounded-full transition-all duration-150" style="width: 0%"></div>
+            <div id="metric-confidence-avg-marker" class="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)] z-10 transition-all duration-150" style="left: 0%" title="Média Confiança"></div>
+          </div>
+          <div class="flex flex-col gap-0.5 mt-0.5 font-mono text-[8.5px]">
+            <div class="flex items-center justify-between text-gray-300">
+              <span>Atual: <strong id="metric-confidence-cur" class="text-emerald-300 font-semibold">--</strong></span>
+              <span>Média: <strong id="metric-confidence-avg" class="text-emerald-400 font-semibold">--</strong></span>
+            </div>
+            <div class="flex items-center justify-between text-[8px] text-gray-500 pt-0.5 border-t border-gray-800/40">
+              <span>Mín: <strong id="metric-confidence-min" class="text-gray-400 font-normal">--</strong></span>
+              <span>Máx: <strong id="metric-confidence-max" class="text-gray-400 font-normal">--</strong></span>
+            </div>
+          </div>
         </div>
-        <div class="card p-2.5 flex flex-col">
-          <span class="text-[10px] text-gray-400 font-mono">INCERTEZA</span>
+
+        <div class="card p-2.5 flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] text-gray-400 font-mono">INCERTEZA</span>
+            <span class="text-[9px] text-gray-500 font-mono">Entropia</span>
+          </div>
           <span id="metric-uncertainty" class="text-sm font-bold font-mono text-amber-400 mt-0.5">--%</span>
-          <span class="text-[9px] text-gray-500">Entropia</span>
+          <div class="relative w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800 my-1" title="Barra: Incerteza Atual vs Média">
+            <div id="metric-uncertainty-bar" class="bg-gradient-to-r from-amber-600 to-yellow-400 h-full rounded-full transition-all duration-150" style="width: 0%"></div>
+            <div id="metric-uncertainty-avg-marker" class="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)] z-10 transition-all duration-150" style="left: 0%" title="Média Incerteza"></div>
+          </div>
+          <div class="flex flex-col gap-0.5 mt-0.5 font-mono text-[8.5px]">
+            <div class="flex items-center justify-between text-gray-300">
+              <span>Atual: <strong id="metric-uncertainty-cur" class="text-amber-300 font-semibold">--</strong></span>
+              <span>Média: <strong id="metric-uncertainty-avg" class="text-amber-400 font-semibold">--</strong></span>
+            </div>
+            <div class="flex items-center justify-between text-[8px] text-gray-500 pt-0.5 border-t border-gray-800/40">
+              <span>Mín: <strong id="metric-uncertainty-min" class="text-gray-400 font-normal">--</strong></span>
+              <span>Máx: <strong id="metric-uncertainty-max" class="text-gray-400 font-normal">--</strong></span>
+            </div>
+          </div>
         </div>
-        <div class="card p-2.5 flex flex-col">
-          <span class="text-[10px] text-gray-400 font-mono">CALIBRAÇÃO</span>
+
+        <div class="card p-2.5 flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] text-gray-400 font-mono">CALIBRAÇÃO</span>
+            <span class="text-[9px] text-gray-500" id="metric-calib-sub">Homeostase</span>
+          </div>
           <span id="metric-calib" class="text-sm font-bold font-mono text-purple-400 mt-0.5">0.00</span>
-          <span class="text-[9px] text-gray-500" id="metric-calib-sub">Homeostase</span>
+          <div class="relative w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800 my-1" title="Barra: Calibração Atual vs Média">
+            <div id="metric-calib-bar" class="bg-gradient-to-r from-purple-600 to-pink-400 h-full rounded-full transition-all duration-150" style="width: 0%"></div>
+            <div id="metric-calib-avg-marker" class="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)] z-10 transition-all duration-150" style="left: 0%" title="Média Calibração"></div>
+          </div>
+          <div class="flex flex-col gap-0.5 mt-0.5 font-mono text-[8.5px]">
+            <div class="flex items-center justify-between text-gray-300">
+              <span>Atual: <strong id="metric-calib-cur" class="text-purple-300 font-semibold">0.00</strong></span>
+              <span>Média: <strong id="metric-calib-avg" class="text-purple-400 font-semibold">0.00</strong></span>
+            </div>
+            <div class="flex items-center justify-between text-[8px] text-gray-500 pt-0.5 border-t border-gray-800/40">
+              <span>Mín: <strong id="metric-calib-min" class="text-gray-400 font-normal">0.00</strong></span>
+              <span>Máx: <strong id="metric-calib-max" class="text-gray-400 font-normal">0.00</strong></span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1894,6 +1961,113 @@
       document.getElementById('kpi-calib').innerText = calibVal.toFixed(2);
       document.getElementById('metric-calib').innerText = calibVal.toFixed(2);
 
+      // Históricos para cálculo das médias, mínimas e máximas no Web Hub
+      if (!window._webStatsHistory) {
+        window._webStatsHistory = {
+          latency: [],
+          confidence: [],
+          uncertainty: [],
+          calibration: [],
+          maxLatency: 0.5,
+          minLatency: null,
+          maxObservedLatency: null,
+          minConfidence: null,
+          maxConfidence: null,
+          minUncertainty: null,
+          maxUncertainty: null,
+          minCalibration: null,
+          maxCalibration: null
+        };
+      }
+      const h = window._webStatsHistory;
+      h.latency.push(decision.latencyMs);
+      if (h.latency.length > 50) h.latency.shift();
+      if (h.minLatency === null || decision.latencyMs < h.minLatency) h.minLatency = decision.latencyMs;
+      h.maxObservedLatency = Math.max(h.maxObservedLatency || 0, decision.latencyMs);
+
+      const confCurVal = decision.confidence * 100;
+      h.confidence.push(confCurVal);
+      if (h.confidence.length > 50) h.confidence.shift();
+      if (h.minConfidence === null || confCurVal < h.minConfidence) h.minConfidence = confCurVal;
+      h.maxConfidence = Math.max(h.maxConfidence || 0, confCurVal);
+
+      const uncCurVal = decision.uncertainty * 100;
+      h.uncertainty.push(uncCurVal);
+      if (h.uncertainty.length > 50) h.uncertainty.shift();
+      if (h.minUncertainty === null || uncCurVal < h.minUncertainty) h.minUncertainty = uncCurVal;
+      h.maxUncertainty = Math.max(h.maxUncertainty || 0, uncCurVal);
+
+      h.calibration.push(calibVal);
+      if (h.calibration.length > 50) h.calibration.shift();
+      if (h.minCalibration === null || calibVal < h.minCalibration) h.minCalibration = calibVal;
+      h.maxCalibration = Math.max(h.maxCalibration !== null ? h.maxCalibration : calibVal, calibVal);
+
+      const avgLat = h.latency.reduce((a, b) => a + b, 0) / h.latency.length;
+      const avgConf = h.confidence.reduce((a, b) => a + b, 0) / h.confidence.length;
+      const avgUnc = h.uncertainty.reduce((a, b) => a + b, 0) / h.uncertainty.length;
+      const avgCal = h.calibration.reduce((a, b) => a + b, 0) / h.calibration.length;
+
+      h.maxLatency = Math.max(h.maxLatency, decision.latencyMs, avgLat, 0.5);
+
+      // Atualiza Barras e Indicadores de Média, Mín e Máx (Web Hub)
+      // 1. Latência
+      const latCurPct = Math.min(100, Math.max(0, (decision.latencyMs / h.maxLatency) * 100));
+      const latAvgPct = Math.min(100, Math.max(0, (avgLat / h.maxLatency) * 100));
+      const elLatBar = document.getElementById('metric-latency-bar');
+      if (elLatBar) elLatBar.style.width = `${latCurPct}%`;
+      const elLatMarker = document.getElementById('metric-latency-avg-marker');
+      if (elLatMarker) elLatMarker.style.left = `${latAvgPct}%`;
+      const elLatCur = document.getElementById('metric-latency-cur');
+      if (elLatCur) elLatCur.innerText = `${decision.latencyMs.toFixed(2)} ms`;
+      const elLatAvg = document.getElementById('metric-latency-avg');
+      if (elLatAvg) elLatAvg.innerText = `${avgLat.toFixed(2)} ms`;
+      const elLatMin = document.getElementById('metric-latency-min');
+      if (elLatMin && h.minLatency !== null) elLatMin.innerText = `${h.minLatency.toFixed(2)} ms`;
+      const elLatMax = document.getElementById('metric-latency-max');
+      if (elLatMax && h.maxObservedLatency !== null) elLatMax.innerText = `${h.maxObservedLatency.toFixed(2)} ms`;
+
+      // 2. Confiança
+      const elConfBar = document.getElementById('metric-confidence-bar');
+      if (elConfBar) elConfBar.style.width = `${Math.min(100, Math.max(0, confCurVal))}%`;
+      const elConfMarker = document.getElementById('metric-confidence-avg-marker');
+      if (elConfMarker) elConfMarker.style.left = `${Math.min(100, Math.max(0, avgConf))}%`;
+      const elConfCur = document.getElementById('metric-confidence-cur');
+      if (elConfCur) elConfCur.innerText = `${confCurVal.toFixed(1)}%`;
+      const elConfAvg = document.getElementById('metric-confidence-avg');
+      if (elConfAvg) elConfAvg.innerText = `${avgConf.toFixed(1)}%`;
+      const elConfMin = document.getElementById('metric-confidence-min');
+      if (elConfMin && h.minConfidence !== null) elConfMin.innerText = `${h.minConfidence.toFixed(1)}%`;
+      const elConfMax = document.getElementById('metric-confidence-max');
+      if (elConfMax && h.maxConfidence !== null) elConfMax.innerText = `${h.maxConfidence.toFixed(1)}%`;
+
+      // 3. Incerteza
+      const elUncBar = document.getElementById('metric-uncertainty-bar');
+      if (elUncBar) elUncBar.style.width = `${Math.min(100, Math.max(0, uncCurVal))}%`;
+      const elUncMarker = document.getElementById('metric-uncertainty-avg-marker');
+      if (elUncMarker) elUncMarker.style.left = `${Math.min(100, Math.max(0, avgUnc))}%`;
+      const elUncCur = document.getElementById('metric-uncertainty-cur');
+      if (elUncCur) elUncCur.innerText = `${uncCurVal.toFixed(1)}%`;
+      const elUncAvg = document.getElementById('metric-uncertainty-avg');
+      if (elUncAvg) elUncAvg.innerText = `${avgUnc.toFixed(1)}%`;
+      const elUncMin = document.getElementById('metric-uncertainty-min');
+      if (elUncMin && h.minUncertainty !== null) elUncMin.innerText = `${h.minUncertainty.toFixed(1)}%`;
+      const elUncMax = document.getElementById('metric-uncertainty-max');
+      if (elUncMax && h.maxUncertainty !== null) elUncMax.innerText = `${h.maxUncertainty.toFixed(1)}%`;
+
+      // 4. Calibração
+      const elCalBar = document.getElementById('metric-calib-bar');
+      if (elCalBar) elCalBar.style.width = `${Math.min(100, Math.max(0, calibVal * 100))}%`;
+      const elCalMarker = document.getElementById('metric-calib-avg-marker');
+      if (elCalMarker) elCalMarker.style.left = `${Math.min(100, Math.max(0, avgCal * 100))}%`;
+      const elCalCur = document.getElementById('metric-calib-cur');
+      if (elCalCur) elCalCur.innerText = calibVal.toFixed(2);
+      const elCalAvg = document.getElementById('metric-calib-avg');
+      if (elCalAvg) elCalAvg.innerText = avgCal.toFixed(2);
+      const elCalMin = document.getElementById('metric-calib-min');
+      if (elCalMin && h.minCalibration !== null) elCalMin.innerText = h.minCalibration.toFixed(2);
+      const elCalMax = document.getElementById('metric-calib-max');
+      if (elCalMax && h.maxCalibration !== null) elCalMax.innerText = h.maxCalibration.toFixed(2);
+
       const calibSub = document.getElementById('metric-calib-sub');
       if (calibSub) {
         if (isAutoCalibrate) {
@@ -2105,12 +2279,15 @@
 
       // Verificação de conectividade com Daemon Local
       try {
-        const res = await fetch("http://localhost:8050/api/state", { signal: AbortSignal.timeout(400) });
+        const res = await fetch("http://localhost:8050/api/state", { signal: AbortSignal.timeout(1500) });
         if (res.ok) {
           const state = await res.json();
           appendLog(`[DAEMON] 🖥️ Servidor Python Local conectado na porta 8050 (${state.hardware?.device_name || 'Ativo'}).`);
           const statusBadge = document.getElementById('daemon-indicator');
           if (statusBadge) statusBadge.classList.remove('hidden');
+          if (state.runner && state.runner.is_running && state.runner.config?.mode === 'train') {
+            appendLog(`[TREINO] 🚀 Treino PPO ativo no daemon: PID ${state.runner.pid} (${state.runner.config.env || 'Ambiente'}) • ${(state.telemetry?.total_steps || 0).toLocaleString()} passos`);
+          }
         }
       } catch (_) {
         appendLog("[MODE] 🌐 Modo Portfólio Web Standalone ativo (Zero Servidor / Client-Side).");
