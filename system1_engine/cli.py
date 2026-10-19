@@ -135,12 +135,12 @@ def train_mode(args: argparse.Namespace) -> None:
         args=args,
     )
 
-    trunk_type = getattr(args, "trunk", "classic")
+    trunk_type = getattr(args, "trunk", "lean")
     checkpoint_to_load = getattr(args, "load", None) or getattr(args, "transfer_from", None)
-    if checkpoint_to_load and getattr(args, "trunk", "classic") == "classic":
+    if checkpoint_to_load and getattr(args, "trunk", None) is None:
         detected = KnowledgeTransferManager.detect_trunk_type(checkpoint_to_load)
-        if detected == "lean":
-            trunk_type = "lean"
+        if detected:
+            trunk_type = detected
 
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
@@ -182,10 +182,13 @@ def train_mode(args: argparse.Namespace) -> None:
                 train_calib = "auto"
 
         sil_enabled = getattr(args, "sil", True)
-        sil_coef = float(getattr(args, "sil_coef", 0.10))
-        sil_max_trajectories = int(getattr(args, "sil_max_trajectories", 5120))
-        sil_max_per_depth = int(getattr(args, "sil_max_per_depth", 512))
-        sil_dpo_enabled = getattr(args, "sil_dpo_enabled", False)
+        sil_coef = float(getattr(args, "sil_coef", 0.08))
+        sil_max_trajectories = int(getattr(args, "sil_max_trajectories", 10240))
+        sil_max_per_depth = int(getattr(args, "sil_max_per_depth", 2048))
+        min_capacity_per_depth = int(getattr(args, "sil_min_capacity_per_depth", 32))
+        max_failures_per_depth = int(getattr(args, "max_failures_per_depth", 512))
+        min_failures_per_depth = int(getattr(args, "min_failures_per_depth", 16))
+        sil_dpo_enabled = getattr(args, "sil_dpo_enabled", True)
         dpo_coef = float(getattr(args, "dpo_coef", 0.05))
         dpo_beta = float(getattr(args, "dpo_beta", 0.10))
         dpo_batch_size = int(getattr(args, "dpo_batch_size", 8))
@@ -207,11 +210,14 @@ def train_mode(args: argparse.Namespace) -> None:
             sil_coef=sil_coef,
             sil_max_trajectories=sil_max_trajectories,
             sil_max_per_depth=sil_max_per_depth,
+            min_capacity_per_depth=min_capacity_per_depth,
             sil_dpo_enabled=sil_dpo_enabled,
             dpo_coef=dpo_coef,
             dpo_beta=dpo_beta,
             dpo_batch_size=dpo_batch_size,
             progressive_buffer_capacity=progressive_buffer,
+            max_failures_per_depth=max_failures_per_depth,
+            min_failures_per_depth=min_failures_per_depth,
         )
 
         raw_env = getattr(env, "unwrapped", env)
@@ -368,8 +374,8 @@ def run_mode(args: argparse.Namespace) -> None:
         scramble_depth=getattr(args, "scramble_depth", None),
     )
 
-    trunk_type = getattr(args, "trunk", "classic")
-    if getattr(args, "load", None):
+    trunk_type = getattr(args, "trunk", "lean")
+    if getattr(args, "load", None) and getattr(args, "trunk", None) is None:
         detected = KnowledgeTransferManager.detect_trunk_type(args.load)
         if detected:
             trunk_type = detected
@@ -533,7 +539,7 @@ def benchmark_mode(args: argparse.Namespace) -> None:
     agent = UniversalS1Agent(
         obs_space=env.env.observation_space,
         action_space=env.action_space,
-        trunk_type=getattr(args, "trunk", "classic"),
+        trunk_type=getattr(args, "trunk", "lean"),
     ).to(device)
     agent.eval()
 
@@ -617,7 +623,7 @@ def main() -> None:
         default=None,
         help="Freeze trunk parameters during transfer or warm-start (default: True for cross-domain, False for warm-start)",
     )
-    parser.add_argument("--entropy-coef", type=float, default=0.003, help="Entropy coefficient for PPO exploration (default: 0.003)")
+    parser.add_argument("--entropy-coef", type=float, default=0.01, help="Entropy coefficient for PPO exploration (default: 0.01)")
     parser.add_argument(
         "--hindsight-replay",
         action=argparse.BooleanOptionalAction,
@@ -633,27 +639,45 @@ def main() -> None:
     parser.add_argument(
         "--sil-coef",
         type=float,
-        default=0.10,
-        help="Coeficiente de perda para atualizações de Self-Imitation Learning (padrão: 0.10)",
+        default=0.08,
+        help="Coeficiente de perda para atualizações de Self-Imitation Learning (padrão: 0.08)",
     )
     parser.add_argument(
         "--sil-max-trajectories",
         type=int,
-        default=5120,
-        help="Capacidade máxima global de trajetórias no buffer de Self-Imitation Learning (padrão: 5120)",
+        default=10240,
+        help="Capacidade máxima global de trajetórias no buffer de Self-Imitation Learning (padrão: 10240)",
     )
     parser.add_argument(
         "--sil-max-per-depth",
         type=int,
+        default=2048,
+        help="Capacidade máxima por profundidade no buffer estratificado de SIL (padrão: 2048)",
+    )
+    parser.add_argument(
+        "--sil-min-capacity-per-depth",
+        type=int,
+        default=32,
+        help="Cota mínima de trajetórias para estratos iniciais/rasos no modo progressivo (padrão: 32)",
+    )
+    parser.add_argument(
+        "--max-failures-per-depth",
+        type=int,
         default=512,
-        help="Capacidade máxima por profundidade no buffer estratificado de SIL (padrão: 512)",
+        help="Capacidade máxima de trajetórias de falha para DPO por profundidade (padrão: 512)",
+    )
+    parser.add_argument(
+        "--min-failures-per-depth",
+        type=int,
+        default=16,
+        help="Capacidade mínima de falhas para estratos iniciais/rasos no modo progressivo (padrão: 16)",
     )
     parser.add_argument(
         "--sil-dpo",
         action=argparse.BooleanOptionalAction,
-        default=False,
+        default=True,
         dest="sil_dpo_enabled",
-        help="Habilita Contrastive Online DPO-SIL (c-SIL) para correção de trajetória com pares (vitória, falha) (padrão: False)",
+        help="Habilita Contrastive Online DPO-SIL (c-SIL) para correção de trajetória com pares (vitória, falha) (padrão: True)",
     )
     parser.add_argument(
         "--dpo-coef",
@@ -703,7 +727,7 @@ def main() -> None:
         help="Escala de exploração / calibração durante o treino PPO: 'auto' (homeostase dinâmica e auto-correção) ou float [0.05 a 1.0] (padrão: auto)",
     )
     parser.add_argument("--episodes", type=int, default=5, help="Number of episodes for run mode")
-    parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate (default: 3e-4)")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate (default: 1e-4)")
     parser.add_argument(
         "--target-return",
         type=float,
@@ -776,9 +800,9 @@ def main() -> None:
     parser.add_argument(
         "--trunk",
         type=str,
-        default="classic",
+        default="lean",
         choices=["classic", "lean"],
-        help="Tipo de tronco neural recorrente: 'classic' (GRU 256 + 2x ResMLP 256, ~830k) ou 'lean' (LeanResidualTrunk 512 Multi-Timescale, ~1.6M)",
+        help="Tipo de tronco neural recorrente: 'lean' (LeanResidualTrunk 512 Multi-Timescale, ~1.6M, padrão) ou 'classic' (GRU 256 + 2x ResMLP 256, ~830k)",
     )
 
     args = parser.parse_args()

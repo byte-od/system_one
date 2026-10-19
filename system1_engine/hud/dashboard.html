@@ -1790,11 +1790,11 @@
                 </span>
               </div>
               <div class="flex gap-0.5">
+                <button type="button" onclick="setLR('0.0001')" class="badge-btn">1e-4</button>
                 <button type="button" onclick="setLR('0.0003')" class="badge-btn">3e-4</button>
-                <button type="button" onclick="setLR('0.0007')" class="badge-btn">7e-4</button>
               </div>
             </div>
-            <input type="text" id="cfg-lr" value="0.0003" class="hud-input" />
+            <input type="text" id="cfg-lr" value="0.0001" class="hud-input" />
           </div>
         </div>
 
@@ -1816,7 +1816,7 @@
                     <span class="tooltip-bubble"><strong>--entropy-coef</strong>: Bônus de entropia da política.</span>
                   </span>
                 </div>
-                <input type="number" id="cfg-entropy" value="0.003" step="0.001" min="0" max="0.1" class="hud-input" />
+                <input type="number" id="cfg-entropy" value="0.01" step="0.001" min="0" max="0.1" class="hud-input" />
               </div>
               <div>
                 <div class="flex justify-between items-center mb-0.5">
@@ -1853,7 +1853,7 @@
                   <div class="flex items-center gap-1 mb-0.5">
                     <span class="text-[10px] text-gray-400 block">Coeficiente SIL</span>
                   </div>
-                  <input type="number" id="cfg-sil-coef" value="0.10" step="0.02" min="0.01" max="1.0" class="hud-input text-center" />
+                  <input type="number" id="cfg-sil-coef" value="0.08" step="0.02" min="0.01" max="1.0" class="hud-input text-center" />
                 </div>
                 <div>
                   <div class="flex items-center gap-1 mb-0.5">
@@ -5347,8 +5347,8 @@
         fps: (activeMode === 'train') ? 0.0 : (parseFloat(document.getElementById('cfg-fps')?.value) || 50.0),
         steps: parseInt(document.getElementById('cfg-steps').value) || 40000,
         target_return: parseFloat(document.getElementById('cfg-target-return').value) || (actualEnv === 'RubiksCube-v0' ? 12.0 : 475.0),
-        lr: parseFloat(document.getElementById('cfg-lr').value) || 0.0003,
-        entropy_coef: parseFloat(document.getElementById('cfg-entropy').value) || (actualEnv === 'RubiksCube-v0' ? 0.003 : 0.005),
+        lr: parseFloat(document.getElementById('cfg-lr').value) || 0.0001,
+        entropy_coef: parseFloat(document.getElementById('cfg-entropy').value) || 0.01,
         rollout_steps: parseInt(document.getElementById('cfg-rollout-steps').value) || 2048,
         chunk_length: parseInt(document.getElementById('cfg-chunk-length').value) || 32,
         chunk_batch_size: parseInt(document.getElementById('cfg-chunk-batch').value) || 16,
@@ -5360,11 +5360,11 @@
         scramble_depth: document.getElementById('cfg-scramble-depth') ? (parseInt(document.getElementById('cfg-scramble-depth').value, 10) || null) : null,
         mixed_replay_rate: document.getElementById('cfg-mixed-replay-rate') ? parseFloat(document.getElementById('cfg-mixed-replay-rate').value) : 0.05,
         sil_enabled: document.getElementById('cfg-sil') ? document.getElementById('cfg-sil').checked : true,
-        sil_coef: document.getElementById('cfg-sil-coef') ? (parseFloat(document.getElementById('cfg-sil-coef').value) || 0.10) : 0.10,
+        sil_coef: document.getElementById('cfg-sil-coef') ? (parseFloat(document.getElementById('cfg-sil-coef').value) || 0.08) : 0.08,
         sil_dpo_enabled: document.getElementById('cfg-dpo') ? document.getElementById('cfg-dpo').checked : true,
         dpo_coef: document.getElementById('cfg-dpo-coef') ? (parseFloat(document.getElementById('cfg-dpo-coef').value) || 0.05) : 0.05,
         dpo_beta: document.getElementById('cfg-dpo-beta') ? (parseFloat(document.getElementById('cfg-dpo-beta').value) || 0.10) : 0.10,
-        trunk: (actualEnv === 'RubiksCube-v0' || (document.getElementById('cfg-load').value && availableCheckpointsDetailed.find(c => c.path === document.getElementById('cfg-load').value)?.trunk_type === 'lean') || (document.getElementById('cfg-transfer').value && availableCheckpointsDetailed.find(c => c.path === document.getElementById('cfg-transfer').value)?.trunk_type === 'lean')) ? 'lean' : 'classic'
+        trunk: 'lean'
       };
 
       if (activeMode === 'run' && payload.load) {

@@ -384,3 +384,111 @@ def test_recurrent_ppo_trainer_with_dpo_enabled():
     snap = tracker.snapshot()
     assert "sil_dpo_loss" in snap
     assert "sil_failures" in snap
+
+
+def test_progressive_buffer_capacity_scaling_to_2048():
+    """Valida o escalonamento exponencial suave ate C_max=2048 nos estratos de fronteira."""
+    buf = SuccessReplayBuffer(
+        max_trajectories=10240,
+        max_per_depth=2048,
+        min_capacity_per_depth=32,
+        progressive_capacity=True,
+    )
+    # D1..D4 crescem exponencialmente
+    assert buf.get_capacity_for_depth(1) == 32
+    assert buf.get_capacity_for_depth(2) == 64
+    assert buf.get_capacity_for_depth(3) == 128
+    assert buf.get_capacity_for_depth(4) == 256
+    assert buf.get_capacity_for_depth(5) == 512
+    assert buf.get_capacity_for_depth(6) == 1024
+    # D7 em diante atingem e mantem o teto C_max=2048
+    assert buf.get_capacity_for_depth(7) == 2048
+    assert buf.get_capacity_for_depth(10) == 2048
+    assert buf.get_capacity_for_depth(20) == 2048
+
+
+def test_progressive_failure_capacity():
+    """Valida cotas progressivas de falhas para DPO (16 no D1 ate 512 no D6+)."""
+    buf = SuccessReplayBuffer(
+        max_trajectories=10240,
+        max_failures_per_depth=512,
+        min_failures_per_depth=16,
+        progressive_capacity=True,
+    )
+    assert buf.get_failure_capacity_for_depth(1) == 16
+    assert buf.get_failure_capacity_for_depth(2) == 32
+    assert buf.get_failure_capacity_for_depth(3) == 64
+    assert buf.get_failure_capacity_for_depth(4) == 128
+    assert buf.get_failure_capacity_for_depth(5) == 256
+    assert buf.get_failure_capacity_for_depth(6) == 512
+    assert buf.get_failure_capacity_for_depth(10) == 512
+
+    # Insere 25 falhas em D1; deve reter apenas 16 (cota de D1)
+    for i in range(25):
+        buf.add_failure(
+            SuccessfulTrajectory(
+                obs=np.zeros((2, 4), dtype=np.float32),
+                delta_obs=None,
+                prev_actions=np.zeros(2, dtype=np.int64),
+                prev_rewards=np.zeros(2, dtype=np.float32),
+                actions=np.zeros(2, dtype=np.int64),
+                returns=np.ones(2, dtype=np.float32) * -1.0,
+                depth=1,
+                length=2,
+            )
+        )
+    assert len(buf._failure_buffers[1]) == 16
+
+
+def test_anchor_floor_protection_during_global_eviction():
+    """Garante que a expulsao global por excesso de max_trajectories nunca extingue estratos fundacionais (piso >= 8)."""
+    buf = SuccessReplayBuffer(
+        max_trajectories=20,  # Limite global pequeno para disparar eviction
+        max_per_depth=2048,
+        min_capacity_per_depth=32,
+        progressive_capacity=True,
+    )
+
+    # Adiciona 12 trajetórias em D1 (piso de âncora é 8, portanto há 4 excedentes)
+    for i in range(12):
+        buf.add(
+            SuccessfulTrajectory(
+                obs=np.zeros((2, 4), dtype=np.float32),
+                delta_obs=None,
+                prev_actions=np.zeros(2, dtype=np.int64),
+                prev_rewards=np.zeros(2, dtype=np.float32),
+                actions=np.zeros(2, dtype=np.int64),
+                returns=np.ones(2, dtype=np.float32) * (10.0 + i),
+                depth=1,
+                length=2,
+            )
+        )
+    assert len(buf._depth_buffers[1]) == 12
+
+    # Agora adiciona 15 trajetórias em D2. O total seria 12 + 15 = 27 > 20.
+    # O eviction global deve expurgar 4 excedentes de D1 (deixando D1 no piso 8)
+    # e 3 de D2 (deixando D2 com 12). D1 NUNCA deve ser zerado!
+    for i in range(15):
+        buf.add(
+            SuccessfulTrajectory(
+                obs=np.zeros((3, 4), dtype=np.float32),
+                delta_obs=None,
+                prev_actions=np.zeros(3, dtype=np.int64),
+                prev_rewards=np.zeros(3, dtype=np.float32),
+                actions=np.zeros(3, dtype=np.int64),
+                returns=np.ones(3, dtype=np.float32) * (20.0 + i),
+                depth=2,
+                length=3,
+            )
+        )
+
+    assert len(buf) == 20
+    # D1 preservou seu piso de âncora de 8 trajetórias
+    assert len(buf._depth_buffers[1]) == 8
+    # D2 manteve 12 trajetórias
+    assert len(buf._depth_buffers[2]) == 12
+    # Ambas profundidades continuam presentes e limitadas pelo max_trajectories=20
+    caps = buf.get_depth_capacities()
+    assert caps[1] == 20
+    assert caps[2] == 20
+

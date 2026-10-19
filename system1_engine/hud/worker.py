@@ -325,11 +325,11 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     render_mode = "none"
     device_pref = config.get("device", "auto")
     steps = int(config.get("steps", 40000))
-    lr = float(config.get("lr", 7e-4))
-    entropy_coef = float(config.get("entropy_coef", 0.005))
+    lr = float(config.get("lr", 1e-4))
+    entropy_coef = float(config.get("entropy_coef", 0.01))
     target_return = float(config.get("target_return", 475.0))
-    rollout_steps = int(config.get("rollout_steps", 1024))
-    chunk_length = int(config.get("chunk_length", 16))
+    rollout_steps = int(config.get("rollout_steps", 2048))
+    chunk_length = int(config.get("chunk_length", 32))
     chunk_batch_size = int(config.get("chunk_batch_size", 16))
     save_path = config.get("save")
     load_path = config.get("load")
@@ -369,11 +369,11 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         num_envs=int(config.get("num_envs", 64)),
         config=config,
     )
-    trunk_type = config.get("trunk", "classic")
+    trunk_type = config.get("trunk", "lean")
     if checkpoint_to_load and "trunk" not in config:
         detected = KnowledgeTransferManager.detect_trunk_type(checkpoint_to_load)
-        if detected == "lean":
-            trunk_type = "lean"
+        if detected:
+            trunk_type = detected
 
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
@@ -417,19 +417,22 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         print("⚡ Hindsight Experience Replay (B.2): DESATIVADO")
 
     sil_enabled = bool(config.get("sil_enabled", True))
-    sil_coef = float(config.get("sil_coef", 0.10))
+    sil_coef = float(config.get("sil_coef", 0.08))
     sil_batch_size = int(config.get("sil_batch_size", 8))
-    sil_max_trajectories = int(config.get("sil_max_trajectories", 5120))
-    sil_max_per_depth = int(config.get("sil_max_per_depth", 512))
+    sil_max_trajectories = int(config.get("sil_max_trajectories", 10240))
+    sil_max_per_depth = int(config.get("sil_max_per_depth", 2048))
+    min_capacity_per_depth = int(config.get("sil_min_capacity_per_depth", 32))
+    max_failures_per_depth = int(config.get("max_failures_per_depth", 512))
+    min_failures_per_depth = int(config.get("min_failures_per_depth", 16))
 
-    sil_dpo_enabled = bool(config.get("sil_dpo_enabled", False))
+    sil_dpo_enabled = bool(config.get("sil_dpo_enabled", True))
     dpo_coef = float(config.get("dpo_coef", 0.05))
     dpo_beta = float(config.get("dpo_beta", 0.10))
     dpo_batch_size = int(config.get("dpo_batch_size", 8))
     progressive_buffer_capacity = bool(config.get("progressive_buffer_capacity", True))
 
     if sil_enabled:
-        print(f"🧠 Self-Imitation Learning (SIL Replay): ATIVO (coef={sil_coef:.2f}, batch={sil_batch_size}, max_trajs={sil_max_trajectories}, max_per_depth={sil_max_per_depth})")
+        print(f"🧠 Self-Imitation Learning (SIL Replay): ATIVO (coef={sil_coef:.2f}, batch={sil_batch_size}, max_trajs={sil_max_trajectories}, max_per_depth={sil_max_per_depth}, progressive={progressive_buffer_capacity})")
         if sil_dpo_enabled:
             print(f"⚖️ Contrastive Online DPO-SIL (c-SIL): ATIVO (coef={dpo_coef:.2f}, beta={dpo_beta:.2f}, batch_pairs={dpo_batch_size})")
     else:
@@ -460,11 +463,14 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         sil_batch_size=sil_batch_size,
         sil_max_trajectories=sil_max_trajectories,
         sil_max_per_depth=sil_max_per_depth,
+        min_capacity_per_depth=min_capacity_per_depth,
         sil_dpo_enabled=sil_dpo_enabled,
         dpo_coef=dpo_coef,
         dpo_beta=dpo_beta,
         dpo_batch_size=dpo_batch_size,
         progressive_buffer_capacity=progressive_buffer_capacity,
+        max_failures_per_depth=max_failures_per_depth,
+        min_failures_per_depth=min_failures_per_depth,
         sterility_memory_enabled=sterility_memory_enabled,
     )
 

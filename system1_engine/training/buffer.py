@@ -366,8 +366,9 @@ class SuccessReplayBuffer:
 
     def __init__(
         self,
-        max_trajectories: int = 5120,
-        max_per_depth: int = 512,
+        max_trajectories: int = 10240,
+        max_per_depth: int = 2048,
+        min_capacity_per_depth: int = 32,
         is_visual: bool = False,
         is_discrete: bool = True,
         obs_shape: Tuple[int, ...] = (4,),
@@ -377,10 +378,12 @@ class SuccessReplayBuffer:
         frontier_slicing: bool = False,
         frontier_ratio: float = 0.75,
         progressive_capacity: bool = True,
-        max_failures_per_depth: int = 256,
+        max_failures_per_depth: int = 512,
+        min_failures_per_depth: int = 16,
     ) -> None:
         self.max_trajectories = max(2, int(max_trajectories))
         self.max_per_depth = max(1, min(int(max_per_depth), self.max_trajectories))
+        self.min_capacity_per_depth = max(1, min(int(min_capacity_per_depth), self.max_per_depth))
         self.is_visual = is_visual
         self.is_discrete = is_discrete
         self.obs_shape = obs_shape
@@ -391,6 +394,7 @@ class SuccessReplayBuffer:
         self.frontier_ratio = float(frontier_ratio)
         self.progressive_capacity = bool(progressive_capacity)
         self.max_failures_per_depth = max(1, int(max_failures_per_depth))
+        self.min_failures_per_depth = max(1, min(int(min_failures_per_depth), self.max_failures_per_depth))
 
         self._depth_buffers: Dict[int, List[SuccessfulTrajectory]] = defaultdict(list)
         self._failure_buffers: Dict[int, deque[SuccessfulTrajectory]] = defaultdict(
@@ -441,14 +445,29 @@ class SuccessReplayBuffer:
     def get_capacity_for_depth(self, depth: int) -> int:
         """Calcula a cota máxima de trajetórias para um estrato específico.
 
-        No modo progressivo, aloca capacidade proporcional à entropia do nível:
-        estratos rasos com pouquíssimos estados recebem cota reduzida, liberando
-        espaço para estratos profundos de fronteira onde a variedade combinatorial é vasta.
+        No modo progressivo, aloca capacidade proporcional à entropia combinatorial do nível:
+        cap(d) = clamp(C_0 * 2^(d - 1), C_0, C_max)
+        Onde C_0 = min_capacity_per_depth (ex: 32) e C_max = max_per_depth (ex: 2048).
         """
         if not self.progressive_capacity or depth <= 0 or self.max_per_depth <= 4:
             return self.max_per_depth
-        cap = 32 * (2 ** max(0, depth - 1))
+        cap = int(self.min_capacity_per_depth * (2 ** max(0, depth - 1)))
         return max(1, min(self.max_per_depth, cap))
+
+    def get_failure_capacity_for_depth(self, depth: int) -> int:
+        """Calcula a cota máxima de falhas para DPO em um estrato específico.
+
+        No modo progressivo, aloca cota reduzida para erros triviais rasos (F_0 = 16)
+        e cota expandida para erros sutis de alta complexidade (F_max = max_failures_per_depth, ex: 512).
+        """
+        if not self.progressive_capacity or depth <= 0 or self.max_failures_per_depth <= 4:
+            return self.max_failures_per_depth
+        f_cap = int(self.min_failures_per_depth * (2 ** max(0, depth - 1)))
+        return max(1, min(self.max_failures_per_depth, f_cap))
+
+    def get_depth_capacities(self) -> Dict[int, int]:
+        """Retorna as cotas de capacidade ativas para todas as profundidades presentes."""
+        return {d: self.get_capacity_for_depth(d) for d in sorted(self._depth_buffers.keys())}
 
     def __len__(self) -> int:
         return sum(len(b) for b in self._depth_buffers.values())
@@ -468,6 +487,12 @@ class SuccessReplayBuffer:
             else:
                 comp_obs = np.clip(trajectory.obs, 0, 255).astype(np.uint8)
             trajectory.obs = comp_obs
+
+        # Alocação dinâmica de capacidade progressiva para falhas
+        f_cap = self.get_failure_capacity_for_depth(depth)
+        if depth not in self._failure_buffers or self._failure_buffers[depth].maxlen != f_cap:
+            existing = list(self._failure_buffers[depth]) if depth in self._failure_buffers else []
+            self._failure_buffers[depth] = deque(existing[-f_cap:], maxlen=f_cap)
 
         self._failure_buffers[depth].append(trajectory)
         self.total_failures_added += 1
@@ -579,22 +604,33 @@ class SuccessReplayBuffer:
             d_buf.append(trajectory)
             self.total_added += 1
 
-        # 4. Limite global: se o total exceder max_trajectories, descarte a trajetória de menor qualidade do menor nível
+        # 4. Limite global com Proteção de Âncoras Fundacionais:
+        # Se o total exceder max_trajectories, descarte a pior trajetória de profundidades que possuem
+        # excedente além do piso fundacional (anchor_floor = 8). Nunca extingue um estrato completo prematuramente.
         while len(self) > self.max_trajectories:
             non_empty_depths = [d for d in sorted(self._depth_buffers.keys()) if len(self._depth_buffers[d]) > 0]
             if not non_empty_depths:
                 break
-            min_d = non_empty_depths[0]
+
+            anchor_floor = 8
+            eligible_depths = [
+                d for d in non_empty_depths
+                if len(self._depth_buffers[d]) > min(anchor_floor, self.get_capacity_for_depth(d))
+            ]
+            if not eligible_depths:
+                eligible_depths = non_empty_depths
+
+            target_d = eligible_depths[0]
             worst_idx = min(
-                range(len(self._depth_buffers[min_d])),
+                range(len(self._depth_buffers[target_d])),
                 key=lambda i: (
-                    float(self._depth_buffers[min_d][i].returns[0]) if len(self._depth_buffers[min_d][i].returns) > 0 else 0.0,
-                    -int(self._depth_buffers[min_d][i].length),
+                    float(self._depth_buffers[target_d][i].returns[0]) if len(self._depth_buffers[target_d][i].returns) > 0 else 0.0,
+                    -int(self._depth_buffers[target_d][i].length),
                 ),
             )
-            self._depth_buffers[min_d].pop(worst_idx)
-            if len(self._depth_buffers[min_d]) == 0:
-                del self._depth_buffers[min_d]
+            self._depth_buffers[target_d].pop(worst_idx)
+            if len(self._depth_buffers[target_d]) == 0:
+                del self._depth_buffers[target_d]
 
     def _collate_trajectories(
         self,

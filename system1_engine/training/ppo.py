@@ -27,35 +27,37 @@ class RecurrentPPOTrainer:
         self,
         agent: UniversalS1Agent,
         env: UniversalS1Wrapper,
-        learning_rate: float = 1e-3,
+        learning_rate: float = 1e-4,
         gamma: float = 0.99,
         gae_lambda: float = 0.95,
         clip_range: float = 0.2,
         value_coef: float = 0.05,
-        entropy_coef: float = 0.001,
+        entropy_coef: float = 0.01,
         max_grad_norm: float = 0.5,
         n_epochs: int = 4,
-        rollout_steps: int = 1024,
-        chunk_length: int = 16,
+        rollout_steps: int = 2048,
+        chunk_length: int = 32,
         chunk_batch_size: int = 16,
         device: Union[str, torch.device] = "cpu",
         tracker: Optional[LiveStatsTracker] = None,
         exploration_scale: Union[float, str] = 1.0,
-        hindsight_replay: bool = False,
+        hindsight_replay: bool = True,
         hindsight_bonus: float = 2.0,
         hindsight_min_gain: float = 0.02,
         sil_enabled: bool = True,
-        sil_coef: float = 0.10,
+        sil_coef: float = 0.08,
         sil_batch_size: int = 8,
-        sil_max_trajectories: int = 5120,
-        sil_max_per_depth: int = 512,
+        sil_max_trajectories: int = 10240,
+        sil_max_per_depth: int = 2048,
+        min_capacity_per_depth: int = 32,
         sil_min_samples: int = 8,
-        sil_dpo_enabled: bool = False,
+        sil_dpo_enabled: bool = True,
         dpo_coef: float = 0.05,
         dpo_beta: float = 0.10,
         dpo_batch_size: int = 8,
         progressive_buffer_capacity: bool = True,
-        max_failures_per_depth: int = 256,
+        max_failures_per_depth: int = 512,
+        min_failures_per_depth: int = 16,
         sterility_memory_enabled: bool = False,
         sterility_capacity: int = 1024,
         sterility_sim_threshold: float = 0.85,
@@ -88,12 +90,14 @@ class RecurrentPPOTrainer:
         self.sil_min_samples = max(2, int(sil_min_samples))
         self.sil_max_trajectories = max(2, int(sil_max_trajectories))
         self.sil_max_per_depth = max(1, int(sil_max_per_depth))
+        self.min_capacity_per_depth = max(1, int(min_capacity_per_depth))
         self.sil_dpo_enabled = bool(sil_dpo_enabled)
         self.dpo_coef = float(dpo_coef)
         self.dpo_beta = float(dpo_beta)
         self.dpo_batch_size = max(1, int(dpo_batch_size))
         self.progressive_buffer_capacity = bool(progressive_buffer_capacity)
         self.max_failures_per_depth = max(1, int(max_failures_per_depth))
+        self.min_failures_per_depth = max(1, int(min_failures_per_depth))
 
         # Suporte a exploração automática / homeostática no treino PPO (sem limite artificial, 0 à 1)
         self._min_adaptive_scale = 0.08
@@ -159,6 +163,7 @@ class RecurrentPPOTrainer:
         self.sil_buffer = FrontierTransitionBuffer(
             max_trajectories=self.sil_max_trajectories,
             max_per_depth=self.sil_max_per_depth,
+            min_capacity_per_depth=self.min_capacity_per_depth,
             is_visual=env.is_visual,
             is_discrete=is_discrete,
             obs_shape=obs_shape,
@@ -169,6 +174,7 @@ class RecurrentPPOTrainer:
             frontier_ratio=0.75,
             progressive_capacity=self.progressive_buffer_capacity,
             max_failures_per_depth=self.max_failures_per_depth,
+            min_failures_per_depth=self.min_failures_per_depth,
         )
 
         # Memória Latente Estéril Auto-Corretiva (Self-Healing Latent Tabu)
@@ -1755,8 +1761,8 @@ class RecurrentPPOTrainer:
                     log_parts.append(f"Nível: {raw_env.current_level}/{max_l}")
 
                 if self.sil_enabled and getattr(self, "sil_dpo_enabled", False):
-                    dpo_l = self.tracker.metrics.sil_dpo_losses[-1] if self.tracker and self.tracker.metrics.sil_dpo_losses else 0.0
-                    n_fail = getattr(self.tracker.metrics, "sil_failures", len(self.sil_buffer.failures))
+                    dpo_l = self.tracker.metrics.sil_dpo_losses[-1] if (self.tracker and self.tracker.metrics.sil_dpo_losses) else 0.0
+                    n_fail = getattr(self.tracker.metrics, "sil_failures", len(self.sil_buffer.failures)) if self.tracker else len(self.sil_buffer.failures)
                     log_parts.append(f"DPO Loss: {dpo_l:.3f} ({n_fail} falhas)")
 
                 print(" | ".join(log_parts))
