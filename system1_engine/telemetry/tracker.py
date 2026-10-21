@@ -16,6 +16,8 @@ class PhaseMetrics:
     entropies: deque = field(default_factory=lambda: deque(maxlen=1000))
     calibrations: deque = field(default_factory=lambda: deque(maxlen=1000))
     action_chunk_size: int = 1
+    value_rerank: bool = False
+    value_reranks_triggered: int = 0
 
     # Fase 2: Ambiente Físico & Rollout GAE
     fps: float = 0.0
@@ -73,6 +75,7 @@ class LiveStatsTracker:
         confidence: float,
         entropy: float,
         calibration: float = 0.0,
+        value_rerank_triggered: bool = False,
     ) -> None:
         """Registra a fase de reflexo imediato com inserção O(1) sem alocação dinâmica."""
         m = self.metrics
@@ -81,6 +84,8 @@ class LiveStatsTracker:
         m.confidences.append(confidence)
         m.entropies.append(entropy)
         m.calibrations.append(calibration)
+        if value_rerank_triggered:
+            m.value_reranks_triggered += 1
 
     def record_env_step(
         self,
@@ -229,6 +234,8 @@ class LiveStatsTracker:
             "mean_entropy": float(np.mean(m.entropies)) if m.entropies else 0.0,
             "calibration": float(m.calibrations[-1]) if m.calibrations else 0.0,
             "action_chunk_size": int(m.action_chunk_size),
+            "value_rerank": bool(m.value_rerank),
+            "value_reranks_triggered": int(m.value_reranks_triggered),
             # Fase 2: Ambiente & Rollout
             "fps": m.fps,
             "mean_return_20": float(np.mean(list(m.episode_returns)[-20:])) if m.episode_returns else 0.0,

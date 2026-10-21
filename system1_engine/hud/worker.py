@@ -808,9 +808,14 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
     )
 
     ensemble_fallback = bool(config.get("ensemble_fallback", True))
+    value_rerank = bool(config.get("value_rerank", False))
+    value_rerank_top_k = int(config.get("value_rerank_top_k", 2))
+    value_rerank_threshold = float(config.get("value_rerank_threshold", 0.85))
     mode_desc = "Reflexo Neural S1"
     if ensemble_fallback:
         mode_desc += " + Quality Ensemble Fallback (A.2)"
+    if value_rerank:
+        mode_desc += f" + Value Re-ranking (Top-{value_rerank_top_k} V(s'))"
     print(f"=== [HUD Worker] Modo de Avaliação Iniciado no Ambiente: {env_id} ===")
     print(f"Dispositivo de Execução: {device.type.upper()} (Preferência: {device_pref})")
     print(f"Episódios: {episodes} | Decisão: {mode_desc} | Ação: {mode_action_desc} | FPS Alvo: {fps_target} | Renderização: {render_mode}")
@@ -840,6 +845,7 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
         max_ep_steps = 40 if "rubik" in env_id.lower() else 500
     tracker.metrics.target_steps = episodes * int(max_ep_steps)
     tracker.metrics.action_chunk_size = action_chunk_size
+    tracker.metrics.value_rerank = value_rerank
     last_telemetry_ts = 0.0
     last_frame_ts = 0.0
 
@@ -866,6 +872,10 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
                     calibration=eval_calibration,
                     ensemble_fallback=ensemble_fallback,
                     adaptive_chunk=bool(config.get("adaptive_chunk", False)),
+                    value_rerank=value_rerank,
+                    value_rerank_top_k=value_rerank_top_k,
+                    value_rerank_threshold=value_rerank_threshold,
+                    env=env,
                 )
                 lat_us = (time.perf_counter_ns() - t0) / 1000.0
                 action = decision.action
@@ -875,6 +885,7 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
                     confidence=decision.confidence,
                     entropy=decision.entropy,
                     calibration=decision.calibration,
+                    value_rerank_triggered=getattr(decision, "value_rerank_triggered", False),
                 )
 
 
