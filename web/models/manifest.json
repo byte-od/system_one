@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "updated_at": 1792371239.578721,
-  "updated_at_str": "18/10/2026 21:53:59",
+  "updated_at": 1792592203.2761002,
+  "updated_at_str": "21/10/2026 11:16:43",
   "models": {
     "acrobot": {
       "key": "acrobot",
@@ -19,7 +19,8 @@
       "mtime": 1791553884.7408938,
       "mtime_str": "09/10/2026 10:51:24",
       "checkpoint_source": "s1_acrobot_v1_trained.pt",
-      "checkpoint_version": "v1"
+      "checkpoint_version": "v1",
+      "action_chunk_size": 1
     },
     "ant_v4": {
       "key": "ant_v4",
@@ -37,7 +38,8 @@
       "mtime": 1791417198.9929142,
       "mtime_str": "07/10/2026 20:53:18",
       "checkpoint_source": "s1_ant_v4_trained.pt",
-      "checkpoint_version": "v1"
+      "checkpoint_version": "v1",
+      "action_chunk_size": 1
     },
     "ant_v5": {
       "key": "ant_v5",
@@ -55,7 +57,8 @@
       "mtime": 1791417199.029145,
       "mtime_str": "07/10/2026 20:53:19",
       "checkpoint_source": "s1_ant_v5_trained.pt",
-      "checkpoint_version": "v1"
+      "checkpoint_version": "v1",
+      "action_chunk_size": 1
     },
     "cartpole": {
       "key": "cartpole",
@@ -70,10 +73,11 @@
       "file": "s1_cartpole.onnx",
       "size_mb": 2.77,
       "size_bytes": 2909005,
-      "mtime": 1792371226.2105937,
-      "mtime_str": "18/10/2026 21:53:46",
+      "mtime": 1792592051.4746962,
+      "mtime_str": "21/10/2026 11:14:11",
       "checkpoint_source": "s1_cartpole_v1_trained.pt",
-      "checkpoint_version": "v1"
+      "checkpoint_version": "v1",
+      "action_chunk_size": 1
     },
     "lunarlander": {
       "key": "lunarlander",
@@ -91,7 +95,8 @@
       "mtime": 1791417198.817974,
       "mtime_str": "07/10/2026 20:53:18",
       "checkpoint_source": "s1_lunarlander_v3_trained.pt",
-      "checkpoint_version": "v1"
+      "checkpoint_version": "v1",
+      "action_chunk_size": 1
     },
     "mountaincar": {
       "key": "mountaincar",
@@ -109,7 +114,8 @@
       "mtime": 1791417198.724185,
       "mtime_str": "07/10/2026 20:53:18",
       "checkpoint_source": "s1_mountaincar_v0_trained.pt",
-      "checkpoint_version": "v1"
+      "checkpoint_version": "v1",
+      "action_chunk_size": 1
     },
     "rubiks_atomic": {
       "key": "rubiks_atomic",
@@ -125,10 +131,11 @@
       "file": "s1_rubiks_atomic.onnx",
       "size_mb": 6.36,
       "size_bytes": 6672655,
-      "mtime": 1792371223.9078953,
-      "mtime_str": "18/10/2026 21:53:43",
-      "checkpoint_source": "s1_rubikscube_v0_trained_v10.pt",
-      "checkpoint_version": "v10"
+      "mtime": 1792592203.138462,
+      "mtime_str": "21/10/2026 11:16:43",
+      "checkpoint_source": "s1_rubikscube_v0_trained_v21.pt",
+      "checkpoint_version": "v21",
+      "action_chunk_size": 1
     },
     "rubiks_macro": {
       "key": "rubiks_macro",
@@ -146,7 +153,8 @@
       "mtime": 1791417199.1011772,
       "mtime_str": "07/10/2026 20:53:19",
       "checkpoint_source": "s1_rubikscubemacro_v0_trained.pt",
-      "checkpoint_version": "v1"
+      "checkpoint_version": "v1",
+      "action_chunk_size": 1
     }
   }
 }

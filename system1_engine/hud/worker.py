@@ -249,7 +249,7 @@ def build_hud_env(
                 if "mixed_replay_rate" in config:
                     extra_kwargs["mixed_replay_rate"] = float(config["mixed_replay_rate"])
                 elif "mixed_replay" in config:
-                    extra_kwargs["mixed_replay_rate"] = 0.0 if not config["mixed_replay"] else 0.05
+                    extra_kwargs["mixed_replay_rate"] = 0.0 if not config["mixed_replay"] else 0.15
         else:
             extra_kwargs["curriculum"] = False
             if scramble_depth is not None and int(scramble_depth) > 0:
@@ -326,7 +326,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     device_pref = config.get("device", "auto")
     steps = int(config.get("steps", 40000))
     lr = float(config.get("lr", 1e-4))
-    entropy_coef = float(config.get("entropy_coef", 0.01))
+    entropy_coef = float(config.get("entropy_coef", 0.015))
     target_return = float(config.get("target_return", 475.0))
     rollout_steps = int(config.get("rollout_steps", 2048))
     chunk_length = int(config.get("chunk_length", 32))
@@ -375,10 +375,21 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         if detected:
             trunk_type = detected
 
+    action_chunk_size = int(config.get("action_chunk_size", config.get("act_k", 1)))
+    if checkpoint_to_load and "action_chunk_size" not in config and "act_k" not in config:
+        detected_k = KnowledgeTransferManager.detect_action_chunk_size(checkpoint_to_load, env.action_space)
+        if detected_k > 1:
+            action_chunk_size = detected_k
+            print(f"🧩 Auto-detectado Action Chunk Size k={action_chunk_size} a partir de {checkpoint_to_load}")
+
+    if action_chunk_size > 1:
+        print(f"⚡ Action Chunking Temporal (ACT) ATIVO: k={action_chunk_size} macro-ações coordenadas por passo")
+
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
         action_space=env.action_space,
         trunk_type=trunk_type,
+        action_chunk_size=action_chunk_size,
     )
 
     if checkpoint_to_load:
@@ -392,6 +403,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
 
     tracker = LiveStatsTracker()
     tracker.metrics.target_steps = steps
+    tracker.metrics.target_return = float(target_return)
     last_telemetry_ts = 0.0
     last_frame_ts = 0.0
 
@@ -444,9 +456,14 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     else:
         print("⚡ Memória de Esterilidade Latente: DESATIVADA (Pura inferência de alta velocidade)")
 
+    if tracker is not None:
+        tracker.metrics.action_chunk_size = action_chunk_size
+
     trainer = RecurrentPPOTrainer(
         agent=agent,
         env=env,
+        action_chunk_size=action_chunk_size,
+        adaptive_chunk=bool(config.get("adaptive_chunk", False)),
         learning_rate=lr,
         rollout_steps=rollout_steps,
         chunk_length=chunk_length,
@@ -667,6 +684,14 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         hud_client.send_telemetry(final_snap)
         print(f"=== [HUD Worker] Treinamento Concluído! Retorno Final: {final_return:.2f} ===")
 
+    except KeyboardInterrupt:
+        print("\n[HUD Worker] ⏹️ Treinamento interrompido. Salvando checkpoint de segurança...")
+        if save_path:
+            try:
+                _persist_checkpoint("Interrupted")
+            except Exception as e:
+                print(f"[HUD Worker] Aviso ao salvar checkpoint de interrupção: {e}")
+
     finally:
         explainer.close()
         env.close()
@@ -710,10 +735,21 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
         if detected:
             trunk_type = detected
 
+    action_chunk_size = int(config.get("action_chunk_size", config.get("act_k", 1)))
+    if load_path and "action_chunk_size" not in config and "act_k" not in config:
+        detected_k = KnowledgeTransferManager.detect_action_chunk_size(load_path, env.action_space)
+        if detected_k > 1:
+            action_chunk_size = detected_k
+            print(f"🧩 Auto-detectado Action Chunk Size k={action_chunk_size} a partir de {load_path}")
+
+    if action_chunk_size > 1:
+        print(f"⚡ Action Chunking Temporal (ACT) ATIVO na Avaliação: k={action_chunk_size}")
+
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
         action_space=env.action_space,
         trunk_type=trunk_type,
+        action_chunk_size=action_chunk_size,
     ).to(device)
 
     eval_calib_cfg = config.get("eval_calibration", config.get("calibration"))
@@ -803,6 +839,7 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
     if max_ep_steps is None:
         max_ep_steps = 40 if "rubik" in env_id.lower() else 500
     tracker.metrics.target_steps = episodes * int(max_ep_steps)
+    tracker.metrics.action_chunk_size = action_chunk_size
     last_telemetry_ts = 0.0
     last_frame_ts = 0.0
 
@@ -828,6 +865,7 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
                     noise_scale=noise_scale,
                     calibration=eval_calibration,
                     ensemble_fallback=ensemble_fallback,
+                    adaptive_chunk=bool(config.get("adaptive_chunk", False)),
                 )
                 lat_us = (time.perf_counter_ns() - t0) / 1000.0
                 action = decision.action
@@ -843,11 +881,13 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
                 obs_dict, reward, terminated, truncated, env_info = env.step(action)
                 done = terminated or truncated
                 ep_reward += reward
-                steps += 1
+                n_chunk_steps = len(action) if hasattr(action, "__len__") and not isinstance(action, (str, bytes)) else 1
+                steps += n_chunk_steps
                 tracker.record_env_step(
                     reward=reward,
                     done=done,
                     info=env_info if isinstance(env_info, dict) else {},
+                    num_steps=n_chunk_steps,
                 )
 
                 if is_rubiks:

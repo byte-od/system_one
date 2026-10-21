@@ -23,8 +23,9 @@ class UniversalS1Wrapper(gym.Wrapper):
     Prevents causal blindness and cyclic attractors in reflexive policies.
     """
 
-    def __init__(self, env: gym.Env, is_visual: Optional[bool] = None) -> None:
+    def __init__(self, env: gym.Env, is_visual: Optional[bool] = None, gamma: float = 0.99) -> None:
         super().__init__(env)
+        self.gamma = float(gamma)
         if is_visual is None:
             # Auto-detect visual observations:
             # 1. Box with 3 dims where min dim in (1, 3, 4) and max spatial dims >= 10
@@ -53,6 +54,9 @@ class UniversalS1Wrapper(gym.Wrapper):
         self.is_vectorized = self.num_envs > 1
 
         self.prev_obs: Optional[np.ndarray] = None
+        self.init_obs: Optional[np.ndarray] = None
+        self.compass_mode: bool = True
+        self.compass_alpha: float = 0.5
         self.prev_action: Optional[Union[int, np.ndarray]] = None
         self.prev_reward: Union[float, np.ndarray] = 0.0 if not self.is_vectorized else np.zeros(self.num_envs, dtype=np.float32)
         self.latest_obs_dict: Optional[S1Observation] = None
@@ -239,6 +243,7 @@ class UniversalS1Wrapper(gym.Wrapper):
         if self.is_vectorized:
             current_obs = np.asarray(raw_obs, dtype=np.float32)
             self.prev_obs = np.array(current_obs, copy=True)
+            self.init_obs = np.array(current_obs, copy=True)
             self.prev_action = self._get_initial_action()
             self.prev_reward = np.zeros(self.num_envs, dtype=np.float32)
 
@@ -268,6 +273,7 @@ class UniversalS1Wrapper(gym.Wrapper):
         else:
             current_obs = self._vectorize_obs(raw_obs, self.env.observation_space)
             self.prev_obs = np.array(current_obs, copy=True)
+            self.init_obs = np.array(current_obs, copy=True)
             self.prev_action = self._get_initial_action()
             self.prev_reward = 0.0
 
@@ -283,22 +289,105 @@ class UniversalS1Wrapper(gym.Wrapper):
         return obs_dict, info
 
     def step(
-        self, action: Any
+        self, action: Any, chunk_mask: Optional[np.ndarray] = None
     ) -> tuple[S1Observation, Any, Any, Any, Any]:
-        """Takes an environment step and computes temporal differential state."""
+        """Takes an environment step and computes temporal differential state.
+        
+        Supports both single-step execution and Temporal Action Chunking (ACT) sequences
+        with automatic open-loop unrolling, reward discounting, early termination on done,
+        and uncertainty-based adaptive chunk termination.
+        """
         assert self.prev_obs is not None, "step() called before reset()"
+
+        # =====================================================================
+        # 1. AMBIENTE VETORIZADO (num_envs > 1)
+        # =====================================================================
         if self.is_vectorized:
+            act_arr = np.asarray(action)
+            # Verifica se é um chunk temporal vetorizado [num_envs, k] onde k > 1
+            if act_arr.ndim == 2 and act_arr.shape[0] == self.num_envs and act_arr.shape[1] > 1:
+                E, k = act_arr.shape
+                total_rewards = np.zeros(E, dtype=np.float32)
+                discounts = np.ones(E, dtype=np.float32)
+                all_terminateds = np.zeros(E, dtype=bool)
+                all_truncateds = np.zeros(E, dtype=bool)
+                active_mask = np.ones(E, dtype=bool)
+                last_obs = None
+                last_info = None
+                last_executed_actions = act_arr[:, 0].copy()
+
+                for step_i in range(k):
+                    if chunk_mask is not None:
+                        active_mask &= chunk_mask[:, step_i]
+                        if not np.any(active_mask):
+                            break
+                    sub_acts = act_arr[:, step_i]
+                    try:
+                        next_obs, rews, terms, truncs, info = self.env.step(sub_acts, active_mask=active_mask)
+                    except TypeError:
+                        next_obs, rews, terms, truncs, info = self.env.step(sub_acts)
+                    last_obs = next_obs
+                    last_info = info
+                    dones = np.asarray(terms, dtype=bool) | np.asarray(truncs, dtype=bool)
+                    
+                    # Atualiza recompensas acumuladas e ações apenas nos ambientes ativos
+                    rews_arr = np.asarray(rews, dtype=np.float32)
+                    total_rewards += np.where(active_mask, discounts * rews_arr, 0.0)
+                    last_executed_actions[active_mask] = sub_acts[active_mask]
+                    discounts[active_mask] *= self.gamma
+
+                    # Trata encerramentos
+                    newly_done = dones & active_mask
+                    if np.any(newly_done):
+                        all_terminateds[newly_done] = np.asarray(terms, dtype=bool)[newly_done]
+                        all_truncateds[newly_done] = np.asarray(truncs, dtype=bool)[newly_done]
+                        active_mask[newly_done] = False
+
+                    if not np.any(active_mask):
+                        break
+
+                current_obs = np.asarray(last_obs, dtype=np.float32)
+                local_delta = current_obs - self.prev_obs
+                if self.compass_mode and self.init_obs is not None:
+                    global_delta = current_obs - self.init_obs
+                    delta_obs = (1.0 - self.compass_alpha) * local_delta + self.compass_alpha * global_delta
+                else:
+                    delta_obs = local_delta
+                done_mask = np.asarray(all_terminateds | all_truncateds, dtype=bool)
+                if np.any(done_mask):
+                    delta_obs[done_mask] = 0.0
+                    if self.compass_mode and self.init_obs is not None:
+                        self.init_obs[done_mask] = current_obs[done_mask]
+
+                obs_dict: S1Observation = {
+                    "obs": current_obs,
+                    "delta_obs": delta_obs,
+                    "prev_action": copy.deepcopy(last_executed_actions),
+                    "prev_reward": total_rewards,
+                }
+                self.prev_obs = np.array(current_obs, copy=True)
+                self.prev_action = copy.deepcopy(last_executed_actions)
+                self.prev_reward = total_rewards
+                self.latest_obs_dict = obs_dict
+                return obs_dict, total_rewards, all_terminateds, all_truncateds, last_info
+
+            # Passo unitário vetorizado clássico
             next_obs, rewards, terminateds, truncateds, info = self.env.step(action)
             current_obs = np.asarray(next_obs, dtype=np.float32)
-            delta_obs = current_obs - self.prev_obs
-            # Ambientes que terminaram e resetaram iniciam novo episódio sem vazamento causal de delta
+            local_delta = current_obs - self.prev_obs
+            if self.compass_mode and self.init_obs is not None:
+                global_delta = current_obs - self.init_obs
+                delta_obs = (1.0 - self.compass_alpha) * local_delta + self.compass_alpha * global_delta
+            else:
+                delta_obs = local_delta
             done_mask = np.asarray(terminateds | truncateds, dtype=bool)
             if np.any(done_mask):
                 delta_obs[done_mask] = 0.0
+                if self.compass_mode and self.init_obs is not None:
+                    self.init_obs[done_mask] = current_obs[done_mask]
 
             rew_arr = np.asarray(rewards, dtype=np.float32)
-
-            obs_dict: S1Observation = {
+            obs_dict = {
                 "obs": current_obs,
                 "delta_obs": delta_obs,
                 "prev_action": copy.deepcopy(action),
@@ -310,6 +399,83 @@ class UniversalS1Wrapper(gym.Wrapper):
             self.latest_obs_dict = obs_dict
             return obs_dict, rew_arr, terminateds, truncateds, info
 
+        # =====================================================================
+        # 2. AMBIENTE SINGULAR (num_envs == 1)
+        # =====================================================================
+        is_chunk = False
+        if isinstance(self.action_space, gym.spaces.Discrete):
+            if isinstance(action, (list, tuple, np.ndarray)):
+                act_arr = np.asarray(action)
+                if act_arr.ndim == 1 and len(act_arr) > 1:
+                    is_chunk = True
+        elif isinstance(self.action_space, gym.spaces.Box):
+            act_arr = np.asarray(action, dtype=np.float32)
+            if act_arr.ndim == len(self.action_space.shape) + 1 and act_arr.shape[0] > 1:
+                is_chunk = True
+
+        if is_chunk:
+            total_reward = 0.0
+            discount = 1.0
+            terminated = False
+            truncated = False
+            last_obs = None
+            last_info = None
+            last_executed_act = act_arr[0]
+
+            for step_i in range(len(act_arr)):
+                if chunk_mask is not None and step_i < len(chunk_mask) and not chunk_mask[step_i]:
+                    break
+                sub_act = act_arr[step_i]
+                if isinstance(self.action_space, gym.spaces.Discrete):
+                    sub_act = int(sub_act)
+                elif isinstance(self.action_space, gym.spaces.Box):
+                    sub_act = np.clip(sub_act, self.action_space.low, self.action_space.high)
+                last_executed_act = sub_act
+                next_obs, rew, term, trunc, info = self.env.step(sub_act)
+                total_reward += discount * float(rew)
+                discount *= self.gamma
+                last_obs = next_obs
+                last_info = info
+                if term or trunc:
+                    terminated = term
+                    truncated = trunc
+                    break
+
+            if self.is_visual:
+                current_obs = self._format_visual_frame(np.asarray(last_obs))
+                stacked_obs = np.concatenate([current_obs, self.prev_obs], axis=0)
+                obs_dict = {
+                    "obs": stacked_obs,
+                    "delta_obs": None,
+                    "prev_action": copy.deepcopy(last_executed_act),
+                    "prev_reward": total_reward,
+                }
+            else:
+                current_obs = self._vectorize_obs(last_obs, self.env.observation_space)
+                local_delta = current_obs - self.prev_obs
+                if self.compass_mode and self.init_obs is not None:
+                    global_delta = current_obs - self.init_obs
+                    delta_obs = (1.0 - self.compass_alpha) * local_delta + self.compass_alpha * global_delta
+                else:
+                    delta_obs = local_delta
+                if terminated or truncated:
+                    delta_obs = np.zeros_like(current_obs)
+                    if self.compass_mode:
+                        self.init_obs = np.array(current_obs, copy=True)
+                obs_dict = {
+                    "obs": current_obs,
+                    "delta_obs": delta_obs,
+                    "prev_action": copy.deepcopy(last_executed_act),
+                    "prev_reward": total_reward,
+                }
+
+            self.prev_obs = np.array(current_obs, copy=True)
+            self.prev_action = copy.deepcopy(last_executed_act)
+            self.prev_reward = total_reward
+            self.latest_obs_dict = obs_dict
+            return obs_dict, total_reward, terminated, truncated, last_info
+
+        # Passo unitário singular clássico
         if isinstance(self.action_space, gym.spaces.Box):
             action = np.clip(np.asarray(action, dtype=np.float32), self.action_space.low, self.action_space.high)
         next_obs, reward, terminated, truncated, info = self.env.step(action)
@@ -326,7 +492,12 @@ class UniversalS1Wrapper(gym.Wrapper):
             }
         else:
             current_obs = self._vectorize_obs(next_obs, self.env.observation_space)
-            delta_obs = current_obs - self.prev_obs
+            local_delta = current_obs - self.prev_obs
+            if self.compass_mode and self.init_obs is not None:
+                global_delta = current_obs - self.init_obs
+                delta_obs = (1.0 - self.compass_alpha) * local_delta + self.compass_alpha * global_delta
+            else:
+                delta_obs = local_delta
             obs_dict = {
                 "obs": current_obs,
                 "delta_obs": delta_obs,
@@ -338,7 +509,30 @@ class UniversalS1Wrapper(gym.Wrapper):
         self.prev_obs = np.array(current_obs, copy=True)
         self.prev_action = copy.deepcopy(action)
         self.prev_reward = reward_float
+        if (terminated or truncated) and self.compass_mode:
+            self.init_obs = np.array(current_obs, copy=True)
         self.latest_obs_dict = obs_dict
 
         return obs_dict, reward_float, terminated, truncated, info
+
+
+class ActionChunkWrapper(gym.Wrapper):
+    """Wrapper explícito de alto nível para Action Chunking Temporal (ACT).
+
+    Permite envelopar qualquer ambiente Gymnasium (vetorizado ou singular)
+    para executar fatias temporais de tamanho k com término antecipado em caso de vitória/derrota.
+    """
+
+    def __init__(self, env: gym.Env, chunk_size: int = 4, gamma: float = 0.99) -> None:
+        super().__init__(env)
+        self.chunk_size = max(1, int(chunk_size))
+        self.gamma = float(gamma)
+
+    def step(self, action: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
+        # Se action já for um chunk, delega para a lógica de unrolling
+        act_arr = np.asarray(action)
+        if (act_arr.ndim == 1 and len(act_arr) > 1) or (act_arr.ndim == 2 and act_arr.shape[1] > 1):
+            return self.env.step(action)
+        # Se for unitário, executa normalmente
+        return self.env.step(action)
 

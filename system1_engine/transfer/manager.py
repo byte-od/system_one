@@ -21,16 +21,19 @@ class KnowledgeTransferManager:
         """Saves agent weights and metadata to file, and auto-syncs ONNX for Web HUD."""
         os.makedirs(os.path.dirname(os.path.abspath(checkpoint_path)), exist_ok=True)
         state_dict_cpu = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in agent.state_dict().items()}
+        extra = dict(extra_info) if extra_info else {}
+        if hasattr(agent, "action_chunk_size"):
+            extra.setdefault("action_chunk_size", getattr(agent, "action_chunk_size", 1))
         payload = {
             "state_dict": state_dict_cpu,
-            "extra_info": extra_info or {},
+            "extra_info": extra,
         }
         torch.save(payload, checkpoint_path)
 
         if auto_sync_web and hasattr(agent, "front_end") and hasattr(agent, "trunk"):
             try:
                 from system1_engine.core.onnx_exporter import auto_sync_web_model
-                auto_sync_web_model(agent, checkpoint_path=checkpoint_path, extra_info=extra_info)
+                auto_sync_web_model(agent, checkpoint_path=checkpoint_path, extra_info=extra)
             except Exception:
                 pass
 
@@ -347,6 +350,7 @@ class KnowledgeTransferManager:
             "curriculum_max_depth": None,
             "depth": None,
             "is_visual": False,
+            "action_chunk_size": 1,
         }
         try:
             checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
@@ -359,6 +363,10 @@ class KnowledgeTransferManager:
             if info["best_mean_return"] is None and info["final_return"] is not None:
                 info["best_mean_return"] = info["final_return"]
             info["steps"] = extra.get("steps")
+            if "action_chunk_size" in extra and int(extra["action_chunk_size"]) >= 1:
+                info["action_chunk_size"] = int(extra["action_chunk_size"])
+            else:
+                info["action_chunk_size"] = KnowledgeTransferManager.detect_action_chunk_size(checkpoint_path)
 
             # Extract observation dimension
             if "front_end.state_encoder.net.0.weight" in state_dict:
@@ -437,8 +445,40 @@ class KnowledgeTransferManager:
         except Exception as e:
             info["error"] = str(e)
 
+        info["action_chunk_size"] = KnowledgeTransferManager.detect_action_chunk_size(checkpoint_path)
         info["trunk_type"] = KnowledgeTransferManager.detect_trunk_type(checkpoint_path)
         return info
+
+    @staticmethod
+    def detect_action_chunk_size(checkpoint_path: str, action_space: Optional[Any] = None) -> int:
+        """Inspects checkpoint to detect action_chunk_size from extra_info or policy head output shape."""
+        if not os.path.exists(checkpoint_path):
+            return 1
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            extra = checkpoint.get("extra_info", {}) if isinstance(checkpoint, dict) else {}
+            if "action_chunk_size" in extra and int(extra["action_chunk_size"]) >= 1:
+                return int(extra["action_chunk_size"])
+
+            sd = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+            if isinstance(sd, dict) and action_space is not None:
+                import gymnasium as gym
+                if isinstance(action_space, gym.spaces.Discrete):
+                    n_actions = int(action_space.n)
+                    if "policy_head.linear.weight" in sd:
+                        out_dim = int(sd["policy_head.linear.weight"].shape[0])
+                        if out_dim % n_actions == 0:
+                            return max(1, out_dim // n_actions)
+                elif isinstance(action_space, gym.spaces.Box):
+                    import numpy as np
+                    act_dim = int(np.prod(action_space.shape))
+                    if "policy_head.mu_net.weight" in sd:
+                        out_dim = int(sd["policy_head.mu_net.weight"].shape[0])
+                        if out_dim % act_dim == 0:
+                            return max(1, out_dim // act_dim)
+        except Exception:
+            pass
+        return 1
 
     @staticmethod
     def detect_trunk_type(checkpoint_path: str) -> str:

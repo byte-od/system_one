@@ -10,6 +10,7 @@
 @property (strong, nonatomic) WKWebView *webView;
 @property (strong, nonatomic) NSTimer *serverCheckTimer;
 @property (assign, nonatomic) NSInteger checkCount;
+@property (assign, nonatomic) BOOL preserveServerOnExit;
 @end
 
 @implementation S1AppDelegate
@@ -72,6 +73,7 @@
     [self.window setTitle:@"System 1 Engine — Visual Control HUD"];
     [self.window setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]];
     [self.window setBackgroundColor:[NSColor colorWithCalibratedRed:0.03 green:0.05 blue:0.09 alpha:1.0]];
+    [self.window setReleasedWhenClosed:NO];
     self.window.delegate = self;
     
     // 3. Configura WKWebView nativo com WebSockets e aceleração de hardware
@@ -135,21 +137,102 @@
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
-    return YES;
+    // Fechar a janela do HUD NÃO encerra a aplicação nem interrompe o treinamento.
+    // O aplicativo permanece ativo no Dock/barra de tarefas para reconexão imediata.
+    return NO;
+}
+
+- (void)showMainWindow:(id)sender {
+    [self.window makeKeyAndOrderFront:nil];
+    [NSApp activateIgnoringOtherApps:YES];
 }
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
-    if (!flag) {
-        [self.window makeKeyAndOrderFront:nil];
-    } else {
-        [self.window makeKeyAndOrderFront:nil];
-    }
+    [self.window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
     return YES;
 }
 
+- (BOOL)isTrainingActive {
+    if (![self isServerRunning]) return NO;
+    
+    NSURL *url = [NSURL URLWithString:@"http://127.0.0.1:8050/api/state"];
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url
+                                                       cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+                                                   timeoutInterval:0.35];
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    __block BOOL isRunning = NO;
+    
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        if (!error && data) {
+            NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
+            if (httpResp.statusCode == 200) {
+                id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+                if ([json isKindOfClass:[NSDictionary class]]) {
+                    NSDictionary *runner = json[@"runner"];
+                    if ([runner isKindOfClass:[NSDictionary class]]) {
+                        isRunning = [runner[@"is_running"] boolValue];
+                    }
+                }
+            }
+        }
+        dispatch_semaphore_signal(sem);
+    }];
+    [task resume];
+    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.45 * NSEC_PER_SEC)));
+    return isRunning;
+}
+
+- (void)requestServerStop {
+    NSURL *url = [NSURL URLWithString:@"http://127.0.0.1:8050/api/action"];
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
+    [req setHTTPMethod:@"POST"];
+    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [req setHTTPBody:[@"{\"action\":\"stop\"}" dataUsingEncoding:NSUTF8StringEncoding]];
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        dispatch_semaphore_signal(sem);
+    }];
+    [task resume];
+    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)));
+}
+
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
+    if ([self isTrainingActive]) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        [alert setMessageText:@"Treinamento em Andamento"];
+        [alert setInformativeText:@"Existe um treinamento ativo no momento.\n\nDeseja manter o treinamento e o servidor rodando em segundo plano, ou interromper tudo?"];
+        [alert setAlertStyle:NSAlertStyleInformational];
+        [alert addButtonWithTitle:@"Manter em Segundo Plano"];
+        [alert addButtonWithTitle:@"Interromper Treino e Sair"];
+        [alert addButtonWithTitle:@"Cancelar"];
+        
+        [NSApp activateIgnoringOtherApps:YES];
+        NSModalResponse response = [alert runModal];
+        
+        if (response == NSAlertFirstButtonReturn) {
+            // "Manter em Segundo Plano": encerra apenas a janela nativa sem derrubar o servidor ou treino
+            self.preserveServerOnExit = YES;
+            return NSTerminateNow;
+        } else if (response == NSAlertSecondButtonReturn) {
+            // "Interromper Treino e Sair": interrompe formalmente o treino antes de sair
+            self.preserveServerOnExit = NO;
+            [self requestServerStop];
+            return NSTerminateNow;
+        } else {
+            // "Cancelar": permanece no aplicativo
+            return NSTerminateCancel;
+        }
+    }
+    return NSTerminateNow;
+}
+
 - (void)applicationWillTerminate:(NSNotification *)notification {
-    // Encerra o servidor Python quando o app fechar
+    if (self.preserveServerOnExit) {
+        NSLog(@"[System 1 HUD] Mantendo servidor e treinamento ativos em segundo plano.");
+        return;
+    }
+    // Encerra o servidor Python quando o app fechar sem treinamento ativo
     system("bash /Users/juliocesarreisfilho/Projects/system_one/scripts/stop_hud.sh >/dev/null 2>&1");
 }
 
@@ -209,6 +292,9 @@ int main(int argc, const char * argv[]) {
         NSMenuItem *windowMenuItem = [[NSMenuItem alloc] init];
         [menubar addItem:windowMenuItem];
         NSMenu *windowMenu = [[NSMenu alloc] initWithTitle:@"Janela"];
+        [windowMenu addItemWithTitle:@"Exibir Painel Principal" action:@selector(showMainWindow:) keyEquivalent:@"1"];
+        [windowMenu addItem:[NSMenuItem separatorItem]];
+        [windowMenu addItemWithTitle:@"Fechar Janela" action:@selector(performClose:) keyEquivalent:@"w"];
         [windowMenu addItemWithTitle:@"Minimizar" action:@selector(performMiniaturize:) keyEquivalent:@"m"];
         [windowMenu addItemWithTitle:@"Zoom" action:@selector(performZoom:) keyEquivalent:@""];
         [windowMenuItem setSubmenu:windowMenu];

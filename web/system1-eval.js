@@ -1393,15 +1393,43 @@ class System1AgentWeb {
       this.hx.set(results.next_hx.data);
     }
 
-    // Softmax & Entropia de Shannon (Gating nos logits originais)
+    // Detecção de Action Chunking Temporal (ACT) nos logits
+    let k = 1;
+    let nActs = logits.length;
+    if (this.actionChunkSize && this.actionChunkSize > 1) {
+      k = this.actionChunkSize;
+      nActs = Math.floor(logits.length / k);
+    } else if (results.logits && results.logits.dims && results.logits.dims.length === 3) {
+      k = results.logits.dims[1];
+      nActs = results.logits.dims[2];
+    } else if (logits.length > 12 && logits.length % 12 === 0) {
+      k = logits.length / 12;
+      nActs = 12;
+    }
+
+    const chunkActions = [];
+    if (k > 1) {
+      for (let s = 0; s < k; s++) {
+        let maxSub = -Infinity;
+        let bestSub = 0;
+        const offset = s * nActs;
+        for (let a = 0; a < nActs; a++) {
+          const val = logits[offset + a];
+          if (val > maxSub) { maxSub = val; bestSub = a; }
+        }
+        chunkActions.push(bestSub);
+      }
+    }
+
+    // Softmax & Entropia de Shannon no primeiro passo do chunk (Gating nos logits originais)
     let maxLogit = -Infinity;
-    for (let i = 0; i < logits.length; i++) {
+    for (let i = 0; i < nActs; i++) {
       if (logits[i] > maxLogit) maxLogit = logits[i];
     }
 
     let sumExp = 0;
-    const probs = new Float32Array(logits.length);
-    for (let i = 0; i < logits.length; i++) {
+    const probs = new Float32Array(nActs);
+    for (let i = 0; i < nActs; i++) {
       probs[i] = Math.exp(logits[i] - maxLogit);
       sumExp += probs[i];
     }
@@ -1418,7 +1446,7 @@ class System1AgentWeb {
     }
     ranked.sort((a, b) => b.prob - a.prob);
 
-    const maxEntropy = Math.log(logits.length);
+    const maxEntropy = Math.log(nActs);
     const uncertainty = Math.min(1.0, Math.max(0.0, entropy / maxEntropy));
 
     // Calibração Contínua de Ação [0.0 = Determinístico/argmax, 1.0 = Estocástico Total] ou Auto-Calibração Homeostática
@@ -1521,10 +1549,14 @@ class System1AgentWeb {
     this.actionHistory.push(chosenAction);
     if (this.actionHistory.length > 8) this.actionHistory.shift();
 
-    this.prevAction = chosenAction;
+    if (chunkActions.length > 0) {
+      chunkActions[0] = chosenAction;
+    }
 
     return {
       action: chosenAction,
+      chunk: chunkActions.length > 0 ? chunkActions : [chosenAction],
+      actionChunkSize: k,
       confidence: maxProb,
       uncertainty: uncertainty,
       calibration: calib,

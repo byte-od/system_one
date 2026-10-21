@@ -385,6 +385,21 @@ def generate_web_manifest(
             meta["checkpoint_source"] = source_ckpt
             m_ver = re.search(r"_v(\d+)$", Path(source_ckpt).stem)
             meta["checkpoint_version"] = f"v{m_ver.group(1)}" if m_ver else "v1"
+            try:
+                from system1_engine.transfer.manager import KnowledgeTransferManager
+                ckpt_p = project_root / source_ckpt
+                if not ckpt_p.exists():
+                    found_p = find_latest_trained_checkpoint(meta.get("env_id", ""), project_root)
+                    if found_p:
+                        ckpt_p = Path(found_p)
+                if ckpt_p.exists():
+                    meta["action_chunk_size"] = KnowledgeTransferManager.detect_action_chunk_size(str(ckpt_p))
+                else:
+                    meta.setdefault("action_chunk_size", 1)
+            except Exception:
+                meta.setdefault("action_chunk_size", 1)
+        else:
+            meta.setdefault("action_chunk_size", 1)
 
         key = meta.get("key", onnx_path.stem)
         models_dict[key] = meta
@@ -471,10 +486,12 @@ def export_checkpoint_to_onnx(
     wrapped_env = UniversalS1Wrapper(raw_env)
     from system1_engine.transfer.manager import KnowledgeTransferManager
     trunk_type = KnowledgeTransferManager.detect_trunk_type(checkpoint_path)
+    action_chunk_size = KnowledgeTransferManager.detect_action_chunk_size(checkpoint_path, wrapped_env.action_space)
     agent = UniversalS1Agent(
         obs_space=wrapped_env.observation_space,
         action_space=wrapped_env.action_space,
         trunk_type=trunk_type,
+        action_chunk_size=action_chunk_size,
     )
 
     state_dict = ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt

@@ -32,7 +32,7 @@ class RecurrentPPOTrainer:
         gae_lambda: float = 0.95,
         clip_range: float = 0.2,
         value_coef: float = 0.05,
-        entropy_coef: float = 0.01,
+        entropy_coef: float = 0.015,
         max_grad_norm: float = 0.5,
         n_epochs: int = 4,
         rollout_steps: int = 2048,
@@ -63,9 +63,17 @@ class RecurrentPPOTrainer:
         sterility_sim_threshold: float = 0.85,
         sterility_penalty_scale: float = 2.0,
         sterility_step_increment: float = 1.0,
+        action_chunk_size: Optional[int] = None,
+        adaptive_chunk: bool = False,
+        adaptive_conf_threshold: float = 0.65,
+        adaptive_margin_threshold: float = 0.15,
     ) -> None:
         self.agent = agent.to(device)
         self.env = env
+        self.action_chunk_size = max(1, int(action_chunk_size or getattr(agent, "action_chunk_size", 1)))
+        self.adaptive_chunk = bool(adaptive_chunk)
+        self.adaptive_conf_threshold = float(adaptive_conf_threshold)
+        self.adaptive_margin_threshold = float(adaptive_margin_threshold)
         self.learning_rate = learning_rate
         self.gamma = gamma
         self.gae_lambda = gae_lambda
@@ -99,8 +107,8 @@ class RecurrentPPOTrainer:
         self.max_failures_per_depth = max(1, int(max_failures_per_depth))
         self.min_failures_per_depth = max(1, int(min_failures_per_depth))
 
-        # Suporte a exploração automática / homeostática no treino PPO (sem limite artificial, 0 à 1)
-        self._min_adaptive_scale = 0.08
+        # Suporte a exploração automática / homeostática no treino PPO (com piso seguro anti-colapso)
+        self._min_adaptive_scale = 0.25 if self.action_chunk_size > 1 else 0.08
         self._max_adaptive_scale = 1.00
         self._last_promotions: int = 0
         if isinstance(exploration_scale, str) and exploration_scale.lower() in ("auto", "adaptive", "homeostatic"):
@@ -112,7 +120,7 @@ class RecurrentPPOTrainer:
             self._recent_actions: deque[int] = deque(maxlen=6)
         else:
             self.is_auto_exploration = False
-            self.exploration_scale = float(np.clip(float(exploration_scale), 0.08, 1.0))
+            self.exploration_scale = float(np.clip(float(exploration_scale), self._min_adaptive_scale, 1.0))
             self._adaptive_scale = self.exploration_scale
             self._reward_ema = None
             self._stagnation_count = 0
@@ -136,7 +144,10 @@ class RecurrentPPOTrainer:
         # Rollout buffer
         is_discrete = isinstance(env.action_space, gym.spaces.Discrete)
         obs_shape = env.observation_space["obs"].shape
-        act_shape = () if is_discrete else env.action_space.shape
+        if self.action_chunk_size > 1:
+            act_shape = (self.action_chunk_size,) if is_discrete else (self.action_chunk_size, *env.action_space.shape)
+        else:
+            act_shape = () if is_discrete else env.action_space.shape
 
         self.is_vectorized = getattr(env, "is_vectorized", False)
         self.num_envs = getattr(env, "num_envs", 1)
@@ -277,6 +288,13 @@ class RecurrentPPOTrainer:
         self.best_depth_mean_return: float = -float("inf")
         self._rollout_tracked_depth: int = self.best_state_depth
 
+    @property
+    def effective_gamma(self) -> float:
+        """Effective discount factor across macro-actions in SMDP (gamma^k)."""
+        if self.action_chunk_size > 1:
+            return float(self.gamma ** self.action_chunk_size)
+        return float(self.gamma)
+
     def _get_current_curriculum_depth(self) -> int:
         """Retorna a profundidade ou nível curricular atual do ambiente (0 se não aplicável)."""
         raw_env = getattr(self.env, "unwrapped", self.env)
@@ -328,7 +346,7 @@ class RecurrentPPOTrainer:
                 for d in range(1, max_d_target + 1):
                     if has_curriculum_setter:
                         raw_env.set_curriculum_depth(d)
-                    max_ep_steps = min(getattr(raw_env, "max_steps", 40), max(20, d * 6))
+                    max_ep_steps = min(getattr(raw_env, "max_steps", 40), max(6, d + 2))
 
                     if self.is_vectorized:
                         E = self.num_envs
@@ -350,44 +368,50 @@ class RecurrentPPOTrainer:
                             dist, _, next_hx = self.agent.forward(input_dict, hx=hx, dones=None)
 
                             if self.agent.is_discrete:
-                                logits_sq = dist.logits[:, 0, :]
-                                probs = torch.softmax(logits_sq, dim=-1)
-                                sampled_probs = torch.softmax(logits_sq / 1.04, dim=-1)
-                                rand_draws = torch.rand(E, device=self.device)
-                                greedy_acts = torch.argmax(probs, dim=-1)
-                                stoch_acts = torch.multinomial(sampled_probs, num_samples=1).squeeze(-1)
-                                raw_acts = torch.where(rand_draws < 0.08, stoch_acts, greedy_acts)
-                                if E > 1:
-                                    raw_acts[0] = greedy_acts[0]
+                                if self.action_chunk_size > 1:
+                                    logits_sq = dist.logits.squeeze(1)
+                                    probs = torch.softmax(logits_sq, dim=-1)
+                                    greedy_acts = torch.argmax(probs, dim=-1)
+                                    env_action = greedy_acts.cpu().numpy()
+                                else:
+                                    logits_sq = dist.logits[:, 0, :]
+                                    probs = torch.softmax(logits_sq, dim=-1)
+                                    sampled_probs = torch.softmax(logits_sq / 1.04, dim=-1)
+                                    rand_draws = torch.rand(E, device=self.device)
+                                    greedy_acts = torch.argmax(probs, dim=-1)
+                                    stoch_acts = torch.multinomial(sampled_probs, num_samples=1).squeeze(-1)
+                                    raw_acts = torch.where(rand_draws < 0.08, stoch_acts, greedy_acts)
+                                    if E > 1:
+                                        raw_acts[0] = greedy_acts[0]
 
-                                env_action = raw_acts.cpu().numpy()
-                                for e in range(active_quota):
-                                    if not ep_active[e]:
-                                        continue
-                                    conf_e = float(probs[e, greedy_acts[e]].item())
-                                    avoid_e = set()
-                                    r_acts = recent_acts[e]
-                                    if inv_map is not None and len(r_acts) >= 1 and conf_e < 0.96:
-                                        inv_last = inv_map.get(r_acts[-1])
-                                        if inv_last is not None:
-                                            avoid_e.add(inv_last)
-                                    if len(r_acts) >= 3:
-                                        if r_acts[-1] == r_acts[-3]:
-                                            avoid_e.add(r_acts[-2])
-                                        elif r_acts[-1] == r_acts[-2] == r_acts[-3]:
-                                            avoid_e.add(r_acts[-1])
-                                        if inv_map is not None and conf_e < 0.95:
-                                            inv_a1 = inv_map.get(r_acts[-3])
-                                            inv_a2 = inv_map.get(r_acts[-2])
-                                            if inv_a1 is not None and inv_a2 is not None and r_acts[-1] == inv_a1:
-                                                avoid_e.add(inv_a2)
-                                    if int(env_action[e]) in avoid_e:
-                                        top_idxs = torch.argsort(probs[e], descending=True)
-                                        for alt_idx in top_idxs:
-                                            alt_a = int(alt_idx.item())
-                                            if alt_a not in avoid_e:
-                                                env_action[e] = alt_a
-                                                break
+                                    env_action = raw_acts.cpu().numpy()
+                                    for e in range(active_quota):
+                                        if not ep_active[e]:
+                                            continue
+                                        conf_e = float(probs[e, greedy_acts[e]].item())
+                                        avoid_e = set()
+                                        r_acts = recent_acts[e]
+                                        if inv_map is not None and len(r_acts) >= 1 and conf_e < 0.96:
+                                            inv_last = inv_map.get(r_acts[-1])
+                                            if inv_last is not None:
+                                                avoid_e.add(inv_last)
+                                        if len(r_acts) >= 3:
+                                            if r_acts[-1] == r_acts[-3]:
+                                                avoid_e.add(r_acts[-2])
+                                            elif r_acts[-1] == r_acts[-2] == r_acts[-3]:
+                                                avoid_e.add(r_acts[-1])
+                                            if inv_map is not None and conf_e < 0.95:
+                                                inv_a1 = inv_map.get(r_acts[-3])
+                                                inv_a2 = inv_map.get(r_acts[-2])
+                                                if inv_a1 is not None and inv_a2 is not None and r_acts[-1] == inv_a1:
+                                                    avoid_e.add(inv_a2)
+                                        if int(env_action[e]) in avoid_e:
+                                            top_idxs = torch.argsort(probs[e], descending=True)
+                                            for alt_idx in top_idxs:
+                                                alt_a = int(alt_idx.item())
+                                                if alt_a not in avoid_e:
+                                                    env_action[e] = alt_a
+                                                    break
                             else:
                                 env_action = dist.mean.squeeze(1).cpu().numpy()
 
@@ -402,8 +426,12 @@ class RecurrentPPOTrainer:
                                     if not self.env.is_visual and obs_dict.get("delta_obs") is not None
                                     else None
                                 )
-                                prev_act_v = int(obs_dict["prev_action"][e]) if self.agent.is_discrete else obs_dict["prev_action"][e].copy()
-                                act_v = int(env_action[e]) if self.agent.is_discrete else env_action[e].copy()
+                                if self.action_chunk_size > 1:
+                                    prev_act_v = int(obs_dict["prev_action"][e]) if np.isscalar(obs_dict["prev_action"][e]) else obs_dict["prev_action"][e].copy()
+                                    act_v = env_action[e].copy()
+                                else:
+                                    prev_act_v = int(obs_dict["prev_action"][e]) if self.agent.is_discrete else obs_dict["prev_action"][e].copy()
+                                    act_v = int(env_action[e]) if self.agent.is_discrete else env_action[e].copy()
                                 trajs[e].append(
                                     {
                                         "obs": obs_dict["obs"][e].copy(),
@@ -415,7 +443,7 @@ class RecurrentPPOTrainer:
                                     }
                                 )
                                 if self.agent.is_discrete:
-                                    recent_acts[e].append(int(act_v))
+                                    recent_acts[e].append(int(act_v[-1] if hasattr(act_v, '__len__') else act_v))
                                 if terminateds[e] or truncateds[e]:
                                     ep_active[e] = False
                                     info_e = infos[e] if isinstance(infos, (list, tuple)) and e < len(infos) else {}
@@ -506,7 +534,7 @@ class RecurrentPPOTrainer:
                                         traj_returns = np.zeros(T_traj, dtype=np.float32)
                                         running_r = 0.0
                                         for t_idx in reversed(range(T_traj)):
-                                            running_r = t_steps[t_idx]["reward"] + self.gamma * running_r
+                                            running_r = t_steps[t_idx]["reward"] + self.effective_gamma * running_r
                                             traj_returns[t_idx] = running_r
                                         self.sil_buffer.add(
                                             FrontierTransition(
@@ -601,7 +629,10 @@ class RecurrentPPOTrainer:
         stored_delta = np.empty((S, E, *obs_shape), dtype=np.float32) if not self.env.is_visual else None
         if self.agent.is_discrete:
             stored_prev_act = np.empty((S, E), dtype=np.int64)
-            stored_act = np.empty((S, E), dtype=np.int64)
+            if self.action_chunk_size > 1:
+                stored_act = np.empty((S, E, self.action_chunk_size), dtype=np.int64)
+            else:
+                stored_act = np.empty((S, E), dtype=np.int64)
         else:
             stored_prev_act = np.empty((S, E, *self.buffer.action_shape), dtype=np.float32)
             stored_act = np.empty((S, E, *self.buffer.action_shape), dtype=np.float32)
@@ -664,19 +695,31 @@ class RecurrentPPOTrainer:
                             if len(e_hist) >= 1:
                                 inv_a = inv_map.get(e_hist[-1])
                                 if inv_a is not None:
-                                    penalized_logits[e, 0, inv_a] -= 4.0
+                                    if self.action_chunk_size > 1:
+                                        penalized_logits[e, 0, 0, inv_a] -= 4.0
+                                    else:
+                                        penalized_logits[e, 0, inv_a] -= 4.0
                             if len(e_hist) >= 3:
                                 if e_hist[-1] == e_hist[-3]:
-                                    penalized_logits[e, 0, e_hist[-2]] -= 3.0
+                                    if self.action_chunk_size > 1:
+                                        penalized_logits[e, 0, 0, e_hist[-2]] -= 3.0
+                                    else:
+                                        penalized_logits[e, 0, e_hist[-2]] -= 3.0
                                 inv_a1 = inv_map.get(e_hist[-3])
                                 inv_a2 = inv_map.get(e_hist[-2])
                                 if inv_a1 is not None and inv_a2 is not None and e_hist[-1] == inv_a1:
-                                    penalized_logits[e, 0, inv_a2] -= 4.0
+                                    if self.action_chunk_size > 1:
+                                        penalized_logits[e, 0, 0, inv_a2] -= 4.0
+                                    else:
+                                        penalized_logits[e, 0, inv_a2] -= 4.0
                     else:
                         for e in range(E):
                             e_hist = self._vec_recent_actions[e]
                             if len(e_hist) >= 3 and e_hist[-1] == e_hist[-3]:
-                                penalized_logits[e, 0, e_hist[-2]] -= 3.0
+                                if self.action_chunk_size > 1:
+                                    penalized_logits[e, 0, 0, e_hist[-2]] -= 3.0
+                                else:
+                                    penalized_logits[e, 0, e_hist[-2]] -= 3.0
 
                     # Estratificação térmica por ambiente com cobertura garantida de 0 à 1 (Quality-Diverse Spectrum)
                     if hasattr(self, "_env_scale_multipliers") and self.num_envs >= 4:
@@ -689,6 +732,8 @@ class RecurrentPPOTrainer:
                             ).clamp(min=0.02, max=1.00)
                         else:
                             env_scales = dynamic_scales.clamp(min=0.02, max=1.00)
+                        if self.action_chunk_size > 1:
+                            env_scales = env_scales.unsqueeze(2)
                         scaled_logits = torch.nan_to_num(penalized_logits / env_scales, nan=0.0, posinf=35.0, neginf=-35.0).clamp(min=-35.0, max=35.0)
                     elif curr_scale != 1.0:
                         eff_scale = max(0.02, curr_scale)
@@ -699,11 +744,27 @@ class RecurrentPPOTrainer:
                     dist_sample = torch.distributions.Categorical(logits=scaled_logits)
                     action = dist_sample.sample()
                     log_prob = dist_sample.log_prob(action)
+                    if self.action_chunk_size > 1:
+                        log_prob = log_prob.sum(dim=-1)
                     env_action = action.squeeze(1).cpu().numpy()
 
-                    # Atualiza histórico de ações por ambiente
+                    # Chunking adaptativo por incerteza: aborta a execução aberta caso a confiança caia
+                    chunk_mask = None
+                    if self.adaptive_chunk and self.action_chunk_size > 1:
+                        probs_t = torch.softmax(scaled_logits.squeeze(1), dim=-1)
+                        top2_t, _ = torch.topk(probs_t, k=min(2, num_acts), dim=-1)
+                        confs_t = top2_t[..., 0]
+                        margins_t = top2_t[..., 0] - top2_t[..., 1]
+                        chunk_mask = np.ones((E, self.action_chunk_size), dtype=bool)
+                        for step_i in range(1, self.action_chunk_size):
+                            unc_mask = (confs_t[:, step_i] < self.adaptive_conf_threshold) | (margins_t[:, step_i] < self.adaptive_margin_threshold)
+                            unc_env_indices = torch.where(unc_mask)[0].cpu().numpy()
+                            chunk_mask[unc_env_indices, step_i:] = False
+
+                    # Atualiza histórico de ações por ambiente (registra a última ação executada)
                     for e in range(E):
-                        self._vec_recent_actions[e].append(int(env_action[e]))
+                        last_act_e = int(env_action[e, -1]) if self.action_chunk_size > 1 else int(env_action[e])
+                        self._vec_recent_actions[e].append(last_act_e)
                 else:
                     if hasattr(self, "_env_scale_multipliers") and self.num_envs >= 4:
                         dynamic_scales = curr_scale * self._env_scale_multipliers
@@ -715,19 +776,25 @@ class RecurrentPPOTrainer:
                             ).clamp(min=0.02, max=1.00)
                         else:
                             env_scales = dynamic_scales.clamp(min=0.02, max=1.00)
+                        if self.action_chunk_size > 1:
+                            env_scales = env_scales.unsqueeze(2)
                         scaled_std = dist.scale * env_scales
                     elif curr_scale != 1.0:
-                        eff_scale = max(0.02, curr_scale)
+                        eff_scale = max(0.20, curr_scale)
                         scaled_std = dist.scale * eff_scale
                     else:
                         scaled_std = dist.scale
 
                     dist_sample = torch.distributions.Normal(loc=dist.mean, scale=scaled_std)
                     action = dist_sample.sample()
-                    log_prob = dist_sample.log_prob(action).sum(dim=-1)
+                    if self.action_chunk_size > 1:
+                        log_prob = dist_sample.log_prob(action).sum(dim=(-2, -1))
+                    else:
+                        log_prob = dist_sample.log_prob(action).sum(dim=-1)
                     env_action = action.squeeze(1).cpu().numpy()
                     if isinstance(self.env.action_space, gym.spaces.Box):
                         env_action = np.clip(env_action, self.env.action_space.low, self.env.action_space.high)
+                    chunk_mask = None
 
                 lat_us = (time.perf_counter_ns() - t0) / 1000.0
 
@@ -736,15 +803,15 @@ class RecurrentPPOTrainer:
                         if self.agent.is_discrete:
                             probs = dist.probs[0, 0]
                             n_acts = probs.shape[-1]
-                            top_probs, _ = torch.topk(probs, k=min(2, n_acts))
-                            conf = float(top_probs[0].item())
-                            ent = float(-torch.sum(probs * torch.log(probs + 1e-8)).item())
+                            top_probs, _ = torch.topk(probs, k=min(2, n_acts), dim=-1)
+                            conf = float(top_probs[..., 0].mean().item())
+                            ent = float(-torch.sum(probs * torch.log(probs + 1e-8), dim=-1).mean().item())
                             max_ent = float(np.log(n_acts)) if n_acts > 1 else 1.0
                             unc = float(np.clip(ent / max_ent, 0.0, 1.0))
                         else:
                             std = dist.scale[0, 0].cpu().numpy()
                             std = np.clip(std, a_min=1e-6, a_max=100.0)
-                            ent = float(0.5 * np.sum(1.0 + np.log(2.0 * np.pi * (std ** 2))))
+                            ent = float(0.5 * np.mean(np.sum(1.0 + np.log(2.0 * np.pi * (std ** 2)), axis=-1)))
                             var = float(np.mean(std ** 2))
                             unc = float(np.clip(2.0 / (1.0 + np.exp(-var / 0.5)) - 1.0, 0.0, 1.0))
                             conf = float(np.clip(1.0 - unc, 0.0, 1.0))
@@ -759,8 +826,11 @@ class RecurrentPPOTrainer:
 
                 step_latents = self.agent.last_latent if self.sterility_memory is not None else None
 
-                # Environment step vetorizado
-                next_obs_dict, rewards, terminateds, truncateds, env_infos = self.env.step(env_action)
+                # Environment step vetorizado (com chunk_mask adaptativo)
+                try:
+                    next_obs_dict, rewards, terminateds, truncateds, env_infos = self.env.step(env_action, chunk_mask=chunk_mask)
+                except TypeError:
+                    next_obs_dict, rewards, terminateds, truncateds, env_infos = self.env.step(env_action)
                 dones = terminateds | truncateds
                 if stored_env_infos is not None:
                     stored_env_infos.append(env_infos)
@@ -804,7 +874,7 @@ class RecurrentPPOTrainer:
                         reward=float(rewards[0]),
                         done=bool(dones[0]),
                         info=primary_info,
-                        num_steps=self.num_envs,
+                        num_steps=self.num_envs * self.action_chunk_size,
                     )
 
                 stored_obs[step] = current_obs_dict["obs"]
@@ -820,7 +890,7 @@ class RecurrentPPOTrainer:
                 stored_logp[step] = log_prob.squeeze(1).cpu().numpy()
 
                 curr_ep_returns += rewards
-                self.total_steps += E
+                self.total_steps += E * self.action_chunk_size
 
                 done_indices = np.where(dones)[0]
                 if len(done_indices) > 0:
@@ -844,7 +914,7 @@ class RecurrentPPOTrainer:
                             traj_returns = np.zeros(T_traj, dtype=np.float32)
                             running_r = 0.0
                             for t_idx in reversed(range(T_traj)):
-                                running_r = traj_rews[t_idx] + self.gamma * running_r
+                                running_r = traj_rews[t_idx] + self.effective_gamma * running_r
                                 traj_returns[t_idx] = running_r
 
                             # Princípio Generalista: Decisão e Estado avaliados pelo Retorno (Simetria Positivo / Negativo)
@@ -954,8 +1024,8 @@ class RecurrentPPOTrainer:
                 next_non_terminal = 1.0 - done_es[:, t].astype(np.float32)
                 next_val = val_es[:, t + 1]
 
-            delta = rew_es[:, t] + self.gamma * next_val * next_non_terminal - val_es[:, t]
-            last_gae = delta + self.gamma * self.gae_lambda * next_non_terminal * last_gae
+            delta = rew_es[:, t] + self.effective_gamma * next_val * next_non_terminal - val_es[:, t]
+            last_gae = delta + self.effective_gamma * self.gae_lambda * next_non_terminal * last_gae
             adv_es[:, t] = last_gae
 
         ret_es = adv_es + val_es
@@ -969,7 +1039,10 @@ class RecurrentPPOTrainer:
         )
         if self.agent.is_discrete:
             flat_prev_act = stored_prev_act.T.reshape(E * S)
-            flat_act = stored_act.T.reshape(E * S)
+            if self.action_chunk_size > 1:
+                flat_act = stored_act.transpose(1, 0, *range(2, stored_act.ndim)).reshape(E * S, self.action_chunk_size)
+            else:
+                flat_act = stored_act.T.reshape(E * S)
         else:
             flat_prev_act = stored_prev_act.transpose(1, 0, *range(2, stored_prev_act.ndim)).reshape(E * S, *self.buffer.action_shape)
             flat_act = stored_act.transpose(1, 0, *range(2, stored_act.ndim)).reshape(E * S, *self.buffer.action_shape)
@@ -1196,7 +1269,7 @@ class RecurrentPPOTrainer:
                             logits = penalized_logits
 
                     if curr_scale != 1.0:
-                        eff_scale = max(0.02, curr_scale)
+                        eff_scale = max(0.20, curr_scale)
                         scaled_logits = torch.nan_to_num(logits / eff_scale, nan=0.0, posinf=35.0, neginf=-35.0).clamp(min=-35.0, max=35.0)
                         dist_sample = torch.distributions.Categorical(logits=scaled_logits)
                     elif self.is_auto_exploration and self._stagnation_count >= 3:
@@ -1205,36 +1278,59 @@ class RecurrentPPOTrainer:
                         dist_sample = dist
                     action = dist_sample.sample()
                     log_prob = dist_sample.log_prob(action)
-                    env_action = int(action.item())
+                    if self.action_chunk_size > 1:
+                        log_prob = log_prob.sum(dim=-1)
+                        env_action = action.squeeze(0).squeeze(0).cpu().numpy()
+                    else:
+                        env_action = int(action.item())
+
+                    # Chunking adaptativo por incerteza
+                    chunk_mask = None
+                    if self.adaptive_chunk and self.action_chunk_size > 1:
+                        probs_t = torch.softmax(scaled_logits.squeeze(0).squeeze(0), dim=-1)
+                        top2_t, _ = torch.topk(probs_t, k=min(2, num_acts), dim=-1)
+                        confs_t = top2_t[..., 0]
+                        margins_t = top2_t[..., 0] - top2_t[..., 1]
+                        chunk_mask = np.ones(self.action_chunk_size, dtype=bool)
+                        for step_i in range(1, self.action_chunk_size):
+                            if confs_t[step_i] < self.adaptive_conf_threshold or margins_t[step_i] < self.adaptive_margin_threshold:
+                                chunk_mask[step_i:] = False
+                                break
+
                     if self.is_auto_exploration:
-                        self._recent_actions.append(env_action)
+                        last_a = int(env_action[-1]) if self.action_chunk_size > 1 else int(env_action)
+                        self._recent_actions.append(last_a)
                 else:
                     if curr_scale != 1.0:
-                        eff_scale = max(0.02, curr_scale)
+                        eff_scale = max(0.20, curr_scale)
                         scaled_std = dist.scale * eff_scale
                         dist_sample = torch.distributions.Normal(loc=dist.mean, scale=scaled_std)
                     else:
                         dist_sample = dist
                     action = dist_sample.sample()
-                    log_prob = dist_sample.log_prob(action).sum(dim=-1)
+                    if self.action_chunk_size > 1:
+                        log_prob = dist_sample.log_prob(action).sum(dim=(-2, -1))
+                    else:
+                        log_prob = dist_sample.log_prob(action).sum(dim=-1)
                     env_action = action.squeeze(0).squeeze(0).cpu().numpy()
                     if isinstance(self.env.action_space, gym.spaces.Box):
                         env_action = np.clip(env_action, self.env.action_space.low, self.env.action_space.high)
+                    chunk_mask = None
                 lat_us = (time.perf_counter_ns() - t0) / 1000.0
 
                 if self.tracker is not None:
                     if self.agent.is_discrete:
                         probs = dist.probs.squeeze(0).squeeze(0)
                         n_acts = probs.shape[-1]
-                        top_probs, _ = torch.topk(probs, k=min(2, n_acts))
-                        conf = float(top_probs[0].item())
-                        ent = float(-torch.sum(probs * torch.log(probs + 1e-8)).item())
+                        top_probs, _ = torch.topk(probs, k=min(2, n_acts), dim=-1)
+                        conf = float(top_probs[..., 0].mean().item())
+                        ent = float(-torch.sum(probs * torch.log(probs + 1e-8), dim=-1).mean().item())
                         max_ent = float(np.log(n_acts)) if n_acts > 1 else 1.0
                         unc = float(np.clip(ent / max_ent, 0.0, 1.0))
                     else:
                         std = dist.scale.squeeze(0).squeeze(0).cpu().numpy()
                         std = np.clip(std, a_min=1e-6, a_max=100.0)
-                        ent = float(0.5 * np.sum(1.0 + np.log(2.0 * np.pi * (std ** 2))))
+                        ent = float(0.5 * np.mean(np.sum(1.0 + np.log(2.0 * np.pi * (std ** 2)), axis=-1)))
                         var = float(np.mean(std ** 2))
                         unc = float(np.clip(2.0 / (1.0 + np.exp(-var / 0.5)) - 1.0, 0.0, 1.0))
                         conf = float(np.clip(1.0 - unc, 0.0, 1.0))
@@ -1249,8 +1345,11 @@ class RecurrentPPOTrainer:
 
                 step_latent = self.agent.last_latent if self.sterility_memory is not None else None
 
-                # Environment step
-                next_obs_dict, reward, terminated, truncated, env_info = self.env.step(env_action)
+                # Environment step (com chunk_mask adaptativo)
+                try:
+                    next_obs_dict, reward, terminated, truncated, env_info = self.env.step(env_action, chunk_mask=chunk_mask)
+                except TypeError:
+                    next_obs_dict, reward, terminated, truncated, env_info = self.env.step(env_action)
                 done = terminated or truncated
                 last_env_info = env_info
                 if stored_step_infos is not None:
@@ -1283,10 +1382,15 @@ class RecurrentPPOTrainer:
                         self._active_single_trajectory.pop(0)
 
                 if self.tracker is not None:
-                    self.tracker.record_env_step(reward=reward, done=done, info=env_info)
+                    self.tracker.record_env_step(
+                        reward=reward,
+                        done=done,
+                        info=env_info,
+                        num_steps=self.action_chunk_size,
+                    )
 
                 self.curr_ep_return += reward
-                self.total_steps += 1
+                self.total_steps += self.action_chunk_size
 
                 if step_callback is not None:
                     step_callback()
@@ -1317,7 +1421,7 @@ class RecurrentPPOTrainer:
                         traj_returns = np.zeros(T_traj, dtype=np.float32)
                         running_r = 0.0
                         for t_idx in reversed(range(T_traj)):
-                            running_r = traj_rews[t_idx] + self.gamma * running_r
+                            running_r = traj_rews[t_idx] + self.effective_gamma * running_r
                             traj_returns[t_idx] = running_r
 
                         # Princípio Generalista: Decisão e Estado avaliados pelo Retorno (Simetria Positivo / Negativo)
@@ -1418,6 +1522,7 @@ class RecurrentPPOTrainer:
                 last_done=terminated,
                 gamma=self.gamma,
                 gae_lambda=self.gae_lambda,
+                action_chunk_size=self.action_chunk_size,
             )
 
 
@@ -1461,8 +1566,12 @@ class RecurrentPPOTrainer:
                         dist_eval = torch.distributions.Categorical(logits=scaled_logits)
                     else:
                         dist_eval = dist
-                    new_log_probs = dist_eval.log_prob(batch.actions)  # [B, T]
-                    entropy = dist_eval.entropy()                       # [B, T]
+                    if self.action_chunk_size > 1:
+                        new_log_probs = dist_eval.log_prob(batch.actions).sum(dim=-1)  # [B, T]
+                        entropy = dist_eval.entropy().mean(dim=-1)                      # [B, T]
+                    else:
+                        new_log_probs = dist_eval.log_prob(batch.actions)  # [B, T]
+                        entropy = dist_eval.entropy()                       # [B, T]
                 else:
                     if self.exploration_scale != 1.0:
                         eff_scale = max(0.08, float(self.exploration_scale))
@@ -1470,8 +1579,12 @@ class RecurrentPPOTrainer:
                         dist_eval = torch.distributions.Normal(loc=dist.mean, scale=scaled_std)
                     else:
                         dist_eval = dist
-                    new_log_probs = dist_eval.log_prob(batch.actions).sum(dim=-1)
-                    entropy = dist_eval.entropy().sum(dim=-1)
+                    if self.action_chunk_size > 1:
+                        new_log_probs = dist_eval.log_prob(batch.actions).sum(dim=(-2, -1))
+                        entropy = dist_eval.entropy().sum(dim=(-2, -1)) / self.action_chunk_size
+                    else:
+                        new_log_probs = dist_eval.log_prob(batch.actions).sum(dim=-1)
+                        entropy = dist_eval.entropy().sum(dim=-1)
 
                 # Ratio
                 ratio = torch.exp(new_log_probs - batch.old_log_probs)
@@ -1559,9 +1672,15 @@ class RecurrentPPOTrainer:
                 sil_adv = torch.clamp(sil_ret - sil_val_sq.detach(), min=0.0)
 
                 if self.agent.is_discrete:
-                    sil_logp = sil_dist.log_prob(sil_batch["actions"])
+                    if self.action_chunk_size > 1:
+                        sil_logp = sil_dist.log_prob(sil_batch["actions"]).sum(dim=-1)
+                    else:
+                        sil_logp = sil_dist.log_prob(sil_batch["actions"])
                 else:
-                    sil_logp = sil_dist.log_prob(sil_batch["actions"]).sum(dim=-1)
+                    if self.action_chunk_size > 1:
+                        sil_logp = sil_dist.log_prob(sil_batch["actions"]).sum(dim=(-2, -1))
+                    else:
+                        sil_logp = sil_dist.log_prob(sil_batch["actions"]).sum(dim=-1)
 
                 denom = sil_mask.sum().clamp(min=1.0)
                 sil_policy_loss = -(sil_logp * sil_adv * sil_mask).sum() / denom
@@ -1608,11 +1727,19 @@ class RecurrentPPOTrainer:
                 loss_dist, _, _ = self.agent(loss_in, hx=loss_batch["hx"], dones=loss_batch["dones"])
 
                 if self.agent.is_discrete:
-                    win_logp = win_dist.log_prob(win_batch["actions"])
-                    loss_logp = loss_dist.log_prob(loss_batch["actions"])
+                    if self.action_chunk_size > 1:
+                        win_logp = win_dist.log_prob(win_batch["actions"]).sum(dim=-1)
+                        loss_logp = loss_dist.log_prob(loss_batch["actions"]).sum(dim=-1)
+                    else:
+                        win_logp = win_dist.log_prob(win_batch["actions"])
+                        loss_logp = loss_dist.log_prob(loss_batch["actions"])
                 else:
-                    win_logp = win_dist.log_prob(win_batch["actions"]).sum(dim=-1)
-                    loss_logp = loss_dist.log_prob(loss_batch["actions"]).sum(dim=-1)
+                    if self.action_chunk_size > 1:
+                        win_logp = win_dist.log_prob(win_batch["actions"]).sum(dim=(-2, -1))
+                        loss_logp = loss_dist.log_prob(loss_batch["actions"]).sum(dim=(-2, -1))
+                    else:
+                        win_logp = win_dist.log_prob(win_batch["actions"]).sum(dim=-1)
+                        loss_logp = loss_dist.log_prob(loss_batch["actions"]).sum(dim=-1)
 
                 win_ref_logp = win_batch["old_log_probs"]
                 loss_ref_logp = loss_batch["old_log_probs"]

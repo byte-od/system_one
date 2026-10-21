@@ -612,7 +612,7 @@ class RubiksCubeEnv(gym.Env):
         max_depth: Optional[int] = None,
         target_success_rate: float = 0.90,
         curriculum_window: int = 64,
-        mixed_replay_rate: float = 0.05,
+        mixed_replay_rate: float = 0.15,
     ) -> None:
         super().__init__()
         self.render_mode = render_mode
@@ -853,7 +853,7 @@ class RubiksCubeMacroEnv(gym.Env):
         max_depth: Optional[int] = None,
         target_success_rate: float = 0.90,
         curriculum_window: int = 64,
-        mixed_replay_rate: float = 0.05,
+        mixed_replay_rate: float = 0.15,
     ) -> None:
         super().__init__()
         self.render_mode = render_mode
@@ -1240,7 +1240,7 @@ class VectorizedRubiksEnv(gym.Env):
         return np.stack(obs_list, axis=0), InfoList(info_list)
 
     def step(
-        self, actions: Any
+        self, actions: Any, active_mask: Optional[np.ndarray] = None
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, InfoList]:
         if hasattr(actions, "cpu"):
             actions = actions.cpu().numpy()
@@ -1263,6 +1263,21 @@ class VectorizedRubiksEnv(gym.Env):
         any_promoted = False
 
         for i, env in enumerate(self.envs):
+            if active_mask is not None and not active_mask[i]:
+                # Preserva o estado do ambiente inativo sem executar rotações residuais
+                next_obs_list.append(env.core.get_one_hot())
+                rewards[i] = 0.0
+                terminateds[i] = False
+                truncateds[i] = False
+                info_list.append({
+                    "aligned_stickers": env.core.get_aligned_count(),
+                    "score": env._prev_score,
+                    "is_solved": env.core.is_solved(),
+                    "current_depth": env.current_depth,
+                    "scramble_depth": getattr(env, "_episode_depth", env.current_depth),
+                })
+                continue
+
             act_i = int(act_arr[i])
             obs, rew, term, trunc, info = env.step(act_i)
             if term or trunc:

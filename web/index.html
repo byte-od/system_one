@@ -2092,9 +2092,18 @@
           sim.applyMacro(actName);
           document.getElementById('status-desc').innerText = `Macro: ${actName} (Passo ${sim.steps})`;
         } else {
-          actName = System1.RubiksCubeSim.ATOMIC_MOVES[decision.action] || `Giro ${decision.action}`;
-          sim.applyAtomic(actName, true);
-          document.getElementById('status-desc').innerText = `Giro Atômico: ${actName} (Passo ${sim.steps})`;
+          if (decision.chunk && decision.chunk.length > 1) {
+            const moveNames = decision.chunk.map(a => (System1 && System1.RubiksCubeSim && System1.RubiksCubeSim.ATOMIC_MOVES) ? (System1.RubiksCubeSim.ATOMIC_MOVES[a] || `Giro ${a}`) : `Giro ${a}`);
+            for (let i = 0; i < moveNames.length; i++) {
+              sim.applyAtomic(moveNames[i], i === moveNames.length - 1);
+            }
+            actName = moveNames.join(', ');
+            document.getElementById('status-desc').innerText = `🧩 Chunk (${decision.chunk.length}): [${actName}] (Passo ${sim.steps})`;
+          } else {
+            actName = System1.RubiksCubeSim.ATOMIC_MOVES[decision.action] || `Giro ${decision.action}`;
+            sim.applyAtomic(actName, true);
+            document.getElementById('status-desc').innerText = `Giro Atômico: ${actName} (Passo ${sim.steps})`;
+          }
         }
 
         if (!window.visitedStates) window.visitedStates = [];

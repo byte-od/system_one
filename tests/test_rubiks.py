@@ -214,6 +214,25 @@ class TestRubiksGymEnvironments:
         assert env.current_depth == 2
         assert info["current_depth"] == 2
 
+    def test_curriculum_elastic_step_budget(self):
+        """Valida que o currículo usa orçamento elástico max(15, D * 5) passos em tentativas não resolvidas."""
+        env = RubiksCubeEnv(curriculum=True, min_depth=2, max_steps=40)
+        env.reset()
+        assert env.current_depth == 2
+
+        # Executa passos arbitrários que não resolvem o cubo
+        # Para depth=2, eff_max_steps = max(15, 2 * 5) = 15 passos
+        for step_i in range(1, 15):
+            _, _, term, trunc, _ = env.step(0)  # Move U
+            if term:
+                break
+            assert trunc is False, f"Não deveria truncar antes de 15 passos (passo {step_i})"
+
+        # No 15º passo, deve truncar se não foi resolvido
+        if not term:
+            _, _, term, trunc, _ = env.step(0)
+            assert trunc is True, "Deveria truncar exatamente no passo 15 (max(15, D*5))"
+
 
 class TestRubiksSystemOneIntegration:
     """Valida a integração completa com o UniversalS1Agent e o loop de PPO."""
@@ -468,5 +487,9 @@ class TestRubiksSystemOneIntegration:
         # 4. Com mixed_replay booleano legado (False -> 0.0)
         env4 = build_hud_env("RubiksCube-v0", is_training=True, config={"mixed_replay": False})
         assert env4.env.unwrapped.envs[0].mixed_replay_rate == 0.0
+
+        # 5. Padrão atualizado v15: 0.15 (15%)
+        env5 = build_hud_env("RubiksCube-v0", is_training=True)
+        assert env5.env.unwrapped.envs[0].mixed_replay_rate == 0.15
 
 

@@ -103,7 +103,10 @@ class RecurrentRolloutBuffer:
 
         if isinstance(action, torch.Tensor):
             if self.is_discrete:
-                self.actions.append(int(action.item()))
+                if action.numel() > 1:
+                    self.actions.append(action.cpu().numpy().astype(np.int64))
+                else:
+                    self.actions.append(int(action.item()))
             else:
                 self.actions.append(action.cpu().numpy())
         else:
@@ -126,13 +129,15 @@ class RecurrentRolloutBuffer:
         last_done: bool,
         gamma: float = 0.99,
         gae_lambda: float = 0.95,
+        action_chunk_size: int = 1,
     ) -> None:
-        """Computes Generalized Advantage Estimation (GAE) and target returns."""
+        """Computes Generalized Advantage Estimation (GAE) and target returns under SMDP."""
         assert self.step_idx == self.buffer_size, (
             f"Buffer not full: {self.step_idx}/{self.buffer_size}"
         )
         self.advantages = np.zeros(self.buffer_size, dtype=np.float32)
         last_gae = 0.0
+        eff_gamma = float(gamma ** max(1, int(action_chunk_size)))
 
         for t in reversed(range(self.buffer_size)):
             if t == self.buffer_size - 1:
@@ -142,8 +147,8 @@ class RecurrentRolloutBuffer:
                 next_non_terminal = 1.0 - float(self.dones[t])
                 next_value = self.values[t + 1]
 
-            delta = self.rewards[t] + gamma * next_value * next_non_terminal - self.values[t]
-            last_gae = delta + gamma * gae_lambda * next_non_terminal * last_gae
+            delta = self.rewards[t] + eff_gamma * next_value * next_non_terminal - self.values[t]
+            last_gae = delta + eff_gamma * gae_lambda * next_non_terminal * last_gae
             self.advantages[t] = last_gae
 
         self.returns = self.advantages + np.asarray(self.values, dtype=np.float32)
@@ -646,7 +651,12 @@ class SuccessReplayBuffer:
         b_delta = np.zeros((k, max_len, *self.obs_shape), dtype=np.float32) if has_delta else None
 
         act_dtype = np.int64 if self.is_discrete else np.float32
-        b_prev_act = np.zeros((k, max_len, *self.action_shape), dtype=act_dtype)
+        if self.is_discrete:
+            b_prev_act = np.zeros((k, max_len), dtype=np.int64)
+        elif len(self.action_shape) > 1 and self.action_shape[0] > 1:
+            b_prev_act = np.zeros((k, max_len, *self.action_shape[1:]), dtype=np.float32)
+        else:
+            b_prev_act = np.zeros((k, max_len, *self.action_shape), dtype=act_dtype)
         b_prev_rew = np.zeros((k, max_len, 1), dtype=np.float32)
         b_act = np.zeros((k, max_len, *self.action_shape), dtype=act_dtype)
         b_ret = np.zeros((k, max_len), dtype=np.float32)

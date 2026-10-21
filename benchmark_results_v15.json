@@ -1,0 +1,72 @@
+{
+  "1": {
+    "win_rate": 100.0,
+    "avg_steps_solved": 1.0,
+    "avg_confidence": 99.9,
+    "avg_entropy": 0.011,
+    "avg_latency_us": 3513.2
+  },
+  "2": {
+    "win_rate": 100.0,
+    "avg_steps_solved": 2.0,
+    "avg_confidence": 97.6,
+    "avg_entropy": 0.065,
+    "avg_latency_us": 2366.2
+  },
+  "3": {
+    "win_rate": 100.0,
+    "avg_steps_solved": 2.92,
+    "avg_confidence": 97.0,
+    "avg_entropy": 0.075,
+    "avg_latency_us": 2331.2
+  },
+  "4": {
+    "win_rate": 100.0,
+    "avg_steps_solved": 3.96,
+    "avg_confidence": 97.0,
+    "avg_entropy": 0.079,
+    "avg_latency_us": 2323.7
+  },
+  "5": {
+    "win_rate": 100.0,
+    "avg_steps_solved": 4.96,
+    "avg_confidence": 96.1,
+    "avg_entropy": 0.108,
+    "avg_latency_us": 2329.2
+  },
+  "6": {
+    "win_rate": 84.0,
+    "avg_steps_solved": 5.86,
+    "avg_confidence": 83.5,
+    "avg_entropy": 0.531,
+    "avg_latency_us": 2424.5
+  },
+  "7": {
+    "win_rate": 57.99999999999999,
+    "avg_steps_solved": 6.93,
+    "avg_confidence": 75.8,
+    "avg_entropy": 0.791,
+    "avg_latency_us": 2275.3
+  },
+  "8": {
+    "win_rate": 36.0,
+    "avg_steps_solved": 7.67,
+    "avg_confidence": 68.8,
+    "avg_entropy": 1.012,
+    "avg_latency_us": 2414.8
+  },
+  "9": {
+    "win_rate": 22.0,
+    "avg_steps_solved": 8.64,
+    "avg_confidence": 63.4,
+    "avg_entropy": 1.172,
+    "avg_latency_us": 2380.8
+  },
+  "10": {
+    "win_rate": 12.0,
+    "avg_steps_solved": 9.67,
+    "avg_confidence": 60.1,
+    "avg_entropy": 1.262,
+    "avg_latency_us": 2386.0
+  }
+}

@@ -122,6 +122,7 @@ class HUDServer:
                     "best_return_depth": meta.get("best_return_depth"),
                     "depth": meta.get("depth"),
                     "trunk_type": meta.get("trunk_type", "classic"),
+                    "action_chunk_size": meta.get("action_chunk_size", 1),
                 })
             except Exception:
                 results.append({"path": path, "filename": os.path.basename(path), "size_mb": 0.0, "mtime": "—"})
@@ -265,6 +266,18 @@ class HUDServer:
 
     def update_telemetry(self, data: Dict[str, Any]) -> None:
         with self._lock:
+            prev_d = self.latest_telemetry.get("curriculum_depth")
+            prev_p = self.latest_telemetry.get("curriculum_promotions", 0)
+            new_d = data.get("curriculum_depth")
+            new_p = data.get("curriculum_promotions", 0)
+            if (prev_d is not None and new_d is not None and new_d != prev_d) or (
+                new_p is not None and prev_p is not None and new_p > prev_p
+            ):
+                self.latest_telemetry["curriculum_depth_best_return"] = None
+                self.latest_telemetry["curriculum_depth_best_success_rate"] = None
+                self.latest_telemetry["curriculum_depth_min_success_rate"] = None
+                self.latest_telemetry["curriculum_success_rate"] = 0.0
+
             self.latest_telemetry.update(data)
 
     def reset_telemetry(self) -> None:

@@ -485,6 +485,65 @@ def test_hud_ant_evaluation_with_eval_action_mode():
         assert any("Estocástica Calibrada" in line for line in logs)
 
 
+def test_tracker_curriculum_depth_min_max_reset():
+    """Garante que a mudança de dimensão/profundidade curricular reseta min/max de retorno e win rate."""
+    from system1_engine.telemetry.tracker import LiveStatsTracker
+
+    tracker = LiveStatsTracker()
+
+    # D1: modelo atinge 100% de vitórias
+    tracker.record_env_step(
+        reward=10.0,
+        done=True,
+        info={"current_depth": 1, "curriculum_success_rate": 1.0, "curriculum_promotions": 0},
+    )
+    snap1 = tracker.snapshot()
+    assert snap1["curriculum_depth"] == 1
+    assert snap1["curriculum_success_rate"] == 1.0
+    assert snap1["curriculum_depth_best_success_rate"] == 1.0
+
+    # Promoção para D2: novos patamares devem resetar registros anteriores
+    tracker.record_env_step(
+        reward=1.0,
+        done=False,
+        info={"current_depth": 2, "curriculum_promotions": 1},
+    )
+    snap2 = tracker.snapshot()
+    assert snap2["curriculum_depth"] == 2
+    assert snap2["curriculum_promotions"] == 1
+    assert snap2["curriculum_success_rate"] == 0.0
+    assert snap2["curriculum_depth_best_success_rate"] is None
+    assert snap2["curriculum_depth_min_success_rate"] is None
+    assert snap2["curriculum_depth_best_return"] is None
+
+    # Novos passos em D2: registram apenas a performance de D2
+    tracker.record_env_step(
+        reward=2.5,
+        done=True,
+        info={"current_depth": 2, "curriculum_success_rate": 0.35, "curriculum_promotions": 1},
+    )
+    snap3 = tracker.snapshot()
+    assert snap3["curriculum_depth"] == 2
+    assert snap3["curriculum_success_rate"] == 0.35
+    assert snap3["curriculum_depth_best_success_rate"] == 0.35
+    assert snap3["curriculum_depth_min_success_rate"] == 0.35
+
+    # Promoção para D3 onde o pacote de info ainda contém a taxa residual de 1.0 da vitória de D2:
+    # Não deve contaminar a dimensão nova D3 com o teto de 100% da anterior
+    tracker.record_env_step(
+        reward=10.0,
+        done=True,
+        info={"current_depth": 3, "curriculum_promotions": 2, "curriculum_success_rate": 1.0},
+    )
+    snap4 = tracker.snapshot()
+    assert snap4["curriculum_depth"] == 3
+    assert snap4["curriculum_promotions"] == 2
+    assert snap4["curriculum_success_rate"] == 0.0
+    assert snap4["curriculum_depth_best_success_rate"] is None
+    assert snap4["curriculum_depth_min_success_rate"] is None
+
+
+
 
 
 

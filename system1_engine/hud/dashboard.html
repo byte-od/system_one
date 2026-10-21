@@ -486,24 +486,144 @@
       box-shadow: inset 0 3px 12px var(--vessel-glow), 0 0 16px var(--vessel-glow);
     }
 
-    /* Bolhas subindo suavemente estritamente contidas dentro do fluido líquido */
+    /* Bolhas ultra-realistas com refração esférica, brilho especular, oscilação hidrodinâmica e dissipação */
     .vessel-bubble {
       position: absolute;
-      bottom: 2px;
+      bottom: -6px;
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.45);
-      box-shadow: 0 0 4px rgba(255, 255, 255, 0.7);
       pointer-events: none;
-      animation: bubbleFloat 3s infinite ease-in;
+      background: radial-gradient(circle at 35% 28%,
+        rgba(255, 255, 255, 0.95) 0%,
+        rgba(255, 255, 255, 0.45) 20%,
+        rgba(255, 255, 255, 0.08) 55%,
+        rgba(255, 255, 255, 0.35) 85%,
+        rgba(255, 255, 255, 0.7) 100%
+      );
+      border: 0.5px solid rgba(255, 255, 255, 0.4);
+      box-shadow:
+        inset 0.5px 1px 1.5px rgba(255, 255, 255, 0.85),
+        inset -0.5px -1px 1px rgba(0, 0, 0, 0.25),
+        0 0 4px var(--vessel-glow, rgba(255, 255, 255, 0.35));
+      will-change: transform, opacity, bottom;
     }
-    .vessel-bubble.b1 { left: 25%; width: 4px; height: 4px; animation-duration: 2.8s; animation-delay: 0.2s; }
-    .vessel-bubble.b2 { left: 60%; width: 5px; height: 5px; animation-duration: 3.5s; animation-delay: 1.2s; }
-    .vessel-bubble.b3 { left: 80%; width: 3px; height: 3px; animation-duration: 2.2s; animation-delay: 0.7s; }
-    @keyframes bubbleFloat {
-      0% { bottom: 2px; transform: scale(0.6); opacity: 0; }
-      15% { opacity: 0.8; }
-      75% { opacity: 0.6; }
-      100% { bottom: 85%; transform: scale(1.1); opacity: 0; }
+    .vessel-bubble::after {
+      content: '';
+      position: absolute;
+      top: 16%;
+      left: 18%;
+      width: 28%;
+      height: 28%;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.95);
+      filter: blur(0.2px);
+    }
+    .vessel-bubble.b1 { left: 18%; width: 4.5px; height: 4.5px; animation: bubbleRisePathA 3.4s infinite ease-in; animation-delay: 0.2s; }
+    .vessel-bubble.b2 { left: 42%; width: 2.5px; height: 2.5px; animation: bubbleRisePathC 2.5s infinite ease-in; animation-delay: 1.1s; }
+    .vessel-bubble.b3 { left: 68%; width: 5.5px; height: 5.5px; animation: bubbleRisePathB 4.0s infinite ease-in; animation-delay: 0.6s; }
+    .vessel-bubble.b4 { left: 86%; width: 2.0px; height: 2.0px; animation: bubbleRisePathC 2.2s infinite ease-in; animation-delay: 1.8s; }
+    .vessel-bubble.b5 { left: 30%; width: 3.5px; height: 3.5px; animation: bubbleRisePathB 3.2s infinite ease-in; animation-delay: 2.3s; }
+
+    @keyframes bubbleRisePathA {
+      0% {
+        bottom: -4px;
+        transform: translate3d(0, 0, 0) scale(0.65, 0.75);
+        opacity: 0;
+      }
+      10% {
+        opacity: 0.88;
+        transform: translate3d(1.5px, 0, 0) scale(0.85, 0.8);
+      }
+      35% {
+        transform: translate3d(-2px, 0, 0) scale(1.05, 0.95);
+      }
+      65% {
+        transform: translate3d(2.5px, 0, 0) scale(0.96, 1.04);
+        opacity: 0.85;
+      }
+      85% {
+        bottom: 84%;
+        transform: translate3d(-1px, 0, 0) scale(1.08, 0.96);
+        opacity: 0.8;
+      }
+      94% {
+        bottom: 93%;
+        transform: translate3d(0.5px, 0, 0) scale(1.2, 0.9);
+        opacity: 0.55;
+      }
+      98% {
+        bottom: 96%;
+        transform: translate3d(0, 0, 0) scale(1.4, 0.8);
+        opacity: 0.25;
+      }
+      100% {
+        bottom: 98%;
+        transform: translate3d(0, 0, 0) scale(1.6, 0.6);
+        opacity: 0;
+      }
+    }
+
+    @keyframes bubbleRisePathB {
+      0% {
+        bottom: -5px;
+        transform: translate3d(0, 0, 0) scale(0.55, 0.65);
+        opacity: 0;
+      }
+      12% {
+        opacity: 0.9;
+        transform: translate3d(-2px, 0, 0) scale(0.85, 0.8);
+      }
+      40% {
+        transform: translate3d(3px, 0, 0) scale(1.04, 0.96);
+      }
+      70% {
+        transform: translate3d(-2.5px, 0, 0) scale(0.95, 1.05);
+        opacity: 0.85;
+      }
+      88% {
+        bottom: 86%;
+        transform: translate3d(1.5px, 0, 0) scale(1.12, 0.95);
+        opacity: 0.75;
+      }
+      95% {
+        bottom: 94%;
+        transform: translate3d(0, 0, 0) scale(1.3, 0.85);
+        opacity: 0.35;
+      }
+      100% {
+        bottom: 97%;
+        transform: translate3d(0, 0, 0) scale(1.55, 0.7);
+        opacity: 0;
+      }
+    }
+
+    @keyframes bubbleRisePathC {
+      0% {
+        bottom: -3px;
+        transform: translate3d(0, 0, 0) scale(0.6);
+        opacity: 0;
+      }
+      15% {
+        opacity: 0.95;
+        transform: translate3d(1px, 0, 0) scale(0.9);
+      }
+      45% {
+        transform: translate3d(-1.5px, 0, 0) scale(1.0);
+      }
+      75% {
+        bottom: 80%;
+        transform: translate3d(1.5px, 0, 0) scale(1.05);
+        opacity: 0.8;
+      }
+      92% {
+        bottom: 92%;
+        transform: translate3d(-0.5px, 0, 0) scale(1.2);
+        opacity: 0.5;
+      }
+      100% {
+        bottom: 97%;
+        transform: translate3d(0, 0, 0) scale(1.45);
+        opacity: 0;
+      }
     }
 
     /* Camada de conteúdo que fica acima do líquido */
@@ -676,6 +796,9 @@
       <div id="hud-model-badge" class="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-950/80 border border-amber-500/70 text-amber-300 font-mono text-[11px] font-bold shadow-sm" title="Modelo ativo no motor System 1">
         <span>⚡ Modelo:</span> <span id="hud-model-name" class="text-white">RubiksCube-v0</span>
       </div>
+      <div id="hud-act-badge" class="hidden flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-indigo-950/80 border border-indigo-500/70 text-indigo-300 font-mono text-[11px] font-bold shadow-sm" title="Action Chunking Temporal (ACT) ativo">
+        <span>🧩 ACT:</span> <span id="hud-act-k" class="text-white font-extrabold">k=1</span>
+      </div>
       <div id="device-hw-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-gray-900 text-cyan-400 border border-gray-800 flex items-center gap-1.5" title="Hardware detectado pelo motor System 1">
         <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
         <span id="device-hw-text">Detectando...</span>
@@ -800,6 +923,8 @@
               <div class="vessel-bubble b1"></div>
               <div class="vessel-bubble b2"></div>
               <div class="vessel-bubble b3"></div>
+              <div class="vessel-bubble b4"></div>
+              <div class="vessel-bubble b5"></div>
             </div>
           </div>
           <div class="vessel-content">
@@ -883,6 +1008,8 @@
               <div class="vessel-bubble b1"></div>
               <div class="vessel-bubble b2"></div>
               <div class="vessel-bubble b3"></div>
+              <div class="vessel-bubble b4"></div>
+              <div class="vessel-bubble b5"></div>
             </div>
           </div>
           <div class="vessel-content">
@@ -952,6 +1079,8 @@
               <div class="vessel-bubble b1"></div>
               <div class="vessel-bubble b2"></div>
               <div class="vessel-bubble b3"></div>
+              <div class="vessel-bubble b4"></div>
+              <div class="vessel-bubble b5"></div>
             </div>
           </div>
           <div class="vessel-content">
@@ -1024,6 +1153,8 @@
               <div class="vessel-bubble b1"></div>
               <div class="vessel-bubble b2"></div>
               <div class="vessel-bubble b3"></div>
+              <div class="vessel-bubble b4"></div>
+              <div class="vessel-bubble b5"></div>
             </div>
           </div>
           <div class="vessel-content">
@@ -1093,6 +1224,8 @@
               <div class="vessel-bubble b1"></div>
               <div class="vessel-bubble b2"></div>
               <div class="vessel-bubble b3"></div>
+              <div class="vessel-bubble b4"></div>
+              <div class="vessel-bubble b5"></div>
             </div>
           </div>
           <div class="vessel-content">
@@ -1179,6 +1312,8 @@
               <div class="vessel-bubble b1"></div>
               <div class="vessel-bubble b2"></div>
               <div class="vessel-bubble b3"></div>
+              <div class="vessel-bubble b4"></div>
+              <div class="vessel-bubble b5"></div>
             </div>
           </div>
           <div class="vessel-content">
@@ -1638,15 +1773,18 @@
             <div class="flex items-center gap-1 text-amber-300 font-semibold">
               <span>🔄 Mixed Replay</span>
               <span class="tooltip-wrap tooltip-down tooltip-left">
-                <span class="tooltip-icon" title="Taxa de amostragem de níveis anteriores durante o currículo. Reduzido para 5% ou 0% para concentrar 95-100% dos passos na profundidade de fronteira.">ⓘ</span>
-                <span class="tooltip-bubble"><strong>Mixed Replay</strong>: Controla quanto tempo o treino gasta em profundidades já consolidadas.<br>• <strong>5% (Padrão S1)</strong>: 95% do tempo focado na fronteira de avanço.<br>• <strong>0% (Desativado)</strong>: 100% na fronteira máxima, acelerando a quebra de platôs.</span>
+                <span class="tooltip-icon" title="Taxa de amostragem de níveis anteriores durante o currículo. 15% garante fluxo contínuo de vitórias D4-D6 alimentando o buffer SIL sem desnutrir a função de valor.">ⓘ</span>
+                <span class="tooltip-bubble"><strong>Mixed Replay</strong>: Controla quanto tempo o treino gasta em profundidades já consolidadas.<br>• <strong>15% (Recomendado D7+)</strong>: 15% em profundidades dominadas (D4-D6) alimentando o buffer SIL e estabilizando a rede de valor.<br>• <strong>5%</strong>: Foco quase total na fronteira.<br>• <strong>0%</strong>: 100% na fronteira máxima.</span>
               </span>
             </div>
-            <div class="flex items-center gap-1">
-              <button type="button" onclick="setMixedReplayRate(0.0)" id="btn-replay-0" class="badge-btn">0% (Off)</button>
-              <button type="button" onclick="setMixedReplayRate(0.05)" id="btn-replay-5" class="badge-btn text-cyan-300 font-bold border-cyan-700 bg-cyan-950">5% (Min)</button>
-              <button type="button" onclick="setMixedReplayRate(0.10)" id="btn-replay-10" class="badge-btn">10%</button>
-              <input type="hidden" id="cfg-mixed-replay-rate" value="0.05" />
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="setMixedReplayRate(0.0)" id="btn-replay-0" class="badge-btn">0%</button>
+              <button type="button" onclick="setMixedReplayRate(0.05)" id="btn-replay-5" class="badge-btn">5%</button>
+              <button type="button" onclick="setMixedReplayRate(0.15)" id="btn-replay-15" class="badge-btn">15%</button>
+              <button type="button" onclick="setMixedReplayRate(0.25)" id="btn-replay-25" class="badge-btn text-cyan-300 font-bold border-cyan-700 bg-cyan-950">25%</button>
+              <div class="flex items-center gap-1 ml-1 border-l border-amber-900/60 pl-1.5">
+                <input type="number" id="cfg-mixed-replay-rate" value="0.25" step="0.01" min="0" max="1.0" oninput="onMixedReplayInput(this.value)" class="hud-input w-14 text-center font-mono font-bold text-amber-200 text-[10px] py-0.5" />
+              </div>
             </div>
           </div>
         </div>
@@ -1809,14 +1947,21 @@
           <div class="flex flex-col gap-2.5 mt-2 pt-2 border-t border-gray-800/60">
             <div class="grid grid-cols-2 gap-2 text-xs">
               <div>
-                <div class="flex items-center gap-1 mb-0.5">
-                  <span class="text-[10px] text-gray-400 block">Entropia (--entropy-coef)</span>
-                  <span class="tooltip-wrap tooltip-right">
-                    <span class="tooltip-icon" title="Bônus de entropia no PPO para encorajar exploração do agente.">ⓘ</span>
-                    <span class="tooltip-bubble"><strong>--entropy-coef</strong>: Bônus de entropia da política.</span>
-                  </span>
+                <div class="flex justify-between items-center mb-0.5">
+                  <div class="flex items-center gap-1">
+                    <span class="text-[10px] text-gray-400 block">Entropia (--entropy-coef)</span>
+                    <span class="tooltip-wrap tooltip-right">
+                      <span class="tooltip-icon" title="Bônus de entropia no PPO para encorajar exploração do agente.">ⓘ</span>
+                      <span class="tooltip-bubble"><strong>--entropy-coef</strong>: Bônus de entropia da política.<br>• <strong>0.010</strong>: Padrão recomendado.<br>• <strong>0.015</strong>: Mais exploração.</span>
+                    </span>
+                  </div>
+                  <div class="flex gap-0.5">
+                    <button type="button" onclick="setEntropy('0.005')" id="btn-ent-005" class="badge-btn">0.005</button>
+                    <button type="button" onclick="setEntropy('0.010')" id="btn-ent-010" class="badge-btn text-cyan-300 font-bold border-cyan-700 bg-cyan-950">0.010</button>
+                    <button type="button" onclick="setEntropy('0.015')" id="btn-ent-015" class="badge-btn">0.015</button>
+                  </div>
                 </div>
-                <input type="number" id="cfg-entropy" value="0.01" step="0.001" min="0" max="0.1" class="hud-input" />
+                <input type="number" id="cfg-entropy" value="0.010" step="0.001" min="0" max="0.1" oninput="updateEntropyButtons(this.value)" class="hud-input text-center font-mono font-bold text-amber-200" />
               </div>
               <div>
                 <div class="flex justify-between items-center mb-0.5">
@@ -1910,6 +2055,37 @@
                 </div>
               </div>
             </div>
+
+            <!-- Action Chunking Temporal (ACT) -->
+            <div class="bg-[#090d16] p-2.5 rounded border border-cyan-900/60 flex flex-col gap-1.5 text-xs">
+              <div class="flex justify-between items-center text-[10px] text-cyan-300 font-semibold px-0.5">
+                <span class="flex items-center gap-1.5">
+                  <span>🧩</span> Action Chunking Temporal (ACT)
+                </span>
+                <span class="text-[9px] text-cyan-500/80 font-mono italic">Horizonte & Throughput</span>
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <div class="flex justify-between items-center">
+                  <div class="flex items-center gap-1">
+                    <span class="text-[10px] text-gray-300 font-medium">Chunk Size (k)</span>
+                    <span class="tooltip-wrap tooltip-right">
+                      <span class="tooltip-icon" title="Quantidade de ações macro coordenadas emitidas por inferência neural.">ⓘ</span>
+                      <span class="tooltip-bubble"><strong>Action Chunk Size (k)</strong>: O agente infere <em>k</em> ações consecutivas em bloco.<br>Reduz o horizonte efetivo do problema por <em>k</em> e amortece o custo computacional da GPU em até <em>k×</em>.</span>
+                    </span>
+                  </div>
+                  <div class="flex gap-1">
+                    <button type="button" onclick="setActK(1)" class="badge-btn font-mono font-bold text-cyan-300 border-cyan-600 bg-cyan-950/80" id="btn-act-k-1">k=1</button>
+                    <button type="button" onclick="setActK(2)" class="badge-btn font-mono text-gray-400" id="btn-act-k-2">k=2</button>
+                    <button type="button" onclick="setActK(4)" class="badge-btn font-mono text-gray-400" id="btn-act-k-4">k=4</button>
+                    <button type="button" onclick="setActK(8)" class="badge-btn font-mono text-gray-400" id="btn-act-k-8">k=8</button>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <input type="number" id="cfg-act-k" value="1" min="1" max="32" oninput="updateActKButtons(this.value)" class="hud-input text-center font-mono font-bold text-cyan-300" />
+                  <span class="text-[10px] text-gray-400 font-mono whitespace-nowrap">ações / passo neural</span>
+                </div>
+              </div>
+            </div>
           </div>
         </details>
       </div>
@@ -1965,6 +2141,20 @@
             <input type="range" id="cfg-eval-calib-range" min="0.0" max="1.0" step="0.05" value="0.5" oninput="onEvalCalibRangeChange(this.value)" class="w-full accent-cyan-500 cursor-pointer" />
             <input type="text" id="cfg-eval-calibration" value="auto" oninput="onEvalCalibNumChange(this.value)" class="hud-input w-16 text-center font-mono text-[11px]" />
           </div>
+        </div>
+
+        <!-- Action Chunking na Avaliação -->
+        <div class="bg-[#090d16] p-2.5 rounded border border-gray-800/80 flex flex-col gap-1.5 text-xs">
+          <div class="flex justify-between items-center text-[10px] text-gray-300 font-semibold px-0.5">
+            <span class="flex items-center gap-1.5"><span class="text-cyan-400">🧩</span> Action Chunking & Rescisão Adaptativa</span>
+            <label class="flex items-center gap-1.5 cursor-pointer select-none">
+              <input type="checkbox" id="cfg-adaptive-chunk" class="accent-cyan-500 rounded cursor-pointer" checked />
+              <span class="text-[10px] text-cyan-300 font-semibold">Rescisão por Incerteza</span>
+            </label>
+          </div>
+          <p class="text-[9px] text-gray-400 px-0.5 leading-relaxed">
+            Interrompe a execução cega do chunk de ações caso a incerteza do modelo ultrapasse o limiar seguro, disparando uma re-inferência reflexiva imediata na bifurcação crítica.
+          </p>
         </div>
       </div>
 
@@ -2190,6 +2380,13 @@
       refreshVideoFeed(true);
     });
 
+    // Previne que rolagem de mouse/trackpad altere acidentalmente campos de número focados
+    window.addEventListener('wheel', (e) => {
+      if (document.activeElement && document.activeElement.type === 'number') {
+        document.activeElement.blur();
+      }
+    }, { passive: true });
+
 
     let activeMode = 'train';
     let availableCheckpoints = [];
@@ -2216,6 +2413,9 @@
 
     let _trainMetricsState = {
       activeCurriculumLevel: null,
+      activeCurriculumDepth: null,
+      activeCurriculumPromotions: null,
+      justPromoted: false,
       levelMetrics: {},
       fpsHistory: [],
       winRateHistory: [],
@@ -2720,9 +2920,23 @@
         if (trainEps && trainEps.innerText) {
           trainEps.innerText = trainEps.innerText.replace(/\s*eps/i, '');
         }
+
+        // No modo flutuante, atualiza o badge de calibração para exibir o nível numérico
+        const trainCalib = document.getElementById('train-metric-calib-cur-val') || document.getElementById('train-metric-calib');
+        const trainCalibBadge = document.getElementById('train-metric-calib-badge');
+        if (trainCalibBadge && trainCalib && trainCalib.innerText && trainCalib.innerText !== '--') {
+          trainCalibBadge.innerText = trainCalib.innerText.replace('%', '');
+        }
       } else {
         htmlEl.classList.remove('mini-mode');
         bodyEl.classList.remove('mini-mode');
+
+        const calibTrainInput = document.getElementById('cfg-train-calibration');
+        const isTrainAuto = !calibTrainInput || calibTrainInput.value === 'auto';
+        const trainCalibBadge = document.getElementById('train-metric-calib-badge');
+        if (trainCalibBadge) {
+          trainCalibBadge.innerText = isTrainAuto ? 'Auto' : (calibTrainInput.value || '0.80');
+        }
 
         // Tentar restaurar o tamanho normal da janela
         try {
@@ -3066,22 +3280,27 @@
       }
     }
 
-    function setMixedReplayRate(val) {
-      const inp = document.getElementById('cfg-mixed-replay-rate');
-      if (inp) {
-        inp.value = val;
-      }
-      [0.0, 0.05, 0.10].forEach(r => {
+    function onMixedReplayInput(val) {
+      const num = parseFloat(val);
+      [0.0, 0.05, 0.15, 0.25].forEach(r => {
         const id = `btn-replay-${Math.round(r * 100)}`;
         const btn = document.getElementById(id);
         if (btn) {
-          if (Math.abs(r - val) < 0.001) {
+          if (!isNaN(num) && Math.abs(r - num) < 0.001) {
             btn.className = 'badge-btn text-cyan-300 font-bold border-cyan-700 bg-cyan-950';
           } else {
             btn.className = 'badge-btn';
           }
         }
       });
+    }
+
+    function setMixedReplayRate(val) {
+      const inp = document.getElementById('cfg-mixed-replay-rate');
+      if (inp) {
+        inp.value = val;
+      }
+      onMixedReplayInput(val);
     }
 
 
@@ -3274,7 +3493,11 @@
         }
         const retStr = formatCheckpointReturns(item, false);
         const retInfo = retStr ? ` • ${retStr}` : '';
-        metaEl.innerText = `${modelLabel}Tamanho: ${item.size_mb} MB${envInfo}${dimInfo}${depthInfo}${retInfo} • Modificado em: ${item.mtime}`;
+        const actInfo = (item.action_chunk_size && item.action_chunk_size > 1) ? ` • 🧩 ACT: k=${item.action_chunk_size}` : '';
+        metaEl.innerText = `${modelLabel}Tamanho: ${item.size_mb} MB${envInfo}${dimInfo}${actInfo}${depthInfo}${retInfo} • Modificado em: ${item.mtime}`;
+        if (item.action_chunk_size && item.action_chunk_size >= 1) {
+          setActK(item.action_chunk_size);
+        }
 
         const modelBadgeEl = document.getElementById('hud-model-name');
         if (modelBadgeEl) {
@@ -3475,10 +3698,50 @@
     function setTargetReturn(val) { document.getElementById('cfg-target-return').value = val; }
     function setLR(val) { document.getElementById('cfg-lr').value = val; }
     function setEpisodes(val) { document.getElementById('cfg-episodes').value = val; }
-    function setEntropy(val) { document.getElementById('cfg-entropy').value = val; }
+    function setEntropy(val) {
+      const inp = document.getElementById('cfg-entropy');
+      if (inp) {
+        inp.value = val;
+      }
+      updateEntropyButtons(val);
+    }
+    function updateEntropyButtons(val) {
+      const num = parseFloat(val);
+      ['005', '010', '015'].forEach(suffix => {
+        const btn = document.getElementById('btn-ent-' + suffix);
+        const target = parseFloat(suffix) / 1000.0;
+        if (btn) {
+          if (!isNaN(num) && Math.abs(num - target) < 0.0005) {
+            btn.className = 'badge-btn text-cyan-300 font-bold border-cyan-700 bg-cyan-950';
+          } else {
+            btn.className = 'badge-btn';
+          }
+        }
+      });
+    }
     function setRolloutSteps(val) { document.getElementById('cfg-rollout-steps').value = val; }
     function setChunkLength(val) { document.getElementById('cfg-chunk-length').value = val; }
     function setChunkBatch(val) { document.getElementById('cfg-chunk-batch').value = val; }
+    function setActK(val) {
+      const input = document.getElementById('cfg-act-k');
+      if (input) {
+        input.value = val;
+        updateActKButtons(val);
+      }
+    }
+    function updateActKButtons(val) {
+      const k = parseInt(val, 10);
+      [1, 2, 4, 8].forEach(v => {
+        const btn = document.getElementById(`btn-act-k-${v}`);
+        if (btn) {
+          if (k === v) {
+            btn.className = 'badge-btn font-mono font-bold text-cyan-300 border-cyan-600 bg-cyan-950/80';
+          } else {
+            btn.className = 'badge-btn font-mono text-gray-400';
+          }
+        }
+      });
+    }
 
     function setEvalCalibration(val) {
       const numEl = document.getElementById('cfg-eval-calibration');
@@ -3601,6 +3864,9 @@
       // Reset dos cards dedicados de Treino
       _trainMetricsState = {
         activeCurriculumLevel: null,
+        activeCurriculumDepth: null,
+        activeCurriculumPromotions: null,
+        justPromoted: false,
         levelMetrics: {},
         fpsHistory: [],
         winRateHistory: [],
@@ -3696,7 +3962,8 @@
       const trainTargetRet = document.getElementById('train-metric-target-ret');
       if (trainTargetRet) {
         const cfgTargetInput = document.getElementById('cfg-target-return');
-        trainTargetRet.innerText = (cfgTargetInput && cfgTargetInput.value) ? cfgTargetInput.value : '12';
+        const defaultRet = (cfgTargetInput && cfgTargetInput.value) ? cfgTargetInput.value : '12';
+        trainTargetRet.innerText = (parseFloat(defaultRet) % 1 === 0) ? parseFloat(defaultRet).toFixed(0) : defaultRet;
       }
 
       const trainEps = document.getElementById('train-metric-episodes');
@@ -3757,7 +4024,10 @@
       const trainCalibAvgVal = document.getElementById('train-metric-calib-avg-val');
       if (trainCalibAvgVal) trainCalibAvgVal.innerText = '0.00';
       const trainCalibBadge = document.getElementById('train-metric-calib-badge');
-      if (trainCalibBadge) trainCalibBadge.innerText = 'Auto';
+      if (trainCalibBadge) {
+        const isMini = document.body.classList.contains('mini-mode');
+        trainCalibBadge.innerText = isMini ? '0.80' : 'Auto';
+      }
 
       // Reset dos cards dedicados de Perda DPO Contrastiva
       const trainDpoLoss = document.getElementById('train-metric-dpo-loss');
@@ -4231,6 +4501,19 @@
             evalCalibBadge.innerText = (calibInput && calibInput.value) ? calibInput.value : 'Auto';
           }
 
+          // Indicador de Action Chunking Temporal (ACT)
+          const actChunkSize = telemetry.action_chunk_size;
+          const actBadge = document.getElementById('hud-act-badge');
+          const actK = document.getElementById('hud-act-k');
+          if (actBadge && actK) {
+            if (actChunkSize && actChunkSize > 1) {
+              actBadge.classList.remove('hidden');
+              actK.innerText = `k=${actChunkSize}`;
+            } else {
+              actBadge.classList.add('hidden');
+            }
+          }
+
           // Rastreamento e exibição do Pico para o Currículo Atual
           const hasCurriculum = telemetry.curriculum_depth !== undefined && telemetry.curriculum_depth !== null;
           const curPeakWrapper = document.getElementById('kpi-curriculum-peak-wrapper');
@@ -4370,13 +4653,25 @@
             ? telemetry.curriculum_depth
             : null;
           const currentLevelKey = (rawDepth !== null) ? `D${rawDepth}` : 'D1';
+          const rawPromos = (telemetry.curriculum_promotions !== undefined && telemetry.curriculum_promotions !== null)
+            ? Number(telemetry.curriculum_promotions)
+            : 0;
+
+          const isNewCurriculumLevel = (
+            _trainMetricsState.activeCurriculumLevel === null ||
+            _trainMetricsState.activeCurriculumLevel !== currentLevelKey ||
+            (rawDepth !== null && _trainMetricsState.activeCurriculumDepth !== null && _trainMetricsState.activeCurriculumDepth !== rawDepth) ||
+            (rawPromos > (_trainMetricsState.activeCurriculumPromotions || 0))
+          );
 
           if (_trainMetricsState.activeCurriculumLevel === null) {
             _trainMetricsState.activeCurriculumLevel = currentLevelKey;
+            _trainMetricsState.activeCurriculumDepth = rawDepth;
+            _trainMetricsState.activeCurriculumPromotions = rawPromos;
             if (!_trainMetricsState.levelMetrics[currentLevelKey]) {
               _trainMetricsState.levelMetrics[currentLevelKey] = createFreshLevelMetrics();
             }
-          } else if (_trainMetricsState.activeCurriculumLevel !== currentLevelKey) {
+          } else if (isNewCurriculumLevel) {
             // Salva as métricas do patamar anterior
             _trainMetricsState.levelMetrics[_trainMetricsState.activeCurriculumLevel] = {
               minFps: _trainMetricsState.minObservedFps,
@@ -4393,23 +4688,24 @@
               maxDpo: _trainMetricsState.maxObservedDpo
             };
 
-            // Novo nível, novas marcações. Exibindo somente o nível atual
+            // Novo patamar/dimensão curricular: reset estrito de todos os contadores para a dimensão atual
             _trainMetricsState.activeCurriculumLevel = currentLevelKey;
-            const newLvl = _trainMetricsState.levelMetrics[currentLevelKey] || createFreshLevelMetrics();
-            _trainMetricsState.levelMetrics[currentLevelKey] = newLvl;
+            _trainMetricsState.activeCurriculumDepth = rawDepth;
+            _trainMetricsState.activeCurriculumPromotions = rawPromos;
 
-            _trainMetricsState.minObservedFps = newLvl.minFps;
-            _trainMetricsState.maxObservedFps = newLvl.maxFps;
-            _trainMetricsState.minObservedWinRate = newLvl.minWinRate;
-            _trainMetricsState.maxObservedWinRate = newLvl.maxWinRate;
-            _trainMetricsState.minObservedReturn = newLvl.minReturn;
-            _trainMetricsState.maxObservedReturn = newLvl.maxReturn;
-            _trainMetricsState.minObservedLoss = newLvl.minLoss;
-            _trainMetricsState.maxObservedLoss = newLvl.maxLoss;
-            _trainMetricsState.trainMinConf = newLvl.minConf;
-            _trainMetricsState.trainMaxConf = newLvl.maxConf;
-            _trainMetricsState.minObservedDpo = newLvl.minDpo;
-            _trainMetricsState.maxObservedDpo = newLvl.maxDpo;
+            // Limpa registros do patamar ativo para iniciar do zero na dimensão atual
+            _trainMetricsState.minObservedFps = null;
+            _trainMetricsState.maxObservedFps = null;
+            _trainMetricsState.minObservedWinRate = null;
+            _trainMetricsState.maxObservedWinRate = null;
+            _trainMetricsState.minObservedReturn = null;
+            _trainMetricsState.maxObservedReturn = null;
+            _trainMetricsState.minObservedLoss = null;
+            _trainMetricsState.maxObservedLoss = null;
+            _trainMetricsState.trainMinConf = null;
+            _trainMetricsState.trainMaxConf = null;
+            _trainMetricsState.minObservedDpo = null;
+            _trainMetricsState.maxObservedDpo = null;
 
             // Históricos para médias móveis do novo nível
             _trainMetricsState.fpsHistory = [];
@@ -4418,6 +4714,7 @@
             _trainMetricsState.trainConfHistory = [];
             _trainMetricsState.trainCalibHistory = [];
             _trainMetricsState.dpoHistory = [];
+            _trainMetricsState.justPromoted = true;
           }
 
           // 2. Throughput / FPS
@@ -4470,20 +4767,46 @@
             trainDepth.innerText = `D${currD}${maxD}`;
           }
 
-          const curWinRate = (telemetry.curriculum_success_rate !== undefined && telemetry.curriculum_success_rate !== null)
+          let curWinRate = (telemetry.curriculum_success_rate !== undefined && telemetry.curriculum_success_rate !== null)
             ? (telemetry.curriculum_success_rate * 100)
             : 0;
+
+          // Se acabou de mudar de dimensão, impede que resíduos da dimensão anterior (ex: 100% de vitória em D1)
+          // sejam gravados como o teto da dimensão seguinte
+          if (_trainMetricsState.justPromoted) {
+            if (curWinRate >= 80) {
+              curWinRate = 0.0;
+            } else {
+              _trainMetricsState.justPromoted = false;
+            }
+          }
+
           const trainWinRate = document.getElementById('train-metric-winrate');
           if (trainWinRate) trainWinRate.innerText = isMini ? `${Math.round(curWinRate)}%` : `${curWinRate.toFixed(1)}%`;
 
           _trainMetricsState.winRateHistory.push(curWinRate);
           if (_trainMetricsState.winRateHistory.length > 60) _trainMetricsState.winRateHistory.shift();
+
+          // Mínimo observado no patamar atual
           if (_trainMetricsState.minObservedWinRate === null || curWinRate < _trainMetricsState.minObservedWinRate) {
             _trainMetricsState.minObservedWinRate = curWinRate;
           }
-          if (_trainMetricsState.maxObservedWinRate === null || curWinRate > _trainMetricsState.maxObservedWinRate) {
-            _trainMetricsState.maxObservedWinRate = curWinRate;
+
+          // Máximo observado no patamar atual:
+          // Se o backend enviar curriculum_depth_best_success_rate, aceitamos apenas se for coerente com o nível ativo
+          // (evitando que o falso 100% gerado por 1 único episódio resolvido no início mascare o teto real da dimensão)
+          let candMaxWr = curWinRate;
+          if (telemetry.curriculum_depth_best_success_rate !== undefined && telemetry.curriculum_depth_best_success_rate !== null) {
+            const backendMaxWr = Number(telemetry.curriculum_depth_best_success_rate) * 100;
+            if (backendMaxWr < 99.9 || curWinRate >= 80.0) {
+              candMaxWr = Math.max(candMaxWr, backendMaxWr);
+            }
           }
+
+          if (_trainMetricsState.maxObservedWinRate === null || candMaxWr > _trainMetricsState.maxObservedWinRate) {
+            _trainMetricsState.maxObservedWinRate = candMaxWr;
+          }
+
           const avgWinRate = _trainMetricsState.winRateHistory.length ? (_trainMetricsState.winRateHistory.reduce((a, b) => a + b, 0) / _trainMetricsState.winRateHistory.length) : curWinRate;
 
           const trainWinRateBar = document.getElementById('train-metric-winrate-bar');
@@ -4534,14 +4857,28 @@
 
           // Alvo de retorno (target return) como meta do card e do recipiente 3
           const cfgTargetInput = document.getElementById('cfg-target-return');
-          const targetRetVal = (telemetry.target_return !== undefined && telemetry.target_return !== null)
-            ? Number(telemetry.target_return)
-            : (cfgTargetInput && cfgTargetInput.value ? Number(cfgTargetInput.value) : 12.0);
+          let targetRetVal = null;
+          if (telemetry.target_return !== undefined && telemetry.target_return !== null && Number(telemetry.target_return) > 0) {
+            targetRetVal = Number(telemetry.target_return);
+          } else if (runCfg && runCfg.target_return !== undefined && runCfg.target_return !== null && Number(runCfg.target_return) > 0) {
+            targetRetVal = Number(runCfg.target_return);
+          } else if (runner && runner.config && runner.config.target_return !== undefined && runner.config.target_return !== null && Number(runner.config.target_return) > 0) {
+            targetRetVal = Number(runner.config.target_return);
+          } else if (cfgTargetInput && cfgTargetInput.value) {
+            targetRetVal = Number(cfgTargetInput.value);
+          }
           const targetRet = (!isNaN(targetRetVal) && targetRetVal > 0) ? targetRetVal : 12.0;
+
+          if ((runCfg && runCfg.target_return) && cfgTargetInput && document.activeElement !== cfgTargetInput) {
+            cfgTargetInput.value = targetRet;
+          }
 
           const trainTargetRet = document.getElementById('train-metric-target-ret');
           if (trainTargetRet) {
             trainTargetRet.innerText = (targetRet % 1 === 0) ? targetRet.toFixed(0) : targetRet.toFixed(1);
+            if (trainTargetRet.parentElement) {
+              trainTargetRet.parentElement.title = `Alvo de Retorno Configurado: ${targetRet}`;
+            }
           }
 
           const trainRet = document.getElementById('train-metric-return');
@@ -4645,14 +4982,8 @@
             ? (_trainMetricsState.trainConfHistory.reduce((a, b) => a + b, 0) / _trainMetricsState.trainConfHistory.length)
             : trainConfPct;
 
-          const calibTrainInput = document.getElementById('cfg-train-calibration');
-          const isTrainAuto = !calibTrainInput || calibTrainInput.value === 'auto';
-          const trainCalibBadge = document.getElementById('train-metric-calib-badge');
-          if (trainCalibBadge) {
-            trainCalibBadge.innerText = isTrainAuto ? 'Auto' : (calibTrainInput.value || '0.80');
-          }
-
           let curTrainCalib = 0.80;
+          const calibTrainInput = document.getElementById('cfg-train-calibration');
           if (telemetry.calibration !== undefined && telemetry.calibration !== null && Number(telemetry.calibration) > 0) {
             curTrainCalib = Number(telemetry.calibration);
           } else if (calibTrainInput && calibTrainInput.value !== 'auto') {
@@ -4664,6 +4995,18 @@
           const avgTrainCalib = _trainMetricsState.trainCalibHistory.length
             ? (_trainMetricsState.trainCalibHistory.reduce((a, b) => a + b, 0) / _trainMetricsState.trainCalibHistory.length)
             : curTrainCalib;
+
+          const isTrainAuto = !calibTrainInput || calibTrainInput.value === 'auto';
+          const trainCalibBadge = document.getElementById('train-metric-calib-badge');
+          if (trainCalibBadge) {
+            if (isMini) {
+              trainCalibBadge.innerText = curTrainCalib.toFixed(2);
+              trainCalibBadge.title = isTrainAuto ? `Calibração Auto: ${curTrainCalib.toFixed(2)}` : `Calibração: ${curTrainCalib.toFixed(2)}`;
+            } else {
+              trainCalibBadge.innerText = isTrainAuto ? 'Auto' : (calibTrainInput.value || curTrainCalib.toFixed(2));
+              trainCalibBadge.title = isTrainAuto ? `Modo Auto (Calibração atual: ${curTrainCalib.toFixed(2)})` : `Calibração Fixa: ${curTrainCalib.toFixed(2)}`;
+            }
+          }
 
           const trainConf = document.getElementById('train-metric-conf');
           if (trainConf) trainConf.innerText = trainConfPct > 0 ? (isMini ? `${Math.round(trainConfPct)}%` : `${trainConfPct.toFixed(1)}%`) : '--%';
@@ -5358,12 +5701,14 @@
         eval_calibration: (document.getElementById('cfg-eval-calibration')?.value === 'auto' || document.getElementById('cfg-eval-action-mode')?.value === 'auto') ? 'auto' : (parseFloat(document.getElementById('cfg-eval-calibration')?.value) || 0.5),
         train_calibration: (document.getElementById('cfg-train-calibration')?.value === 'auto' || !document.getElementById('cfg-train-calibration')?.value) ? 'auto' : (parseFloat(document.getElementById('cfg-train-calibration')?.value) || 'auto'),
         scramble_depth: document.getElementById('cfg-scramble-depth') ? (parseInt(document.getElementById('cfg-scramble-depth').value, 10) || null) : null,
-        mixed_replay_rate: document.getElementById('cfg-mixed-replay-rate') ? parseFloat(document.getElementById('cfg-mixed-replay-rate').value) : 0.05,
+        mixed_replay_rate: (document.getElementById('cfg-mixed-replay-rate') && !isNaN(parseFloat(document.getElementById('cfg-mixed-replay-rate').value))) ? parseFloat(document.getElementById('cfg-mixed-replay-rate').value) : 0.25,
         sil_enabled: document.getElementById('cfg-sil') ? document.getElementById('cfg-sil').checked : true,
         sil_coef: document.getElementById('cfg-sil-coef') ? (parseFloat(document.getElementById('cfg-sil-coef').value) || 0.08) : 0.08,
         sil_dpo_enabled: document.getElementById('cfg-dpo') ? document.getElementById('cfg-dpo').checked : true,
         dpo_coef: document.getElementById('cfg-dpo-coef') ? (parseFloat(document.getElementById('cfg-dpo-coef').value) || 0.05) : 0.05,
         dpo_beta: document.getElementById('cfg-dpo-beta') ? (parseFloat(document.getElementById('cfg-dpo-beta').value) || 0.10) : 0.10,
+        action_chunk_size: parseInt(document.getElementById('cfg-act-k')?.value, 10) || 1,
+        adaptive_chunk: document.getElementById('cfg-adaptive-chunk') ? document.getElementById('cfg-adaptive-chunk').checked : false,
         trunk: 'lean'
       };
 

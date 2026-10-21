@@ -50,12 +50,14 @@ class UniversalS1Agent(nn.Module):
         trunk: Optional[nn.Module] = None,
         reward_fixed: bool = False,
         trunk_type: str = "classic",
+        action_chunk_size: int = 1,
     ) -> None:
         super().__init__()
         if isinstance(obs_space, gym.spaces.Dict) and "obs" in obs_space.spaces:
             obs_space = obs_space.spaces["obs"]
         self.obs_space = obs_space
         self.action_space = action_space
+        self.action_chunk_size = max(1, int(action_chunk_size))
 
         if is_visual is None:
             is_visual = (
@@ -97,12 +99,20 @@ class UniversalS1Agent(nn.Module):
         if isinstance(action_space, gym.spaces.Discrete):
             self.is_discrete = True
             self.policy_head: Union[CategoricalPolicyHead, GaussianPolicyHead] = (
-                CategoricalPolicyHead(in_features=trunk_hidden_dim, n_actions=int(action_space.n))
+                CategoricalPolicyHead(
+                    in_features=trunk_hidden_dim,
+                    n_actions=int(action_space.n),
+                    action_chunk_size=self.action_chunk_size,
+                )
             )
         elif isinstance(action_space, gym.spaces.Box):
             self.is_discrete = False
             act_dim = int(np.prod(action_space.shape))
-            self.policy_head = GaussianPolicyHead(in_features=trunk_hidden_dim, act_dim=act_dim)
+            self.policy_head = GaussianPolicyHead(
+                in_features=trunk_hidden_dim,
+                act_dim=act_dim,
+                action_chunk_size=self.action_chunk_size,
+            )
         else:
             raise NotImplementedError(f"Unsupported action space: {type(action_space)}")
 
@@ -232,8 +242,19 @@ class UniversalS1Agent(nn.Module):
 
         if self.is_discrete:
             log_prob = dist.log_prob(action)
+            if self.action_chunk_size > 1:
+                log_prob = log_prob.sum(dim=-1)
         else:
             log_prob = dist.log_prob(action).sum(dim=-1)
+            if self.action_chunk_size > 1:
+                log_prob = log_prob.sum(dim=-1)
+
+        if action.dim() >= 2 and action.shape[1] == 1:
+            action = action.squeeze(1)
+        if log_prob.dim() >= 2 and log_prob.shape[1] == 1:
+            log_prob = log_prob.squeeze(1)
+        if value.dim() >= 2 and value.shape[1] == 1:
+            value = value.squeeze(1)
 
         return action, log_prob, value, next_hx
 
@@ -253,6 +274,7 @@ class UniversalS1Agent(nn.Module):
         quality_filter: bool = True,
         ensemble_fallback: bool = False,
         level: Optional[int] = None,
+        adaptive_chunk: bool = False,
     ) -> Union[int, np.ndarray, ReflexDecision]:
         """Ultra-fast single-forward reflex inference.
 
@@ -404,6 +426,111 @@ class UniversalS1Agent(nn.Module):
 
         # Policy decision
         if self.is_discrete:
+            if self.action_chunk_size > 1:
+                k = self.action_chunk_size
+                n_acts = self.policy_head.n_actions
+                raw_linear = self.policy_head.linear(h).squeeze(0).squeeze(0)
+                logits_chunk = raw_linear.view(k, n_acts)
+
+                chunk_actions: List[int] = []
+                chunk_confs: List[float] = []
+                chunk_uncs: List[float] = []
+                chunk_margins: List[float] = []
+                chunk_entropies: List[float] = []
+
+                if is_auto_calib:
+                    calib = float(np.clip(self._adaptive_calibration, 0.0, 0.80))
+                    is_deterministic_mode = (calib <= 0.01)
+                    eff_temp = 1.0 + 0.5 * calib
+                elif calibration is not None:
+                    calib = float(np.clip(float(calibration), 0.0, 1.0))
+                    is_deterministic_mode = (calib <= 0.0)
+                    eff_temp = 1.0 + 0.5 * calib
+                else:
+                    is_deterministic_mode = deterministic
+                    eff_temp = 1.0
+                    calib = 0.0 if deterministic else (noise_scale if noise_scale > 0.0 else 1.0)
+
+                for step_i in range(k):
+                    l_sq = logits_chunk[step_i]
+                    if self.sterility_memory is not None and step_i == 0:
+                        resistance = self.sterility_memory.query_resistance(h.squeeze(0).squeeze(0), level=resolved_level)
+                        l_sq = l_sq - resistance.view_as(l_sq)
+                    probs_i = torch.softmax(l_sq, dim=-1)
+                    best_act_i = int(torch.argmax(probs_i, dim=-1).item())
+                    if n_acts > 1:
+                        top_p, _ = torch.topk(probs_i, k=min(2, n_acts))
+                        conf_i = float(top_p[0].item())
+                        margin_i = float((top_p[0] - top_p[1]).item())
+                        ent_i = float(-torch.sum(probs_i * torch.log(probs_i + 1e-8)).item())
+                        max_ent_i = float(np.log(n_acts))
+                        unc_i = float(np.clip(ent_i / max_ent_i, 0.0, 1.0))
+                    else:
+                        conf_i = 1.0
+                        margin_i = 1.0
+                        ent_i = 0.0
+                        unc_i = 0.0
+
+                    if is_deterministic_mode:
+                        act_i = best_act_i
+                    else:
+                        if float(np.random.rand()) < calib:
+                            p_sampled = torch.softmax(l_sq / eff_temp, dim=-1)
+                            act_i = int(torch.multinomial(p_sampled, num_samples=1).item())
+                        else:
+                            act_i = best_act_i
+
+                    # Anti-reversal dentro do chunk para cubo atômico (12 ações)
+                    if n_acts == 12 and len(chunk_actions) >= 1:
+                        last_a = chunk_actions[-1]
+                        inv_a = (last_a + 1) if (last_a % 2 == 0) else (last_a - 1)
+                        if act_i == inv_a and conf_i < 0.95 and n_acts > 1:
+                            top_indices = torch.argsort(probs_i, descending=True)
+                            for alt_idx in top_indices:
+                                alt_a = int(alt_idx.item())
+                                if alt_a != inv_a:
+                                    act_i = alt_a
+                                    break
+
+                    chunk_actions.append(act_i)
+                    chunk_confs.append(conf_i)
+                    chunk_uncs.append(unc_i)
+                    chunk_margins.append(margin_i)
+                    chunk_entropies.append(ent_i)
+
+                    if adaptive_chunk and step_i > 0 and (unc_i >= uncertainty_threshold or conf_i < confidence_threshold):
+                        break
+
+                action_arr = np.array(chunk_actions, dtype=np.int64)
+                if not hasattr(self, "_action_history"):
+                    self._action_history = []
+                for a in chunk_actions:
+                    self._action_history.append(a)
+                while len(self._action_history) > 8:
+                    self._action_history.pop(0)
+
+                if not return_decision:
+                    return action_arr
+
+                latent_val = float(self.value_head(h).squeeze().item()) if return_value else None
+                latency_ms = (time.perf_counter() - t0) * 1000.0
+                mean_unc = float(np.mean(chunk_uncs)) if len(chunk_uncs) > 0 else 0.0
+                mean_conf = float(np.mean(chunk_confs)) if len(chunk_confs) > 0 else 1.0
+                is_unc = any(u >= uncertainty_threshold for u in chunk_uncs) or (mean_conf < confidence_threshold)
+
+                return ReflexDecision(
+                    action=action_arr,
+                    confidence=mean_conf,
+                    uncertainty=mean_unc,
+                    margin=float(chunk_margins[0]) if len(chunk_margins) > 0 else 1.0,
+                    is_uncertain=is_unc,
+                    entropy=float(np.mean(chunk_entropies)) if len(chunk_entropies) > 0 else 0.0,
+                    latent_value=latent_val,
+                    calibration=calib,
+                    latency_ms=latency_ms,
+                    ensemble_fallback_triggered=False,
+                )
+
             logits_sq = self.policy_head.linear(h).squeeze(0).squeeze(0)
             if self.sterility_memory is not None:
                 resistance = self.sterility_memory.query_resistance(h.squeeze(0).squeeze(0), level=resolved_level)
@@ -522,6 +649,76 @@ class UniversalS1Agent(nn.Module):
                 ensemble_fallback_triggered=ensemble_fallback_triggered,
             )
         else:
+            if self.action_chunk_size > 1:
+                k = self.action_chunk_size
+                act_dim = self.policy_head.act_dim
+                raw_mu = self.policy_head.mu_net(h).squeeze(0).squeeze(0)
+                mu_chunk = raw_mu.view(k, act_dim)
+                action_np = mu_chunk.cpu().numpy()
+
+                log_std_clamped = torch.clamp(self.policy_head.log_std, min=-20.0, max=2.0)
+                std_1d = torch.exp(log_std_clamped).cpu().numpy()
+                std_1d = np.clip(std_1d, a_min=1e-6, a_max=100.0)
+                std = np.broadcast_to(std_1d, (k, act_dim))
+
+                # Entropia diferencial e incerteza no chunk
+                entropy = float(0.5 * np.mean(np.sum(1.0 + np.log(2.0 * np.pi * (std ** 2)), axis=-1)))
+                var = float(np.mean(std ** 2))
+                var_scale = 0.5
+                uncertainty = float(np.clip(2.0 / (1.0 + np.exp(-var / var_scale)) - 1.0, 0.0, 1.0))
+                confidence = float(np.clip(1.0 - uncertainty, 0.0, 1.0))
+
+                if is_auto_calib:
+                    if self._adaptive_calibration <= 0.0:
+                        calib = 0.0
+                    else:
+                        calib = float(np.clip(
+                            self._adaptive_calibration * (0.6 + 0.4 * uncertainty) + 0.10 * max(0.0, uncertainty - 0.50),
+                            0.0,
+                            0.80,
+                        ))
+                    is_deterministic_mode = (calib <= 0.01)
+                    eff_scale = calib
+                elif calibration is not None:
+                    calib = float(np.clip(float(calibration), 0.0, 1.0))
+                    is_deterministic_mode = (calib <= 0.0)
+                    eff_scale = calib
+                else:
+                    is_deterministic_mode = deterministic
+                    eff_scale = noise_scale if noise_scale > 0.0 else 1.0
+                    calib = 0.0 if deterministic else (noise_scale if noise_scale > 0.0 else 1.0)
+
+                if not is_deterministic_mode or (noise_scale > 0.0 and calibration is None and not is_auto_calib):
+                    action_np = action_np + eff_scale * std * np.random.randn(*action_np.shape)
+
+                if hasattr(self, "action_space") and isinstance(self.action_space, gym.spaces.Box):
+                    action_np = np.clip(action_np, self.action_space.low, self.action_space.high)
+
+                if adaptive_chunk and (uncertainty >= uncertainty_threshold or confidence < confidence_threshold):
+                    action_np = action_np[:1]
+
+                is_uncertain = (uncertainty >= uncertainty_threshold) or (confidence < confidence_threshold)
+                ensemble_fallback_triggered = False
+
+                if not return_decision:
+                    return action_np
+
+                latent_val = float(self.value_head(h).squeeze().item()) if return_value else None
+                latency_ms = (time.perf_counter() - t0) * 1000.0
+
+                return ReflexDecision(
+                    action=action_np,
+                    confidence=confidence,
+                    uncertainty=uncertainty,
+                    margin=0.0,
+                    is_uncertain=is_uncertain,
+                    entropy=entropy,
+                    latent_value=latent_val,
+                    calibration=calib,
+                    latency_ms=latency_ms,
+                    ensemble_fallback_triggered=ensemble_fallback_triggered,
+                )
+
             mu = self.policy_head.mu_net(h)
             action_np = mu.squeeze(0).squeeze(0).cpu().numpy()
 
@@ -621,6 +818,7 @@ class UniversalS1Agent(nn.Module):
         avoid_action: Optional[Union[int, List[int], Set[int]]] = None,
         quality_filter: bool = True,
         ensemble_fallback: bool = False,
+        adaptive_chunk: bool = False,
     ) -> ReflexDecision:
         """Executa a decisão reflexiva retornando a estrutura ReflexDecision com telemetria e calibração."""
         decision = self.act_fast(
@@ -636,6 +834,7 @@ class UniversalS1Agent(nn.Module):
             avoid_action=avoid_action,
             quality_filter=quality_filter,
             ensemble_fallback=ensemble_fallback,
+            adaptive_chunk=adaptive_chunk,
         )
         assert isinstance(decision, ReflexDecision)
         return decision

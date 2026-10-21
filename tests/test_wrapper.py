@@ -179,3 +179,35 @@ def test_wrapper_vectorized_environment():
     assert len(info) == 4
 
 
+def test_wrapper_compass_mode():
+    """Verify Bússola compass mode blends local velocity and global origin displacement."""
+    env = UniversalS1Wrapper(gym.make("CartPole-v1"))
+    env.compass_mode = True
+    env.compass_alpha = 0.5
+
+    obs0_dict, _ = env.reset()
+    s0 = obs0_dict["obs"]
+    assert env.init_obs is not None
+    np.testing.assert_allclose(env.init_obs, s0)
+
+    # Step 1: s1 - s0 is both local and global delta
+    obs1_dict, _, _, _, _ = env.step(1)
+    s1 = obs1_dict["obs"]
+    expected_delta_1 = s1 - s0
+    np.testing.assert_allclose(obs1_dict["delta_obs"], expected_delta_1, rtol=1e-5, atol=1e-5)
+
+    # Step 2: local is s2 - s1, global is s2 - s0
+    obs2_dict, _, _, _, _ = env.step(0)
+    s2 = obs2_dict["obs"]
+    local_delta = s2 - s1
+    global_delta = s2 - s0
+    expected_delta_2 = 0.5 * local_delta + 0.5 * global_delta
+    np.testing.assert_allclose(obs2_dict["delta_obs"], expected_delta_2, rtol=1e-5, atol=1e-5)
+
+    # Reset flushes init_obs to new start
+    obs_reset, _ = env.reset()
+    np.testing.assert_allclose(env.init_obs, obs_reset["obs"])
+    assert np.all(obs_reset["delta_obs"] == 0.0)
+
+
+

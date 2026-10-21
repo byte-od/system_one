@@ -205,7 +205,7 @@ def main():
     print("   1. Janela própria e independente (Cocoa + WKWebView nativo).")
     print("   2. Nunca mais abre abas no Chrome/Safari.")
     print("   3. Instância única: clicar no Dock traz a janela existente para frente.")
-    print("   4. Ao fechar a janela, encerra o servidor automaticamente.")
+    print("   4. Ao fechar a janela, o treino continua rodando em segundo plano (Dock/Cmd+1 restaura).")
 
 
 if __name__ == "__main__":

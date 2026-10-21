@@ -15,6 +15,7 @@ class PhaseMetrics:
     confidences: deque = field(default_factory=lambda: deque(maxlen=1000))
     entropies: deque = field(default_factory=lambda: deque(maxlen=1000))
     calibrations: deque = field(default_factory=lambda: deque(maxlen=1000))
+    action_chunk_size: int = 1
 
     # Fase 2: Ambiente Físico & Rollout GAE
     fps: float = 0.0
@@ -24,6 +25,7 @@ class PhaseMetrics:
     episode_lengths: deque = field(default_factory=lambda: deque(maxlen=100))
     total_steps: int = 0
     target_steps: Optional[int] = None
+    target_return: Optional[float] = None
     best_return: Optional[float] = None
     best_mean_return: Optional[float] = None
 
@@ -47,6 +49,8 @@ class PhaseMetrics:
     curriculum_success_rate: Optional[float] = None
     curriculum_promotions: int = 0
     curriculum_depth_best_return: Optional[float] = None
+    curriculum_depth_best_success_rate: Optional[float] = None
+    curriculum_depth_min_success_rate: Optional[float] = None
     successful_depth: Optional[int] = None
     best_return_depth: Optional[int] = None
 
@@ -100,18 +104,40 @@ class LiveStatsTracker:
         m.current_episode_length += 1
 
         if info:
+            is_promoted = False
             if "current_depth" in info:
                 new_depth = int(info["current_depth"])
                 if m.curriculum_depth is not None and new_depth != m.curriculum_depth:
-                    # Mudança de profundidade no currículo: reseta pico do nível atual
+                    # Mudança de profundidade no currículo: reseta pico e extremos da dimensão atual
                     m.curriculum_depth_best_return = None
+                    m.curriculum_depth_best_success_rate = None
+                    m.curriculum_depth_min_success_rate = None
+                    m.curriculum_success_rate = 0.0
+                    is_promoted = True
                 m.curriculum_depth = new_depth
             if "max_depth" in info:
                 m.curriculum_max_depth = info["max_depth"]
-            if "curriculum_success_rate" in info:
-                m.curriculum_success_rate = float(info["curriculum_success_rate"])
             if "curriculum_promotions" in info:
-                m.curriculum_promotions = int(info["curriculum_promotions"])
+                new_promos = int(info["curriculum_promotions"])
+                if new_promos > m.curriculum_promotions:
+                    # Promoção explícita de currículo: reseta pico e extremos da dimensão anterior
+                    m.curriculum_depth_best_return = None
+                    m.curriculum_depth_best_success_rate = None
+                    m.curriculum_depth_min_success_rate = None
+                    m.curriculum_success_rate = 0.0
+                    is_promoted = True
+                m.curriculum_promotions = new_promos
+            if "curriculum_success_rate" in info:
+                rate = float(info["curriculum_success_rate"])
+                if is_promoted and rate >= 0.8:
+                    # Resíduo da vitória que disparou a promoção no nível anterior: inicializa em 0.0
+                    m.curriculum_success_rate = 0.0
+                else:
+                    m.curriculum_success_rate = rate
+                    if m.curriculum_depth_best_success_rate is None or rate > m.curriculum_depth_best_success_rate:
+                        m.curriculum_depth_best_success_rate = rate
+                    if m.curriculum_depth_min_success_rate is None or rate < m.curriculum_depth_min_success_rate:
+                        m.curriculum_depth_min_success_rate = rate
 
         if done:
             ep_ret = float(m.current_episode_return)
@@ -202,6 +228,7 @@ class LiveStatsTracker:
             "mean_confidence": float(np.mean(m.confidences)) if m.confidences else 0.0,
             "mean_entropy": float(np.mean(m.entropies)) if m.entropies else 0.0,
             "calibration": float(m.calibrations[-1]) if m.calibrations else 0.0,
+            "action_chunk_size": int(m.action_chunk_size),
             # Fase 2: Ambiente & Rollout
             "fps": m.fps,
             "mean_return_20": float(np.mean(list(m.episode_returns)[-20:])) if m.episode_returns else 0.0,
@@ -209,6 +236,7 @@ class LiveStatsTracker:
             "best_mean_return": float(m.best_mean_return) if m.best_mean_return is not None else 0.0,
             "total_steps": m.total_steps,
             "target_steps": m.target_steps,
+            "target_return": float(m.target_return) if m.target_return is not None else None,
             "episodes_completed": len(m.episode_returns),
             "current_episode_return": m.current_episode_return,
             "curriculum_depth": m.curriculum_depth,
@@ -216,6 +244,8 @@ class LiveStatsTracker:
             "curriculum_success_rate": m.curriculum_success_rate,
             "curriculum_promotions": m.curriculum_promotions,
             "curriculum_depth_best_return": float(m.curriculum_depth_best_return) if m.curriculum_depth_best_return is not None else None,
+            "curriculum_depth_best_success_rate": float(m.curriculum_depth_best_success_rate) if m.curriculum_depth_best_success_rate is not None else None,
+            "curriculum_depth_min_success_rate": float(m.curriculum_depth_min_success_rate) if m.curriculum_depth_min_success_rate is not None else None,
             "successful_depth": self.get_successful_depth(),
             "best_return_depth": m.best_return_depth,
             # Fase 3: Otimização PPO & SIL

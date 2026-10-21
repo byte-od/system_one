@@ -142,10 +142,18 @@ def train_mode(args: argparse.Namespace) -> None:
         if detected:
             trunk_type = detected
 
+    action_chunk_size = int(getattr(args, "action_chunk_size", 1))
+    if action_chunk_size == 1 and checkpoint_to_load and getattr(args, "action_chunk_size", None) is None:
+        detected_k = KnowledgeTransferManager.detect_action_chunk_size(checkpoint_to_load, env.action_space)
+        if detected_k > 1:
+            action_chunk_size = detected_k
+            print(f"🧩 Auto-detectado Action Chunk Size k={action_chunk_size} do checkpoint {checkpoint_to_load}")
+
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
         action_space=env.action_space,
         trunk_type=trunk_type,
+        action_chunk_size=action_chunk_size,
     )
 
     checkpoint_to_load = getattr(args, "load", None) or getattr(args, "transfer_from", None)
@@ -197,6 +205,7 @@ def train_mode(args: argparse.Namespace) -> None:
         trainer = RecurrentPPOTrainer(
             agent=agent,
             env=env,
+            action_chunk_size=action_chunk_size,
             learning_rate=args.lr,
             rollout_steps=args.rollout_steps,
             chunk_length=args.chunk_length,
@@ -375,15 +384,23 @@ def run_mode(args: argparse.Namespace) -> None:
     )
 
     trunk_type = getattr(args, "trunk", "lean")
-    if getattr(args, "load", None) and getattr(args, "trunk", None) is None:
-        detected = KnowledgeTransferManager.detect_trunk_type(args.load)
-        if detected:
-            trunk_type = detected
+    action_chunk_size = int(getattr(args, "action_chunk_size", 1))
+    if getattr(args, "load", None):
+        if getattr(args, "trunk", None) is None:
+            detected = KnowledgeTransferManager.detect_trunk_type(args.load)
+            if detected:
+                trunk_type = detected
+        detected_k = KnowledgeTransferManager.detect_action_chunk_size(args.load, env.action_space)
+        if getattr(args, "action_chunk_size", None) is None or action_chunk_size == 1:
+            if detected_k > 1:
+                action_chunk_size = detected_k
+                print(f"🧩 Auto-detectado Action Chunk Size k={action_chunk_size} a partir de {args.load}")
 
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
         action_space=env.action_space,
         trunk_type=trunk_type,
+        action_chunk_size=action_chunk_size,
     ).to(device)
 
     if args.load:
@@ -420,6 +437,7 @@ def run_mode(args: argparse.Namespace) -> None:
 
     try:
         eval_calib = getattr(args, "calibration", None)
+        adaptive_chunk = getattr(args, "adaptive_chunk", False)
         def execute_eval_loop() -> None:
             for ep in range(args.episodes):
                 obs_dict, _ = env.reset()
@@ -435,7 +453,11 @@ def run_mode(args: argparse.Namespace) -> None:
                     t_step_start = time.perf_counter()
                     if tracker is not None:
                         t0 = time.perf_counter_ns()
-                        decision = agent.act_with_confidence(obs_dict, calibration=eval_calib)
+                        decision = agent.act_with_confidence(
+                            obs_dict,
+                            calibration=eval_calib,
+                            adaptive_chunk=adaptive_chunk,
+                        )
                         lat_us = (time.perf_counter_ns() - t0) / 1000.0
 
                         tracker.record_inference(
@@ -446,7 +468,11 @@ def run_mode(args: argparse.Namespace) -> None:
                         )
                         action = decision.action
                     else:
-                        action = agent.act_fast(obs_dict, calibration=eval_calib)
+                        action = agent.act_fast(
+                            obs_dict,
+                            calibration=eval_calib,
+                            adaptive_chunk=adaptive_chunk,
+                        )
 
                     obs_dict, reward, terminated, truncated, env_info = env.step(action)
                     done = terminated or truncated
@@ -707,8 +733,8 @@ def main() -> None:
     parser.add_argument(
         "--mixed-replay-rate",
         type=float,
-        default=0.05,
-        help="Taxa de mixed replay no currículo do Cubo Mágico (padrão: 0.05 = 5%% replay / 95%% fronteira; 0.0 desativa completamente)",
+        default=0.15,
+        help="Taxa de mixed replay no currículo do Cubo Mágico (padrão: 0.15 = 15%% replay / 85%% fronteira; 0.0 desativa completamente)",
     )
     parser.add_argument(
         "--calibration",
@@ -803,6 +829,19 @@ def main() -> None:
         default="lean",
         choices=["classic", "lean"],
         help="Tipo de tronco neural recorrente: 'lean' (LeanResidualTrunk 512 Multi-Timescale, ~1.6M, padrão) ou 'classic' (GRU 256 + 2x ResMLP 256, ~830k)",
+    )
+    parser.add_argument(
+        "--action-chunk-size",
+        "--act-k",
+        type=int,
+        default=1,
+        help="Action Chunking Temporal (ACT) size k in [1, 2, 3, 4] (default: 1)",
+    )
+    parser.add_argument(
+        "--adaptive-chunk",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Habilita truncamento adaptativo dinâmico de chunk por incerteza (default: False)",
     )
 
     args = parser.parse_args()
