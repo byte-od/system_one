@@ -1,0 +1,38 @@
+{
+  "9": {
+    "greedy": {
+      "win_rate": 18.0,
+      "latency_ms": 154.64842837769538
+    },
+    "step_consistency": {
+      "win_rate": 20.0,
+      "latency_ms": 119.57166253589094
+    },
+    "value_rerank": {
+      "win_rate": 28.000000000000004,
+      "latency_ms": 292.09801910445094
+    },
+    "traj_consistency": {
+      "win_rate": 22.0,
+      "latency_ms": 556.4963200874627
+    }
+  },
+  "10": {
+    "greedy": {
+      "win_rate": 8.0,
+      "latency_ms": 151.22349586337805
+    },
+    "step_consistency": {
+      "win_rate": 8.0,
+      "latency_ms": 127.39242913667113
+    },
+    "value_rerank": {
+      "win_rate": 10.0,
+      "latency_ms": 370.722816796042
+    },
+    "traj_consistency": {
+      "win_rate": 14.000000000000002,
+      "latency_ms": 608.6001273011789
+    }
+  }
+}

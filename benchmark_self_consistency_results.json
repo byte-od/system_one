@@ -1,0 +1,74 @@
+{
+  "5": {
+    "greedy": {
+      "win_rate": 94.0,
+      "latency_ms": 34.844460021704435
+    },
+    "step_consistency": {
+      "win_rate": 94.0,
+      "latency_ms": 25.363418362103403
+    },
+    "value_rerank": {
+      "win_rate": 98.0,
+      "latency_ms": 40.68162587005645
+    },
+    "traj_consistency": {
+      "win_rate": 96.0,
+      "latency_ms": 58.735921662300825
+    }
+  },
+  "6": {
+    "greedy": {
+      "win_rate": 74.0,
+      "latency_ms": 66.95957582443953
+    },
+    "step_consistency": {
+      "win_rate": 74.0,
+      "latency_ms": 54.247451703995466
+    },
+    "value_rerank": {
+      "win_rate": 80.0,
+      "latency_ms": 109.49388327542692
+    },
+    "traj_consistency": {
+      "win_rate": 78.0,
+      "latency_ms": 189.78839083574712
+    }
+  },
+  "7": {
+    "greedy": {
+      "win_rate": 57.99999999999999,
+      "latency_ms": 84.95983657892793
+    },
+    "step_consistency": {
+      "win_rate": 56.00000000000001,
+      "latency_ms": 72.85938250366598
+    },
+    "value_rerank": {
+      "win_rate": 68.0,
+      "latency_ms": 158.49290581420064
+    },
+    "traj_consistency": {
+      "win_rate": 60.0,
+      "latency_ms": 314.0662733511999
+    }
+  },
+  "8": {
+    "greedy": {
+      "win_rate": 48.0,
+      "latency_ms": 98.70907418895513
+    },
+    "step_consistency": {
+      "win_rate": 42.0,
+      "latency_ms": 92.84903918858618
+    },
+    "value_rerank": {
+      "win_rate": 48.0,
+      "latency_ms": 256.31106668151915
+    },
+    "traj_consistency": {
+      "win_rate": 52.0,
+      "latency_ms": 346.58656070008874
+    }
+  }
+}
