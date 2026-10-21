@@ -288,6 +288,41 @@ class UniversalS1Wrapper(gym.Wrapper):
         self.latest_obs_dict = obs_dict
         return obs_dict, info
 
+    def simulate_step(self, action: Any) -> tuple[S1Observation, float, bool, dict[str, Any]]:
+        """Simula a execução de 1 passo sem alterar o estado persistente do ambiente.
+        
+        Retorna o dicionário S1Observation resultante, recompensa estimada e flag de término.
+        Essencial para suportar Value Re-ranking em tempo constante O(1).
+        """
+        if hasattr(self.env, "simulate_step"):
+            raw_obs, rew, done, info = self.env.simulate_step(action)
+            if self.is_visual:
+                cur_obs = self._format_visual_frame(np.asarray(raw_obs))
+                prev = self.prev_obs if self.prev_obs is not None else cur_obs
+                stacked = np.concatenate([cur_obs, prev], axis=0)
+                sim_obs_dict: S1Observation = {
+                    "obs": stacked,
+                    "delta_obs": None,
+                    "prev_action": copy.deepcopy(action),
+                    "prev_reward": float(rew),
+                }
+            else:
+                cur_obs = self._vectorize_obs(raw_obs, self.env.observation_space)
+                if self.compass_mode and self.init_obs is not None:
+                    delta = cur_obs - self.init_obs
+                else:
+                    delta = np.zeros_like(cur_obs)
+                sim_obs_dict = {
+                    "obs": cur_obs,
+                    "delta_obs": delta,
+                    "prev_action": copy.deepcopy(action),
+                    "prev_reward": float(rew),
+                }
+            return sim_obs_dict, float(rew), bool(done), info
+        raise NotImplementedError(
+            f"O ambiente base {type(self.env).__name__} não implementa simulate_step()."
+        )
+
     def step(
         self, action: Any, chunk_mask: Optional[np.ndarray] = None
     ) -> tuple[S1Observation, Any, Any, Any, Any]:

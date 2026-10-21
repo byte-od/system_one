@@ -1,6 +1,6 @@
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 import gymnasium as gym
 import numpy as np
 import torch
@@ -26,6 +26,7 @@ class ReflexDecision:
     calibration: float = 0.0   # [0.0, 1.0] - Nível de calibração / temperatura aplicada
     latency_ms: float = 0.0    # Latência de execução do reflexo em ms
     ensemble_fallback_triggered: bool = False  # Flag indicando se o fallback de ensemble foi ativado sob incerteza
+    value_rerank_triggered: bool = False       # Flag indicando se o re-ranqueamento local por valor foi ativado
 
 
 class UniversalS1Agent(nn.Module):
@@ -126,6 +127,7 @@ class UniversalS1Agent(nn.Module):
         self._action_history: List[int] = []
         self._last_latent: Optional[torch.Tensor] = None
         self.sterility_memory: Optional[Any] = None
+        self.default_env: Optional[Any] = None
 
     @property
     def last_latent(self) -> Optional[torch.Tensor]:
@@ -135,6 +137,10 @@ class UniversalS1Agent(nn.Module):
     def set_sterility_memory(self, memory: Optional[Any]) -> None:
         """Configura a memória de esterilidade latente para o agente."""
         self.sterility_memory = memory
+
+    def set_env(self, env: Optional[Any]) -> None:
+        """Associa um ambiente ao agente para habilitar re-ranqueamento local de valor (Value Re-ranking)."""
+        self.default_env = env
 
     @property
     def device(self) -> torch.device:
@@ -275,6 +281,11 @@ class UniversalS1Agent(nn.Module):
         ensemble_fallback: bool = False,
         level: Optional[int] = None,
         adaptive_chunk: bool = False,
+        value_rerank: bool = False,
+        value_rerank_top_k: int = 2,
+        value_rerank_threshold: float = 0.85,
+        env: Optional[Any] = None,
+        simulator: Optional[Callable[[int], Tuple[Any, float, bool, Dict[str, Any]]]] = None,
     ) -> Union[int, np.ndarray, ReflexDecision]:
         """Ultra-fast single-forward reflex inference.
 
@@ -609,6 +620,91 @@ class UniversalS1Agent(nn.Module):
                         action = alt_action
                         break
 
+            # -----------------------------------------------------------------
+            # Value Re-ranking (Local 1-Step Lookahead via Learned Critic V(s'))
+            # -----------------------------------------------------------------
+            value_rerank_triggered = False
+            effective_env = env or getattr(self, "default_env", None)
+            sim_fn = simulator or (getattr(effective_env, "simulate_step", None) if effective_env is not None else None)
+
+            if value_rerank and self.action_chunk_size == 1 and n_acts > 1 and sim_fn is not None:
+                if confidence < value_rerank_threshold:
+                    cand_k = max(2, min(int(value_rerank_top_k), n_acts))
+                    top_p, top_indices = torch.topk(probs, k=min(cand_k + 2, n_acts))
+                    cand_actions = [int(idx.item()) for idx in top_indices if int(idx.item()) not in avoid_set][:cand_k]
+                    if not cand_actions:
+                        cand_actions = [int(top_indices[0].item())]
+
+                    if len(cand_actions) > 1:
+                        immediate_solve = None
+                        cand_obs_list = []
+                        cand_delta_list = []
+                        cand_act_list = []
+                        cand_rew_list = []
+                        valid_cands = []
+
+                        for c_act in cand_actions:
+                            try:
+                                sim_res = sim_fn(c_act)
+                            except Exception:
+                                continue
+
+                            if isinstance(sim_res, tuple) and len(sim_res) >= 3:
+                                s_obs, s_rew, s_done = sim_res[0], sim_res[1], sim_res[2]
+                            else:
+                                continue
+
+                            if s_done:
+                                immediate_solve = c_act
+                                break
+
+                            if isinstance(s_obs, dict):
+                                obs_arr = s_obs["obs"]
+                                delta_arr = s_obs.get("delta_obs", np.zeros_like(obs_arr))
+                            else:
+                                obs_arr = np.asarray(s_obs, dtype=np.float32)
+                                delta_arr = np.zeros_like(obs_arr)
+
+                            cand_obs_list.append(obs_arr)
+                            cand_delta_list.append(delta_arr)
+                            cand_act_list.append(c_act)
+                            cand_rew_list.append(float(s_rew))
+                            valid_cands.append(c_act)
+
+                        if immediate_solve is not None:
+                            action = immediate_solve
+                            value_rerank_triggered = True
+                        elif len(valid_cands) > 1:
+                            M = len(valid_cands)
+                            if self.is_visual:
+                                b_obs = torch.from_numpy(np.stack(cand_obs_list)).unsqueeze(1).to(self.device)
+                                b_delta = None
+                            else:
+                                b_obs = torch.from_numpy(np.stack(cand_obs_list)).unsqueeze(1).to(self.device)
+                                b_delta = torch.from_numpy(np.stack(cand_delta_list)).unsqueeze(1).to(self.device)
+
+                            b_act = torch.tensor(cand_act_list, dtype=torch.long, device=self.device).view(M, 1)
+                            b_rew = torch.tensor(cand_rew_list, dtype=torch.float32, device=self.device).view(M, 1, 1)
+
+                            z_cands = self.front_end(obs=b_obs, delta_obs=b_delta, prev_action=b_act, prev_reward=b_rew)
+                            if self.hx is not None:
+                                if isinstance(self.hx, tuple):
+                                    hx_cands = tuple(
+                                        h_t.repeat(1, M, 1) if h_t.dim() == 3 else h_t.repeat(M, 1)
+                                        for h_t in self.hx
+                                    )
+                                else:
+                                    hx_cands = self.hx.repeat(1, M, 1) if self.hx.dim() == 3 else self.hx.repeat(M, 1)
+                            else:
+                                hx_cands = None
+
+                            h_cands, _ = self.trunk(z_cands, hx=hx_cands, dones=None)
+                            v_cands = self.value_head(h_cands).squeeze(-1).squeeze(-1)
+                            q_scores = torch.tensor(cand_rew_list, device=self.device) + 0.99 * v_cands
+                            best_idx = int(torch.argmax(q_scores).item())
+                            action = valid_cands[best_idx]
+                            value_rerank_triggered = True
+
             is_uncertain = (uncertainty >= uncertainty_threshold) or (confidence < confidence_threshold)
             ensemble_fallback_triggered = False
 
@@ -647,6 +743,7 @@ class UniversalS1Agent(nn.Module):
                 calibration=calib,
                 latency_ms=latency_ms,
                 ensemble_fallback_triggered=ensemble_fallback_triggered,
+                value_rerank_triggered=value_rerank_triggered,
             )
         else:
             if self.action_chunk_size > 1:
@@ -819,6 +916,11 @@ class UniversalS1Agent(nn.Module):
         quality_filter: bool = True,
         ensemble_fallback: bool = False,
         adaptive_chunk: bool = False,
+        value_rerank: bool = False,
+        value_rerank_top_k: int = 2,
+        value_rerank_threshold: float = 0.85,
+        env: Optional[Any] = None,
+        simulator: Optional[Callable[[int], Tuple[Any, float, bool, Dict[str, Any]]]] = None,
     ) -> ReflexDecision:
         """Executa a decisão reflexiva retornando a estrutura ReflexDecision com telemetria e calibração."""
         decision = self.act_fast(
@@ -835,6 +937,11 @@ class UniversalS1Agent(nn.Module):
             quality_filter=quality_filter,
             ensemble_fallback=ensemble_fallback,
             adaptive_chunk=adaptive_chunk,
+            value_rerank=value_rerank,
+            value_rerank_top_k=value_rerank_top_k,
+            value_rerank_threshold=value_rerank_threshold,
+            env=env,
+            simulator=simulator,
         )
         assert isinstance(decision, ReflexDecision)
         return decision

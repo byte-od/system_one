@@ -253,7 +253,9 @@ class RubiksCubeCore:
         target_depth = max(1, int(depth))
         if self._rust is not None:
             seed = int(rng.integers(0, 2**63 - 1)) if rng is not None else None
-            return list(self._rust.scramble(target_depth, use_macros, seed))
+            moves = list(self._rust.scramble(target_depth, use_macros, seed))
+            self.state = np.array(self._rust.get_state(), dtype=np.int32)
+            return moves
 
         self.reset()
         if rng is None:
@@ -739,6 +741,25 @@ class RubiksCubeEnv(gym.Env):
         }
         return obs, info
 
+    def simulate_step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
+        """Simula a execução de 1 passo atômico e desfaz imediatamente via ação inversa (zero alocação).
+        Retorna a observação resultante (324,), recompensa estimada, e se foi resolvido."""
+        act_idx = int(action)
+        action_name = self.core.ATOMIC_MOVES[act_idx]
+        inv_name = self.core.INVERSE_ATOMIC[action_name]
+
+        self.core.apply_atomic(action_name)
+        is_solved = self.core.is_solved()
+        cur_score = self.core.get_score()
+        delta_score = cur_score - self._prev_score
+        rew = (delta_score * 5.0) - 0.02 + (10.0 if is_solved else 0.0)
+        obs = self.core.get_one_hot()
+
+        # Desfaz imediatamente restaurando o estado original exato
+        self.core.apply_atomic(inv_name)
+
+        return obs, rew, is_solved, {"is_solved": is_solved}
+
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         self._steps += 1
         act_idx = int(action)
@@ -979,6 +1000,23 @@ class RubiksCubeMacroEnv(gym.Env):
             ),
         }
         return obs, info
+
+    def simulate_step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
+        """Simula a execução de 1 macro-ação e desfaz imediatamente via macro inversa."""
+        act_idx = int(action)
+        macro_name = self.core.MACRO_NAMES[act_idx]
+        inv_name = self.core.INVERSE_MACROS[macro_name]
+
+        self.core.apply_macro(macro_name)
+        is_solved = self.core.is_solved()
+        cur_score = self.core.get_score()
+        delta_score = cur_score - self._prev_score
+        rew = (delta_score * 8.0) - 0.02 + (15.0 if is_solved else 0.0)
+        obs = self.core.get_one_hot()
+
+        self.core.apply_macro(inv_name)
+
+        return obs, rew, is_solved, {"is_solved": is_solved}
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         self._steps += 1
@@ -1238,6 +1276,9 @@ class VectorizedRubiksEnv(gym.Env):
             inf["curriculum_success_rate"] = global_rate
 
         return np.stack(obs_list, axis=0), InfoList(info_list)
+
+    def simulate_step(self, action: int, env_idx: int = 0) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
+        return self.envs[env_idx].simulate_step(action)
 
     def step(
         self, actions: Any, active_mask: Optional[np.ndarray] = None
