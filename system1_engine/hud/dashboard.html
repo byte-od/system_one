@@ -1790,6 +1790,16 @@
               </div>
             </div>
           </div>
+          <!-- Focalização Dinâmica na Fronteira Proximal -->
+          <div class="flex items-center justify-between mt-1 pt-1.5 border-t border-gray-800/60 px-0.5">
+            <label class="flex items-center gap-1.5 cursor-pointer select-none" title="Adapta a probabilidade da fronteira e decaimento proximal com base na taxa de sucesso real">
+              <input type="checkbox" id="cfg-dynamic-frontier" checked class="accent-cyan-500 rounded cursor-pointer" />
+              <span class="text-[10px] text-cyan-300 font-semibold flex items-center gap-1">
+                <span>🎯</span> Focalização Proximal Dinâmica
+              </span>
+            </label>
+            <span class="text-[9px] text-gray-400 font-mono" id="hud-frontier-p-indicator">P(D): adaptativa</span>
+          </div>
         </div>
       </div>
 
@@ -4542,6 +4552,19 @@
             }
           }
 
+          // Indicador de P(Fronteira) na Focalização Proximal
+          const frontierPInd = document.getElementById('hud-frontier-p-indicator');
+          if (frontierPInd) {
+            if (telemetry.dynamic_frontier && telemetry.curriculum_p_frontier !== undefined) {
+              const pct = (telemetry.curriculum_p_frontier * 100).toFixed(0);
+              frontierPInd.innerText = `P(D): ${pct}%`;
+              frontierPInd.className = 'text-[9px] text-cyan-400 font-mono font-bold';
+            } else if (!telemetry.dynamic_frontier) {
+              frontierPInd.innerText = 'P(D): estática';
+              frontierPInd.className = 'text-[9px] text-gray-500 font-mono';
+            }
+          }
+
           // Rastreamento e exibição do Pico para o Currículo Atual
           const hasCurriculum = telemetry.curriculum_depth !== undefined && telemetry.curriculum_depth !== null;
           const curPeakWrapper = document.getElementById('kpi-curriculum-peak-wrapper');
@@ -5730,6 +5753,8 @@
         train_calibration: (document.getElementById('cfg-train-calibration')?.value === 'auto' || !document.getElementById('cfg-train-calibration')?.value) ? 'auto' : (parseFloat(document.getElementById('cfg-train-calibration')?.value) || 'auto'),
         scramble_depth: document.getElementById('cfg-scramble-depth') ? (parseInt(document.getElementById('cfg-scramble-depth').value, 10) || null) : null,
         mixed_replay_rate: (document.getElementById('cfg-mixed-replay-rate') && !isNaN(parseFloat(document.getElementById('cfg-mixed-replay-rate').value))) ? parseFloat(document.getElementById('cfg-mixed-replay-rate').value) : 0.25,
+        dynamic_frontier: document.getElementById('cfg-dynamic-frontier') ? document.getElementById('cfg-dynamic-frontier').checked : true,
+        proximal_decay: 0.8,
         sil_enabled: document.getElementById('cfg-sil') ? document.getElementById('cfg-sil').checked : true,
         sil_coef: document.getElementById('cfg-sil-coef') ? (parseFloat(document.getElementById('cfg-sil-coef').value) || 0.08) : 0.08,
         sil_dpo_enabled: document.getElementById('cfg-dpo') ? document.getElementById('cfg-dpo').checked : true,

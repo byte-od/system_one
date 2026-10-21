@@ -615,6 +615,8 @@ class RubiksCubeEnv(gym.Env):
         target_success_rate: float = 0.90,
         curriculum_window: int = 64,
         mixed_replay_rate: float = 0.15,
+        dynamic_frontier: bool = True,
+        proximal_decay: float = 0.8,
     ) -> None:
         super().__init__()
         self.render_mode = render_mode
@@ -626,6 +628,9 @@ class RubiksCubeEnv(gym.Env):
         self.target_success_rate = target_success_rate
         self.curriculum_window = curriculum_window
         self.mixed_replay_rate = max(0.0, min(1.0, float(mixed_replay_rate)))
+        self.dynamic_frontier = bool(dynamic_frontier)
+        self.proximal_decay = float(proximal_decay)
+        self._last_p_frontier = 1.0 - self.mixed_replay_rate
         self.current_depth = min_depth if curriculum else self.scramble_depth
         self._episode_depth = self.current_depth
         self.recent_successes: deque[float] = deque(maxlen=curriculum_window)
@@ -671,6 +676,64 @@ class RubiksCubeEnv(gym.Env):
         self.frontier_successes.clear()
         return self.current_depth
 
+    def sample_curriculum_depth(self) -> int:
+        """Amostra a profundidade de embaralhamento com Focalização Dinâmica na Fronteira Proximal.
+
+        Modula adaptativamente a probabilidade de visitar a fronteira ativa (current_depth) vs.
+        a vizinhança proximal (current_depth - 1, current_depth - 2) com base na taxa real
+        de sucesso observada na fronteira.
+        """
+        if self.current_depth <= self.min_depth or self.mixed_replay_rate <= 0.0:
+            self._last_p_frontier = 1.0
+            return self.current_depth
+
+        if not getattr(self, "dynamic_frontier", True):
+            # Fallback para mixed replay estático legado
+            self._last_p_frontier = 1.0 - self.mixed_replay_rate
+            if self.rng.random() >= self.mixed_replay_rate:
+                return self.current_depth
+            low_depth = max(self.min_depth, self.current_depth - 2)
+            return int(self.rng.integers(low_depth, self.current_depth))
+
+        # --- Focalização Dinâmica na Fronteira Proximal ---
+        # 1. Taxa de sucesso real observada na fronteira ativa
+        success_rate = self.curriculum_success_rate
+
+        # 2. Modulação Dinâmica da Probabilidade da Fronteira (P_frontier)
+        # Se o sucesso for baixo (<20%), recua para treinar no degrau preparatório D-1.
+        # Conforme sobe, concentra até 90% na fronteira para disparar a promoção.
+        p_base = 1.0 - self.mixed_replay_rate
+        p_min = max(0.40, p_base - 0.25)
+        p_max = min(0.92, p_base + 0.15)
+
+        s_factor = 1.0 / (1.0 + np.exp(-10.0 * (success_rate - 0.35)))
+        p_frontier = float(p_min + (p_max - p_min) * s_factor)
+        self._last_p_frontier = p_frontier
+
+        if self.rng.random() < p_frontier:
+            return self.current_depth
+
+        # 3. Distribuição na Vizinhança Proximal (d < current_depth)
+        cur_d = self.current_depth
+        proximal_candidates = [d for d in range(self.min_depth, cur_d)]
+        if not proximal_candidates:
+            return cur_d
+        if len(proximal_candidates) == 1:
+            return proximal_candidates[0]
+
+        # Separação entre vizinhança proximal (D-1, D-2) e âncoras distais
+        proximal_zone = [d for d in proximal_candidates if d >= cur_d - 2]
+        anchor_zone = [d for d in proximal_candidates if d < cur_d - 2]
+
+        if anchor_zone and self.rng.random() < 0.12:
+            return int(self.rng.choice(anchor_zone))
+
+        # Amostragem com decaimento exponencial na zona proximal (D-1 tem o maior peso)
+        decay = getattr(self, "proximal_decay", 0.8)
+        weights = np.array([np.exp(-decay * (cur_d - d)) for d in proximal_zone], dtype=np.float64)
+        weights /= weights.sum()
+        return int(self.rng.choice(proximal_zone, p=weights))
+
     def reset(
         self,
         *,
@@ -699,18 +762,8 @@ class RubiksCubeEnv(gym.Env):
                         f"\n🚀 [CURRICULUM ATÔMICO] Sucesso {success_rate*100:.1f}% >= {self.target_success_rate*100:.0f}%! "
                         f"Profundidade promovida: {old_d} -> {self.current_depth}/{max_d_str}"
                     )
-            # Mixed Replay Curriculum:
-            # Concentra 95% a 100% de probabilidade na fronteira atual (current_depth).
-            # Se mixed_replay_rate > 0 (ex: 0.05), apenas uma fração residual (5%) visita níveis
-            # imediatamente anteriores, eliminando o desperdício de gradientes em níveis rasos (D1..D4).
-            if self.current_depth > self.min_depth and self.mixed_replay_rate > 0.0:
-                if self.rng.random() >= self.mixed_replay_rate:
-                    depth = self.current_depth
-                else:
-                    low_depth = max(self.min_depth, self.current_depth - 2)
-                    depth = int(self.rng.integers(low_depth, self.current_depth))
-            else:
-                depth = self.current_depth
+            # Focalização Dinâmica na Fronteira Proximal
+            depth = self.sample_curriculum_depth()
         else:
             depth = self.scramble_depth
 
@@ -733,6 +786,8 @@ class RubiksCubeEnv(gym.Env):
             "max_depth": self.max_depth,
             "curriculum": self.curriculum,
             "curriculum_promotions": self.curriculum_promotions,
+            "curriculum_p_frontier": getattr(self, "_last_p_frontier", 1.0),
+            "dynamic_frontier": getattr(self, "dynamic_frontier", True),
             "curriculum_success_rate": (
                 float(np.mean(self.frontier_successes)) if len(self.frontier_successes) > 0 else (
                     float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
@@ -829,6 +884,8 @@ class RubiksCubeEnv(gym.Env):
             target_success_rate=self.target_success_rate,
             curriculum_window=self.curriculum_window,
             mixed_replay_rate=self.mixed_replay_rate,
+            dynamic_frontier=self.dynamic_frontier,
+            proximal_decay=self.proximal_decay,
         )
         new_env.reset()
         new_env.core.reset()
@@ -875,6 +932,8 @@ class RubiksCubeMacroEnv(gym.Env):
         target_success_rate: float = 0.90,
         curriculum_window: int = 64,
         mixed_replay_rate: float = 0.15,
+        dynamic_frontier: bool = True,
+        proximal_decay: float = 0.8,
     ) -> None:
         super().__init__()
         self.render_mode = render_mode
@@ -886,6 +945,9 @@ class RubiksCubeMacroEnv(gym.Env):
         self.target_success_rate = target_success_rate
         self.curriculum_window = curriculum_window
         self.mixed_replay_rate = max(0.0, min(1.0, float(mixed_replay_rate)))
+        self.dynamic_frontier = bool(dynamic_frontier)
+        self.proximal_decay = float(proximal_decay)
+        self._last_p_frontier = 1.0 - self.mixed_replay_rate
         self.current_depth = min_depth if curriculum else self.scramble_depth
         self._episode_depth = self.current_depth
         self.recent_successes: deque[float] = deque(maxlen=curriculum_window)
@@ -931,6 +993,62 @@ class RubiksCubeMacroEnv(gym.Env):
         self.frontier_successes.clear()
         return self.current_depth
 
+    def sample_curriculum_depth(self) -> int:
+        """Amostra a profundidade de embaralhamento com Focalização Dinâmica na Fronteira Proximal.
+
+        Modula adaptativamente a probabilidade de visitar a fronteira ativa (current_depth) vs.
+        a vizinhança proximal (current_depth - 1, current_depth - 2) com base na taxa real
+        de sucesso observada na fronteira.
+        """
+        if self.current_depth <= self.min_depth or self.mixed_replay_rate <= 0.0:
+            self._last_p_frontier = 1.0
+            return self.current_depth
+
+        if not getattr(self, "dynamic_frontier", True):
+            # Fallback para mixed replay estático legado
+            self._last_p_frontier = 1.0 - self.mixed_replay_rate
+            if self.rng.random() >= self.mixed_replay_rate:
+                return self.current_depth
+            low_depth = max(self.min_depth, self.current_depth - 2)
+            return int(self.rng.integers(low_depth, self.current_depth))
+
+        # --- Focalização Dinâmica na Fronteira Proximal ---
+        # 1. Taxa de sucesso real observada na fronteira ativa
+        success_rate = self.curriculum_success_rate
+
+        # 2. Modulação Dinâmica da Probabilidade da Fronteira (P_frontier)
+        p_base = 1.0 - self.mixed_replay_rate
+        p_min = max(0.40, p_base - 0.25)
+        p_max = min(0.92, p_base + 0.15)
+
+        s_factor = 1.0 / (1.0 + np.exp(-10.0 * (success_rate - 0.35)))
+        p_frontier = float(p_min + (p_max - p_min) * s_factor)
+        self._last_p_frontier = p_frontier
+
+        if self.rng.random() < p_frontier:
+            return self.current_depth
+
+        # 3. Distribuição na Vizinhança Proximal (d < current_depth)
+        cur_d = self.current_depth
+        proximal_candidates = [d for d in range(self.min_depth, cur_d)]
+        if not proximal_candidates:
+            return cur_d
+        if len(proximal_candidates) == 1:
+            return proximal_candidates[0]
+
+        # Separação entre vizinhança proximal (D-1, D-2) e âncoras distais
+        proximal_zone = [d for d in proximal_candidates if d >= cur_d - 2]
+        anchor_zone = [d for d in proximal_candidates if d < cur_d - 2]
+
+        if anchor_zone and self.rng.random() < 0.12:
+            return int(self.rng.choice(anchor_zone))
+
+        # Amostragem com decaimento exponencial na zona proximal (D-1 tem o maior peso)
+        decay = getattr(self, "proximal_decay", 0.8)
+        weights = np.array([np.exp(-decay * (cur_d - d)) for d in proximal_zone], dtype=np.float64)
+        weights /= weights.sum()
+        return int(self.rng.choice(proximal_zone, p=weights))
+
     def reset(
         self,
         *,
@@ -959,18 +1077,8 @@ class RubiksCubeMacroEnv(gym.Env):
                         f"\n🚀 [CURRICULUM MACRO] Sucesso {success_rate*100:.1f}% >= {self.target_success_rate*100:.0f}%! "
                         f"Profundidade promovida: {old_d} -> {self.current_depth}/{max_d_str}"
                     )
-            # Mixed Replay Curriculum:
-            # Concentra 95% a 100% de probabilidade na fronteira atual (current_depth).
-            # Se mixed_replay_rate > 0 (ex: 0.05), apenas uma fração residual (5%) visita níveis
-            # imediatamente anteriores, eliminando o desperdício de gradientes em níveis rasos (D1..D4).
-            if self.current_depth > self.min_depth and self.mixed_replay_rate > 0.0:
-                if self.rng.random() >= self.mixed_replay_rate:
-                    depth = self.current_depth
-                else:
-                    low_depth = max(self.min_depth, self.current_depth - 2)
-                    depth = int(self.rng.integers(low_depth, self.current_depth))
-            else:
-                depth = self.current_depth
+            # Focalização Dinâmica na Fronteira Proximal
+            depth = self.sample_curriculum_depth()
         else:
             depth = self.scramble_depth
 
@@ -993,6 +1101,8 @@ class RubiksCubeMacroEnv(gym.Env):
             "max_depth": self.max_depth,
             "curriculum": self.curriculum,
             "curriculum_promotions": self.curriculum_promotions,
+            "curriculum_p_frontier": getattr(self, "_last_p_frontier", 1.0),
+            "dynamic_frontier": getattr(self, "dynamic_frontier", True),
             "curriculum_success_rate": (
                 float(np.mean(self.frontier_successes)) if len(self.frontier_successes) > 0 else (
                     float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
@@ -1084,6 +1194,8 @@ class RubiksCubeMacroEnv(gym.Env):
             target_success_rate=self.target_success_rate,
             curriculum_window=self.curriculum_window,
             mixed_replay_rate=self.mixed_replay_rate,
+            dynamic_frontier=self.dynamic_frontier,
+            proximal_decay=self.proximal_decay,
         )
         new_env.reset()
         new_env.core.reset()
@@ -1235,6 +1347,26 @@ class VectorizedRubiksEnv(gym.Env):
         for env in self.envs:
             env.mixed_replay_rate = v
 
+    @property
+    def dynamic_frontier(self) -> bool:
+        return getattr(self.envs[0], "dynamic_frontier", True)
+
+    @dynamic_frontier.setter
+    def dynamic_frontier(self, val: bool) -> None:
+        v = bool(val)
+        for env in self.envs:
+            env.dynamic_frontier = v
+
+    @property
+    def proximal_decay(self) -> float:
+        return getattr(self.envs[0], "proximal_decay", 0.8)
+
+    @proximal_decay.setter
+    def proximal_decay(self, val: float) -> None:
+        v = float(val)
+        for env in self.envs:
+            env.proximal_decay = v
+
     def set_view_mode(self, mode: str) -> None:
         self.view_mode = str(mode).lower()
         for env in self.envs:
@@ -1270,10 +1402,13 @@ class VectorizedRubiksEnv(gym.Env):
                 env.current_depth = shared_depth
                 env.curriculum_promotions = shared_promos
 
+        mean_p_frontier = float(np.mean([inf.get("curriculum_p_frontier", 1.0) for inf in info_list]))
         for inf in info_list:
             inf["current_depth"] = shared_depth
             inf["curriculum_promotions"] = shared_promos
             inf["curriculum_success_rate"] = global_rate
+            inf["dynamic_frontier"] = self.dynamic_frontier
+            inf["curriculum_p_frontier"] = mean_p_frontier
 
         return np.stack(obs_list, axis=0), InfoList(info_list)
 

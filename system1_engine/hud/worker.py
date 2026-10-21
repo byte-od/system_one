@@ -250,6 +250,13 @@ def build_hud_env(
                     extra_kwargs["mixed_replay_rate"] = float(config["mixed_replay_rate"])
                 elif "mixed_replay" in config:
                     extra_kwargs["mixed_replay_rate"] = 0.0 if not config["mixed_replay"] else 0.15
+            if config is not None:
+                if "dynamic_frontier" in config:
+                    extra_kwargs["dynamic_frontier"] = bool(config["dynamic_frontier"])
+                elif "proximal_frontier" in config:
+                    extra_kwargs["dynamic_frontier"] = bool(config["proximal_frontier"])
+                if "proximal_decay" in config:
+                    extra_kwargs["proximal_decay"] = float(config["proximal_decay"])
         else:
             extra_kwargs["curriculum"] = False
             if scramble_depth is not None and int(scramble_depth) > 0:
@@ -489,6 +496,8 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         max_failures_per_depth=max_failures_per_depth,
         min_failures_per_depth=min_failures_per_depth,
         sterility_memory_enabled=sterility_memory_enabled,
+        dynamic_frontier=bool(config.get("dynamic_frontier", True)),
+        proximal_decay=float(config.get("proximal_decay", 0.8)),
     )
 
     raw_env = getattr(env, "unwrapped", env)

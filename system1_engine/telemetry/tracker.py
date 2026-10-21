@@ -55,6 +55,8 @@ class PhaseMetrics:
     curriculum_depth_min_success_rate: Optional[float] = None
     successful_depth: Optional[int] = None
     best_return_depth: Optional[int] = None
+    dynamic_frontier: bool = True
+    curriculum_p_frontier: float = 1.0
 
     # Estado de Execução
     is_completed: bool = False
@@ -143,6 +145,10 @@ class LiveStatsTracker:
                         m.curriculum_depth_best_success_rate = rate
                     if m.curriculum_depth_min_success_rate is None or rate < m.curriculum_depth_min_success_rate:
                         m.curriculum_depth_min_success_rate = rate
+            if "curriculum_p_frontier" in info:
+                m.curriculum_p_frontier = float(info["curriculum_p_frontier"])
+            if "dynamic_frontier" in info:
+                m.dynamic_frontier = bool(info["dynamic_frontier"])
 
         if done:
             ep_ret = float(m.current_episode_return)
@@ -250,6 +256,8 @@ class LiveStatsTracker:
             "curriculum_max_depth": m.curriculum_max_depth,
             "curriculum_success_rate": m.curriculum_success_rate,
             "curriculum_promotions": m.curriculum_promotions,
+            "dynamic_frontier": bool(m.dynamic_frontier),
+            "curriculum_p_frontier": float(m.curriculum_p_frontier),
             "curriculum_depth_best_return": float(m.curriculum_depth_best_return) if m.curriculum_depth_best_return is not None else None,
             "curriculum_depth_best_success_rate": float(m.curriculum_depth_best_success_rate) if m.curriculum_depth_best_success_rate is not None else None,
             "curriculum_depth_min_success_rate": float(m.curriculum_depth_min_success_rate) if m.curriculum_depth_min_success_rate is not None else None,

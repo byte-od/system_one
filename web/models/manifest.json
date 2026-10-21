@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "updated_at": 1792599909.907263,
-  "updated_at_str": "21/10/2026 13:25:09",
+  "updated_at": 1792602864.905083,
+  "updated_at_str": "21/10/2026 14:14:24",
   "models": {
     "acrobot": {
       "key": "acrobot",
@@ -73,8 +73,8 @@
       "file": "s1_cartpole.onnx",
       "size_mb": 2.77,
       "size_bytes": 2909005,
-      "mtime": 1792599893.5747032,
-      "mtime_str": "21/10/2026 13:24:53",
+      "mtime": 1792602847.5229576,
+      "mtime_str": "21/10/2026 14:14:07",
       "checkpoint_source": "s1_cartpole_v1_trained.pt",
       "checkpoint_version": "v1",
       "action_chunk_size": 1
@@ -131,8 +131,8 @@
       "file": "s1_rubiks_atomic.onnx",
       "size_mb": 6.36,
       "size_bytes": 6672655,
-      "mtime": 1792599891.3557384,
-      "mtime_str": "21/10/2026 13:24:51",
+      "mtime": 1792602845.2701,
+      "mtime_str": "21/10/2026 14:14:05",
       "checkpoint_source": "s1_rubikscube_v0_trained_v21.pt",
       "checkpoint_version": "v21",
       "action_chunk_size": 1

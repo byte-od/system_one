@@ -60,6 +60,10 @@ def build_environment(
                 extra_kwargs["mixed_replay_rate"] = float(mixed_replay_rate)
             elif args is not None and getattr(args, "mixed_replay_rate", None) is not None:
                 extra_kwargs["mixed_replay_rate"] = float(args.mixed_replay_rate)
+            if args is not None and getattr(args, "dynamic_frontier", None) is not None:
+                extra_kwargs["dynamic_frontier"] = bool(args.dynamic_frontier)
+            if args is not None and getattr(args, "proximal_decay", None) is not None:
+                extra_kwargs["proximal_decay"] = float(args.proximal_decay)
         else:
             extra_kwargs["curriculum"] = False
             if scramble_depth is not None and int(scramble_depth) > 0:
@@ -735,6 +739,18 @@ def main() -> None:
         type=float,
         default=0.15,
         help="Taxa de mixed replay no currículo do Cubo Mágico (padrão: 0.15 = 15%% replay / 85%% fronteira; 0.0 desativa completamente)",
+    )
+    parser.add_argument(
+        "--dynamic-frontier",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Habilita focalização dinâmica na fronteira proximal do currículo (padrão: True)",
+    )
+    parser.add_argument(
+        "--proximal-decay",
+        type=float,
+        default=0.8,
+        help="Taxa de decaimento exponencial na vizinhança proximal (padrão: 0.8)",
     )
     parser.add_argument(
         "--calibration",

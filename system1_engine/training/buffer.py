@@ -303,6 +303,9 @@ class SuccessfulTrajectory:
     length: int                      # Duração T em passos
     log_probs: Optional[np.ndarray] = None  # [T] log_probs da política de rollout (pi_old / pi_ref)
 
+    def __len__(self) -> int:
+        return self.length
+
 
 @dataclass
 class FrontierTransition(SuccessfulTrajectory):
@@ -385,6 +388,8 @@ class SuccessReplayBuffer:
         progressive_capacity: bool = True,
         max_failures_per_depth: int = 512,
         min_failures_per_depth: int = 16,
+        dynamic_frontier: bool = True,
+        proximal_decay: float = 0.8,
     ) -> None:
         self.max_trajectories = max(2, int(max_trajectories))
         self.max_per_depth = max(1, min(int(max_per_depth), self.max_trajectories))
@@ -400,6 +405,8 @@ class SuccessReplayBuffer:
         self.progressive_capacity = bool(progressive_capacity)
         self.max_failures_per_depth = max(1, int(max_failures_per_depth))
         self.min_failures_per_depth = max(1, min(int(min_failures_per_depth), self.max_failures_per_depth))
+        self.dynamic_frontier = bool(dynamic_frontier)
+        self.proximal_decay = float(proximal_decay)
 
         self._depth_buffers: Dict[int, List[SuccessfulTrajectory]] = defaultdict(list)
         self._failure_buffers: Dict[int, deque[SuccessfulTrajectory]] = defaultdict(
@@ -742,11 +749,30 @@ class SuccessReplayBuffer:
                 if n_frontier >= k and k > 1:
                     n_frontier = k - 1
                 n_anchor = k - n_frontier
-                f_indices = np.random.choice(len(frontier), size=n_frontier, replace=(n_frontier > len(frontier)))
+
+                if getattr(self, "dynamic_frontier", True):
+                    f_depths = np.array([t.depth for t in frontier], dtype=np.float64)
+                    f_weights = np.exp(-self.proximal_decay * np.abs(target_depth - f_depths))
+                    # Geodesic boost: trajetórias mais curtas ganham prioridade de amostragem
+                    f_lens = np.array([max(1, len(t)) for t in frontier], dtype=np.float64)
+                    f_weights = f_weights / np.sqrt(f_lens)
+                    f_weights /= f_weights.sum()
+                    f_indices = np.random.choice(len(frontier), size=n_frontier, replace=(n_frontier > len(frontier)), p=f_weights)
+                else:
+                    f_indices = np.random.choice(len(frontier), size=n_frontier, replace=(n_frontier > len(frontier)))
+
                 a_indices = np.random.choice(len(anchors), size=n_anchor, replace=(n_anchor > len(anchors)))
                 sampled_trajs = [frontier[i] for i in f_indices] + [anchors[j] for j in a_indices]
             elif len(frontier) > 0:
-                f_indices = np.random.choice(len(frontier), size=k, replace=(k > len(frontier)))
+                if getattr(self, "dynamic_frontier", True):
+                    f_depths = np.array([t.depth for t in frontier], dtype=np.float64)
+                    f_weights = np.exp(-self.proximal_decay * np.abs(target_depth - f_depths))
+                    f_lens = np.array([max(1, len(t)) for t in frontier], dtype=np.float64)
+                    f_weights = f_weights / np.sqrt(f_lens)
+                    f_weights /= f_weights.sum()
+                    f_indices = np.random.choice(len(frontier), size=k, replace=(k > len(frontier)), p=f_weights)
+                else:
+                    f_indices = np.random.choice(len(frontier), size=k, replace=(k > len(frontier)))
                 sampled_trajs = [frontier[i] for i in f_indices]
             else:
                 a_indices = np.random.choice(len(anchors), size=k, replace=(k > len(anchors)))
@@ -791,10 +817,20 @@ class SuccessReplayBuffer:
             if n_front >= k and k > 1:
                 n_front = k - 1
             n_anc = k - n_front
-            chosen_depths.extend(np.random.choice(frontier_depths, size=n_front, replace=True))
+            if getattr(self, "dynamic_frontier", True):
+                f_w = np.array([np.exp(-self.proximal_decay * abs(target_depth - d)) for d in frontier_depths], dtype=np.float64)
+                f_w /= f_w.sum()
+                chosen_depths.extend(np.random.choice(frontier_depths, size=n_front, replace=True, p=f_w))
+            else:
+                chosen_depths.extend(np.random.choice(frontier_depths, size=n_front, replace=True))
             chosen_depths.extend(np.random.choice(anchor_depths, size=n_anc, replace=True))
         elif frontier_depths:
-            chosen_depths.extend(np.random.choice(frontier_depths, size=k, replace=True))
+            if getattr(self, "dynamic_frontier", True) and target_depth is not None:
+                f_w = np.array([np.exp(-self.proximal_decay * abs(target_depth - d)) for d in frontier_depths], dtype=np.float64)
+                f_w /= f_w.sum()
+                chosen_depths.extend(np.random.choice(frontier_depths, size=k, replace=True, p=f_w))
+            else:
+                chosen_depths.extend(np.random.choice(frontier_depths, size=k, replace=True))
         else:
             chosen_depths.extend(np.random.choice(anchor_depths, size=k, replace=True))
 

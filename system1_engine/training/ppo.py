@@ -67,9 +67,13 @@ class RecurrentPPOTrainer:
         adaptive_chunk: bool = False,
         adaptive_conf_threshold: float = 0.65,
         adaptive_margin_threshold: float = 0.15,
+        dynamic_frontier: bool = True,
+        proximal_decay: float = 0.8,
     ) -> None:
         self.agent = agent.to(device)
         self.env = env
+        self.dynamic_frontier = bool(dynamic_frontier)
+        self.proximal_decay = float(proximal_decay)
         self.action_chunk_size = max(1, int(action_chunk_size or getattr(agent, "action_chunk_size", 1)))
         self.adaptive_chunk = bool(adaptive_chunk)
         self.adaptive_conf_threshold = float(adaptive_conf_threshold)
@@ -186,6 +190,8 @@ class RecurrentPPOTrainer:
             progressive_capacity=self.progressive_buffer_capacity,
             max_failures_per_depth=self.max_failures_per_depth,
             min_failures_per_depth=self.min_failures_per_depth,
+            dynamic_frontier=self.dynamic_frontier,
+            proximal_decay=self.proximal_decay,
         )
 
         # Memória Latente Estéril Auto-Corretiva (Self-Healing Latent Tabu)
