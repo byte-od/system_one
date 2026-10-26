@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "updated_at": 1793025167.973584,
-  "updated_at_str": "26/10/2026 11:32:47",
+  "updated_at": 1793025447.88786,
+  "updated_at_str": "26/10/2026 11:37:27",
   "models": {
     "acrobot": {
       "key": "acrobot",
@@ -129,10 +129,10 @@
       "description": "Tronco recorrente de 1.6M parâmetros com Fast GRU + Slow GRU + Residual Highway. 12 giros atômicos, latência sub-milissegundo.",
       "default": true,
       "file": "s1_rubiks_atomic.onnx",
-      "size_mb": 6.4,
-      "size_bytes": 6715857,
-      "mtime": 1793025167.568101,
-      "mtime_str": "26/10/2026 11:32:47",
+      "size_mb": 6.36,
+      "size_bytes": 6673239,
+      "mtime": 1793025447.620509,
+      "mtime_str": "26/10/2026 11:37:27",
       "checkpoint_source": "s1_rubikscube_v0_trained_v23.pt",
       "checkpoint_version": "v23",
       "action_chunk_size": 1
