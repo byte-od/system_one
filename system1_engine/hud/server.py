@@ -123,6 +123,7 @@ class HUDServer:
                     "depth": meta.get("depth"),
                     "trunk_type": meta.get("trunk_type", "classic"),
                     "action_chunk_size": meta.get("action_chunk_size", 1),
+                    "tri_compass": meta.get("tri_compass", False),
                 })
             except Exception:
                 results.append({"path": path, "filename": os.path.basename(path), "size_mb": 0.0, "mtime": "—"})

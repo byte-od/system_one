@@ -231,6 +231,7 @@ def test_sterility_level_separation():
 
 def test_agent_act_fast_level_isolation():
     """Garante que UniversalS1Agent.act_fast isola resistências entre níveis distintos."""
+    torch.manual_seed(42)
     obs_space = gym.spaces.Box(-np.inf, np.inf, shape=(324,), dtype=np.float32)
     act_space = gym.spaces.Discrete(12)
     agent = UniversalS1Agent(obs_space=obs_space, action_space=act_space)
@@ -244,6 +245,7 @@ def test_agent_act_fast_level_isolation():
     }
 
     # Gera decisão base para capturar latent
+    agent.reset_memory()
     dec1 = agent.act_fast(obs_dict, return_decision=True, quality_filter=False)
     h_latent = agent.last_latent
     assert h_latent is not None
@@ -257,10 +259,12 @@ def test_agent_act_fast_level_isolation():
         mem.record_transition(latent=h_latent, action=chosen_act, is_productive=False, level=6)
 
     # Executa act_fast no nível 1: deve ignorar a esterilidade do nível 6 e manter a ação!
+    agent.reset_memory()
     dec_lvl1 = agent.act_fast(obs_dict, return_decision=True, quality_filter=False, level=1)
     assert dec_lvl1.action == chosen_act
 
     # Executa act_fast no nível 6: com resistência alta, deve evitar a ação estéril!
+    agent.reset_memory()
     dec_lvl6 = agent.act_fast(obs_dict, return_decision=True, quality_filter=False, level=6)
     assert dec_lvl6.action != chosen_act
 

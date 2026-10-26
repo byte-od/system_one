@@ -8,6 +8,7 @@ import torch.nn as nn
 from torch.distributions import Distribution
 
 from system1_engine.core.encoders import ImpalaVisualFrontEnd, VectorFrontEnd
+from system1_engine.core.ensemble import ConfidenceGatedEnsemble
 from system1_engine.core.heads import CategoricalPolicyHead, GaussianPolicyHead, ValueHead
 from system1_engine.core.trunk import LeanResidualTrunk, System1Trunk
 
@@ -52,8 +53,10 @@ class UniversalS1Agent(nn.Module):
         reward_fixed: bool = False,
         trunk_type: str = "classic",
         action_chunk_size: int = 1,
+        tri_compass: Optional[bool] = None,
     ) -> None:
         super().__init__()
+        raw_obs_space = obs_space
         if isinstance(obs_space, gym.spaces.Dict) and "obs" in obs_space.spaces:
             obs_space = obs_space.spaces["obs"]
         self.obs_space = obs_space
@@ -65,6 +68,19 @@ class UniversalS1Agent(nn.Module):
                 isinstance(obs_space, gym.spaces.Box) and len(obs_space.shape) == 3
             )
         self.is_visual = is_visual
+
+        if self.is_visual:
+            self.tri_compass = False
+        elif tri_compass is None:
+            if isinstance(raw_obs_space, gym.spaces.Dict) and "delta_obs" in raw_obs_space.spaces:
+                obs_dim = int(np.prod(obs_space.shape))
+                delta_dim = int(np.prod(raw_obs_space.spaces["delta_obs"].shape))
+                tri_compass = (delta_dim >= 3 * obs_dim)
+            else:
+                tri_compass = False
+            self.tri_compass = bool(tri_compass)
+        else:
+            self.tri_compass = bool(tri_compass)
 
         # 1. Perception Front-End (Scenario-dependent)
         if self.is_visual:
@@ -84,15 +100,17 @@ class UniversalS1Agent(nn.Module):
                 obs_dim=obs_dim,
                 action_space=action_space,
                 reward_fixed=reward_fixed,
+                tri_compass=self.tri_compass,
             )
 
         # 2. Universal Recurrent Trunk (Can be shared or transferred)
+        front_end_out_dim = getattr(self.front_end, "out_dim", 465 if self.tri_compass else 337)
         if trunk is not None:
             self.trunk = trunk
         elif str(trunk_type).lower() in ("lean", "lean_residual", "v2"):
-            self.trunk = LeanResidualTrunk(input_dim=337, fast_dim=256, slow_dim=256)
+            self.trunk = LeanResidualTrunk(input_dim=front_end_out_dim, fast_dim=256, slow_dim=256)
         else:
-            self.trunk = System1Trunk(input_dim=337, hidden_dim=256, num_res_blocks=2)
+            self.trunk = System1Trunk(input_dim=front_end_out_dim, hidden_dim=256, num_res_blocks=2)
 
         trunk_hidden_dim = getattr(self.trunk, "hidden_dim", 256)
 
@@ -189,6 +207,9 @@ class UniversalS1Agent(nn.Module):
                 delta_obs=delta_obs,
                 prev_action=prev_action,
                 prev_reward=prev_reward,
+                local_delta=obs_dict.get("local_delta"),
+                origin_delta=obs_dict.get("origin_delta"),
+                goal_delta=obs_dict.get("goal_delta"),
             )
 
     def forward(
@@ -710,7 +731,6 @@ class UniversalS1Agent(nn.Module):
 
             # Fallback Ativo por Gating de Confiança (A.2)
             if is_uncertain and ensemble_fallback:
-                from system1_engine.core.ensemble import ConfidenceGatedEnsemble
                 action, _ = ConfidenceGatedEnsemble.resolve_uncertain_action(
                     agent=self,
                     h=h,
@@ -865,7 +885,6 @@ class UniversalS1Agent(nn.Module):
 
             # Fallback Ativo por Gating de Confiança Contínuo (A.2)
             if is_uncertain and ensemble_fallback:
-                from system1_engine.core.ensemble import ConfidenceGatedEnsemble
                 action_np, _ = ConfidenceGatedEnsemble.resolve_uncertain_action(
                     agent=self,
                     h=h,
@@ -953,7 +972,11 @@ class UniversalS1Agent(nn.Module):
         calibrations: Optional[List[Any]] = None,
         is_atomic_cube: bool = True,
     ) -> Tuple[Any, List[Any]]:
-        """Executa múltiplos cenários sob diferentes calibrações e seleciona o melhor resultado garantindo qualidade."""
+        """Executa múltiplos cenários sob diferentes calibrações e seleciona o melhor resultado.
+
+        [DEPRECATED]: Requer env.clone(). Para tempo real (<0.1ms), o agente utiliza
+        automaticamente ConfidenceGatedEnsemble quando detecta incerteza em act_fast().
+        """
         from system1_engine.core.ensemble import QualityEnsembleEvaluator
         return QualityEnsembleEvaluator.evaluate_scenarios(
             agent=self,

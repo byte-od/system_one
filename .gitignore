@@ -14,3 +14,5 @@ _vizdoom.ini
 target/
 crates/**/target/
 *.pt
+scratch/
+benchmark_results_*.json

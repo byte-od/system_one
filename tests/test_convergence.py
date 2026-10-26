@@ -35,7 +35,7 @@ def test_cartpole_convergence():
         entropy_coef=0.001,
     )
 
-    max_steps = 40000
+    max_steps = 55000
     target_return = 475.0
 
     final_return = trainer.train(

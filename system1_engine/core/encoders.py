@@ -109,12 +109,17 @@ class RewardEncoder(nn.Module):
 class VectorFrontEnd(nn.Module):
     """Universal Vector Perceptual Front-End.
 
-    Maps:
-      s_t         (obs_dim)  -> z_s  in R^256
-      Delta s_t   (obs_dim)  -> z_D  in R^64
-      a_{t-1}     (act_dim)  -> z_a  in R^16
-      r_{t-1}     (1)        -> z_r  in R^1
-    Concatenates into R^337 and applies LayerNorm(337).
+    Supports:
+      1. Triangulação Desacoplada (tri_compass=True):
+         s_t           (obs_dim)  -> z_s  in R^256
+         Delta_local   (obs_dim)  -> z_l  in R^64 (velocidade instantânea)
+         Delta_origin  (obs_dim)  -> z_o  in R^64 (deslocamento da origem)
+         Delta_goal    (obs_dim)  -> z_g  in R^64 (atrator geodésico c-SIL/DPO)
+         a_{t-1}       (act_dim)  -> z_a  in R^16
+         r_{t-1}       (1)        -> z_r  in R^1
+         Concatena em R^465 e aplica LayerNorm(465).
+      2. Modo Clássico (tri_compass=False):
+         Concatena em R^337 e aplica LayerNorm(337).
     """
 
     def __init__(
@@ -122,16 +127,29 @@ class VectorFrontEnd(nn.Module):
         obs_dim: int,
         action_space: gym.spaces.Space,
         reward_fixed: bool = False,
+        tri_compass: bool = False,
     ) -> None:
         super().__init__()
         self.obs_dim = obs_dim
         self.action_space = action_space
+        self.tri_compass = tri_compass
 
         self.state_encoder = StateEncoder(obs_dim, out_dim=256)
-        self.delta_encoder = DeltaEncoder(obs_dim, out_dim=64)
+        if tri_compass:
+            self.local_delta_encoder = DeltaEncoder(obs_dim, out_dim=64)
+            self.origin_delta_encoder = DeltaEncoder(obs_dim, out_dim=64)
+            self.goal_delta_encoder = DeltaEncoder(obs_dim, out_dim=64)
+            self.out_dim = 256 + 64 + 16 + 1 + 64 + 64  # 465: core (337) + compass (128)
+            self.out_norm = nn.LayerNorm(337)
+            self.compass_norm = nn.LayerNorm(128)
+        else:
+            self.delta_encoder = DeltaEncoder(obs_dim, out_dim=64)
+            self.out_dim = 256 + 64 + 16 + 1  # 337
+            self.out_norm = nn.LayerNorm(337)
+            self.compass_norm = None
+
         self.action_encoder = ActionEncoder(action_space, embed_dim=16)
         self.reward_encoder = RewardEncoder(fixed=reward_fixed)
-        self.out_norm = nn.LayerNorm(337)
 
     def forward(
         self,
@@ -139,6 +157,9 @@ class VectorFrontEnd(nn.Module):
         delta_obs: torch.Tensor,
         prev_action: torch.Tensor,
         prev_reward: torch.Tensor,
+        local_delta: Optional[torch.Tensor] = None,
+        origin_delta: Optional[torch.Tensor] = None,
+        goal_delta: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         # Defensive dimensionality checks and alignment to [B, T, ...]
         if obs.dim() == 2:
@@ -155,18 +176,47 @@ class VectorFrontEnd(nn.Module):
             prev_reward = prev_reward.unsqueeze(-1)
 
         b, t = obs.shape[0], obs.shape[1]
-        assert delta_obs.shape[0] == b and delta_obs.shape[1] == t, "delta_obs shape mismatch"
-
         z_s = self.state_encoder(obs)           # [B, T, 256]
-        z_d = self.delta_encoder(delta_obs)     # [B, T, 64]
-        z_a = self.action_encoder(prev_action)  # [B, T, 16]
-        z_r = self.reward_encoder(prev_reward)  # [B, T, 1]
 
-        z = torch.cat([z_s, z_d, z_a, z_r], dim=-1) # [B, T, 337]
-        assert z.shape[-1] == 337, f"Expected 337 concat dimensions, got {z.shape[-1]}"
+        if self.tri_compass:
+            if local_delta is not None and origin_delta is not None and goal_delta is not None:
+                d_loc = local_delta if local_delta.dim() == 3 else local_delta.unsqueeze(1)
+                d_orig = origin_delta if origin_delta.dim() == 3 else origin_delta.unsqueeze(1)
+                d_goal = goal_delta if goal_delta.dim() == 3 else goal_delta.unsqueeze(1)
+            elif delta_obs.shape[-1] >= 3 * self.obs_dim:
+                d_loc = delta_obs[..., :self.obs_dim]
+                d_orig = delta_obs[..., self.obs_dim : 2 * self.obs_dim]
+                d_goal = delta_obs[..., 2 * self.obs_dim : 3 * self.obs_dim]
+            else:
+                d_loc = delta_obs[..., :self.obs_dim]
+                d_orig = delta_obs[..., :self.obs_dim]
+                d_goal = torch.zeros_like(d_loc)
 
-        out = self.out_norm(z)
-        assert out.shape == (b, t, 337), f"Expected shape {(b, t, 337)}, got {out.shape}"
+            z_l = self.local_delta_encoder(d_loc)   # [B, T, 64]
+            z_o = self.origin_delta_encoder(d_orig) # [B, T, 64]
+            z_g = self.goal_delta_encoder(d_goal)   # [B, T, 64]
+            z_a = self.action_encoder(prev_action)  # [B, T, 16]
+            z_r = self.reward_encoder(prev_reward)  # [B, T, 1]
+
+            # Core features (337d) normalized with out_norm (identical to single-channel)
+            z_core = torch.cat([z_s, z_l, z_a, z_r], dim=-1)
+            out_core = self.out_norm(z_core)
+
+            # Decoupled compass features (128d) normalized with compass_norm
+            z_comp = torch.cat([z_o, z_g], dim=-1)
+            out_comp = self.compass_norm(z_comp)
+
+            out = torch.cat([out_core, out_comp], dim=-1) # [B, T, 465]
+        else:
+            z_d = self.delta_encoder(delta_obs[..., :self.obs_dim]) # [B, T, 64]
+            z_a = self.action_encoder(prev_action)                  # [B, T, 16]
+            z_r = self.reward_encoder(prev_reward)                  # [B, T, 1]
+
+            z = torch.cat([z_s, z_d, z_a, z_r], dim=-1)             # [B, T, 337]
+            out = self.out_norm(z)
+
+        assert out.shape[-1] == self.out_dim, f"Expected {self.out_dim} concat dimensions, got {out.shape[-1]}"
+        assert out.shape == (b, t, self.out_dim), f"Expected shape {(b, t, self.out_dim)}, got {out.shape}"
         return out
 
 
@@ -284,6 +334,7 @@ class ImpalaVisualFrontEnd(nn.Module):
         self.visual_encoder = ImpalaVisualEncoder(in_channels=in_channels, out_dim=320)
         self.action_encoder = ActionEncoder(action_space, embed_dim=16)
         self.reward_encoder = RewardEncoder(fixed=reward_fixed)
+        self.out_dim = 337
         self.out_norm = nn.LayerNorm(337)
 
     def forward(

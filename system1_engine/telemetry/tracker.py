@@ -89,6 +89,10 @@ class LiveStatsTracker:
         if value_rerank_triggered:
             m.value_reranks_triggered += 1
 
+    def reset_step_timer(self) -> None:
+        """Reinicia a contagem de tempo do passo para evitar contaminação por I/O ou épocas de treino."""
+        self._last_step_time = time.perf_counter_ns()
+
     def record_env_step(
         self,
         reward: float,
@@ -101,7 +105,8 @@ class LiveStatsTracker:
         dt = (now - self._last_step_time) / 1e9
         self._last_step_time = now
 
-        if dt > 0:
+        # Filtra pausas espúrias de disco (I/O checkpoint) ou épocas de treino (> 200ms) para refletir o throughput real
+        if 0 < dt < 0.2:
             self._fps_window.append(float(num_steps) / dt)
             self.metrics.fps = float(np.mean(self._fps_window))
 

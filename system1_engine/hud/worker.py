@@ -257,6 +257,8 @@ def build_hud_env(
                     extra_kwargs["dynamic_frontier"] = bool(config["proximal_frontier"])
                 if "proximal_decay" in config:
                     extra_kwargs["proximal_decay"] = float(config["proximal_decay"])
+                if "elastic_curriculum" in config:
+                    extra_kwargs["elastic_curriculum"] = bool(config["elastic_curriculum"])
         else:
             extra_kwargs["curriculum"] = False
             if scramble_depth is not None and int(scramble_depth) > 0:
@@ -288,11 +290,20 @@ def build_hud_env(
     return UniversalS1Wrapper(raw_env)
 
 
-def resolve_compute_device(device_pref: str = "auto", is_training: bool = True) -> torch.device:
+def resolve_compute_device(
+    device_pref: str = "auto",
+    is_training: bool = True,
+    is_visual: Optional[bool] = None,
+) -> torch.device:
     """Resolve o dispositivo de computação (CPU, MPS ou CUDA).
 
-    - 'auto': Se for treino, usa GPU (MPS/CUDA) se disponível para acelerar backprop (~6x mais rápido).
-              Se for avaliação/inferência passo-a-passo, usa CPU para latência mínima sem overhead de barramento.
+    - 'auto':
+        - Em máquinas NVIDIA (Linux/Windows): CUDA acelera backprop massivamente.
+        - No macOS (Apple Silicon):
+            - Se is_visual == False (ambientes vetoriais compactos como Rubiks, CartPole):
+              CPU NEON é ~1.9x mais rápido que MPS (eliminando overhead de fila Metal e latência de kernel).
+            - Se is_visual is not False (CNNs/Visão): MPS acelera convoluções 2D.
+            - Se não for treino (inferência/avaliação): sempre CPU para latência sub-ms mínima.
     - 'gpu' / 'cuda' / 'mps': Força o uso do acelerador gráfico disponível (CUDA no Linux/Windows ou MPS no macOS).
     - 'cpu': Força o uso exclusivo de CPU pura universal.
     """
@@ -319,6 +330,8 @@ def resolve_compute_device(device_pref: str = "auto", is_training: bool = True) 
     if is_training:
         if has_cuda:
             return torch.device("cuda")
+        if has_mps and is_visual is False:
+            return torch.device("cpu")
         if has_mps:
             return torch.device("mps")
         return torch.device("cpu")
@@ -345,14 +358,6 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     freeze_trunk_cfg = config.get("freeze_trunk")
     force_trunk_only = bool(config.get("force_trunk_only", False))
 
-    device = resolve_compute_device(device_pref, is_training=True)
-
-    print(f"=== [HUD Worker] Modo de Treino Iniciado no Ambiente: {env_id} ===")
-    print(f"Dispositivo de Execução: {device.type.upper()} (Preferência: {device_pref})")
-    print(f"Configuração: steps={steps}, lr={lr}, entropy_coef={entropy_coef}, target_return={target_return}")
-    if checkpoint_to_load:
-        print(f"Carregamento de pesos para treino a partir de: {checkpoint_to_load}")
-
     scramble_depth = config.get("scramble_depth")
     if scramble_depth is not None:
         try:
@@ -366,6 +371,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         else:
             print(f"🎲 Cubo Mágico: Treino com Curriculum Aberto (1 -> ∞ passos)")
 
+    num_envs = int(config.get("num_envs", 64))
     env = build_hud_env(
         env_id,
         scenario=config.get("scenario"),
@@ -373,9 +379,21 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         is_training=True,
         frame_skip=int(config.get("frame_skip", 4)),
         scramble_depth=scramble_depth,
-        num_envs=int(config.get("num_envs", 64)),
+        num_envs=num_envs,
         config=config,
     )
+
+    is_visual_env = getattr(env, "is_visual", False) or (
+        isinstance(env.observation_space, gym.spaces.Box) and len(env.observation_space.shape) == 3
+    )
+
+    device = resolve_compute_device(device_pref, is_training=True, is_visual=is_visual_env)
+
+    print(f"=== [HUD Worker] Modo de Treino Iniciado no Ambiente: {env_id} ===")
+    print(f"Dispositivo de Execução: {device.type.upper()} (Preferência: {device_pref})")
+    print(f"Configuração: steps={steps}, lr={lr}, entropy_coef={entropy_coef}, target_return={target_return}")
+    if checkpoint_to_load:
+        print(f"Carregamento de pesos para treino a partir de: {checkpoint_to_load}")
     trunk_type = config.get("trunk", "lean")
     if checkpoint_to_load and "trunk" not in config:
         detected = KnowledgeTransferManager.detect_trunk_type(checkpoint_to_load)
@@ -463,6 +481,24 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     else:
         print("⚡ Memória de Esterilidade Latente: DESATIVADA (Pura inferência de alta velocidade)")
 
+    value_rerank = bool(config.get("value_rerank", True))
+    raw_env_obj = getattr(env, "unwrapped", env)
+    actual_num_envs = getattr(raw_env_obj, "num_envs", num_envs if hasattr(raw_env_obj, "envs") else 1)
+    teacher_sil_envs_default = (
+        max(4, actual_num_envs // 8)
+        if (value_rerank and actual_num_envs >= 16)
+        else (1 if (value_rerank and actual_num_envs >= 4) else 0)
+    )
+    teacher_sil_envs = int(config.get("teacher_sil_envs", teacher_sil_envs_default))
+    teacher_min_depth = int(config.get("teacher_min_depth", 5))
+    teacher_confidence_threshold = float(config.get("teacher_confidence_threshold", 0.85))
+    teacher_top_k = int(config.get("teacher_top_k", 4))
+
+    if teacher_sil_envs > 0 and sil_enabled:
+        print(f"🎓 Teacher-Assisted SIL Rollouts: ATIVO ({teacher_sil_envs} workers professores com 1-Step Lookahead para D>={teacher_min_depth}, conf<{teacher_confidence_threshold:.2f})")
+    else:
+        print("⚡ Teacher-Assisted SIL Rollouts: DESATIVADO (Reflexo puro em 100% dos workers)")
+
     if tracker is not None:
         tracker.metrics.action_chunk_size = action_chunk_size
 
@@ -498,6 +534,10 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         sterility_memory_enabled=sterility_memory_enabled,
         dynamic_frontier=bool(config.get("dynamic_frontier", True)),
         proximal_decay=float(config.get("proximal_decay", 0.8)),
+        teacher_sil_envs=teacher_sil_envs,
+        teacher_min_depth=teacher_min_depth,
+        teacher_confidence_threshold=teacher_confidence_threshold,
+        teacher_top_k=teacher_top_k,
     )
 
     raw_env = getattr(env, "unwrapped", env)
@@ -518,6 +558,23 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
             trainer._rollout_tracked_depth = raw_env.current_depth
             tracker.metrics.curriculum_depth = raw_env.current_depth
             tracker.metrics.curriculum_promotions = raw_env.curriculum_promotions
+            if ckpt_info.get("steps") is not None and int(ckpt_info["steps"]) > 0:
+                saved_steps = int(ckpt_info["steps"])
+                trainer.total_steps = saved_steps
+                tracker.metrics.total_steps = saved_steps
+                # Em warm-start / continual learning, se o orçamento 'steps' configurado for menor ou igual
+                # aos passos acumulados no checkpoint, trata 'steps' como passos ADICIONAIS para esta sessão,
+                # evitando encerramento imediato em 0s:
+                if steps <= saved_steps:
+                    target_ceiling = saved_steps + steps
+                    print(
+                        f"⚡ [Orçamento Incremental] Checkpoint já possui {saved_steps:,} passos históricos. "
+                        f"Meta desta sessão: +{steps:,} novos passos (teto final: {target_ceiling:,} passos)."
+                    )
+                    steps = target_ceiling
+                    tracker.metrics.target_steps = target_ceiling
+                else:
+                    tracker.metrics.target_steps = steps
             if sil_enabled:
                 n_warm = trainer.warmup_sil_buffer(
                     up_to_depth=ckpt_max_d,
@@ -817,7 +874,7 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
     )
 
     ensemble_fallback = bool(config.get("ensemble_fallback", True))
-    value_rerank = bool(config.get("value_rerank", False))
+    value_rerank = bool(config.get("value_rerank", True))
     value_rerank_top_k = int(config.get("value_rerank_top_k", 2))
     value_rerank_threshold = float(config.get("value_rerank_threshold", 0.85))
     mode_desc = "Reflexo Neural S1"

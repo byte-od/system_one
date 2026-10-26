@@ -69,11 +69,19 @@ class RecurrentPPOTrainer:
         adaptive_margin_threshold: float = 0.15,
         dynamic_frontier: bool = True,
         proximal_decay: float = 0.8,
+        teacher_sil_envs: int = 0,
+        teacher_min_depth: int = 5,
+        teacher_confidence_threshold: float = 0.85,
+        teacher_top_k: int = 4,
     ) -> None:
         self.agent = agent.to(device)
         self.env = env
         self.dynamic_frontier = bool(dynamic_frontier)
         self.proximal_decay = float(proximal_decay)
+        self.teacher_sil_envs = max(0, int(teacher_sil_envs))
+        self.teacher_min_depth = max(1, int(teacher_min_depth))
+        self.teacher_confidence_threshold = float(teacher_confidence_threshold)
+        self.teacher_top_k = max(2, int(teacher_top_k))
         self.action_chunk_size = max(1, int(action_chunk_size or getattr(agent, "action_chunk_size", 1)))
         self.adaptive_chunk = bool(adaptive_chunk)
         self.adaptive_conf_threshold = float(adaptive_conf_threshold)
@@ -216,8 +224,8 @@ class RecurrentPPOTrainer:
         else:
             self.sterility_memory = None
 
-        self._active_vec_trajectories: List[List[Dict[str, Any]]] = [[] for _ in range(self.num_envs)]
-        self._active_single_trajectory: List[Dict[str, Any]] = []
+        self._active_vec_trajectories: List[deque] = [deque(maxlen=200) for _ in range(self.num_envs)]
+        self._active_single_trajectory: deque = deque(maxlen=200)
 
         # Buffers de tensores pré-alocados no dispositivo para eliminar overhead de heap e alocações repetidas
         self._buf_obs = torch.zeros((1, 1, *obs_shape), dtype=torch.float32, device=self.device)
@@ -227,7 +235,11 @@ class RecurrentPPOTrainer:
             self._buf_act = torch.zeros((1, 1, *act_shape), dtype=torch.float32, device=self.device)
         self._buf_rew = torch.zeros((1, 1, 1), dtype=torch.float32, device=self.device)
         if not env.is_visual:
-            self._buf_delta: Optional[torch.Tensor] = torch.zeros((1, 1, *obs_shape), dtype=torch.float32, device=self.device)
+            if hasattr(env, "observation_space") and isinstance(env.observation_space, gym.spaces.Dict) and "delta_obs" in env.observation_space.spaces:
+                delta_shape = env.observation_space.spaces["delta_obs"].shape
+            else:
+                delta_shape = obs_shape
+            self._buf_delta: Optional[torch.Tensor] = torch.zeros((1, 1, *delta_shape), dtype=torch.float32, device=self.device)
         else:
             self._buf_delta = None
 
@@ -247,7 +259,11 @@ class RecurrentPPOTrainer:
                 self._vec_buf_act = torch.zeros((self.num_envs, 1, *act_shape), dtype=torch.float32, device=self.device)
             self._vec_buf_rew = torch.zeros((self.num_envs, 1, 1), dtype=torch.float32, device=self.device)
             if not env.is_visual:
-                self._vec_buf_delta: Optional[torch.Tensor] = torch.zeros((self.num_envs, 1, *obs_shape), dtype=torch.float32, device=self.device)
+                if hasattr(env, "observation_space") and isinstance(env.observation_space, gym.spaces.Dict) and "delta_obs" in env.observation_space.spaces:
+                    delta_shape = env.observation_space.spaces["delta_obs"].shape
+                else:
+                    delta_shape = obs_shape
+                self._vec_buf_delta: Optional[torch.Tensor] = torch.zeros((self.num_envs, 1, *delta_shape), dtype=torch.float32, device=self.device)
             else:
                 self._vec_buf_delta = None
 
@@ -568,12 +584,20 @@ class RecurrentPPOTrainer:
         if has_curriculum_setter:
             target_final_d = orig_depth if orig_depth >= 1 else max_d_target
             if calibrate_curriculum and getattr(raw_env, "curriculum", False):
-                if self.last_warmup_solve_rates.get(1, 0.0) >= 0.78:
-                    target_final_d = max_d_target
-                    for d in range(1, max_d_target + 1):
-                        if self.last_warmup_solve_rates.get(d, 0.0) < 0.78:
-                            target_final_d = d
-                            break
+                # Nunca rebaixa abaixo da profundidade explicitamente carregada do checkpoint (orig_depth)
+                # e utiliza o limiar curricular adaptativo do próprio ambiente em vez de 78% fixo
+                calib_d = 1
+                for d in range(1, max_d_target + 1):
+                    target_rate = (
+                        raw_env.get_target_success_rate(d)
+                        if hasattr(raw_env, "get_target_success_rate")
+                        else 0.65
+                    )
+                    if self.last_warmup_solve_rates.get(d, 0.0) >= target_rate:
+                        calib_d = max(calib_d, d + 1)
+                    else:
+                        break
+                target_final_d = max(orig_depth, min(max_d_target, calib_d))
             raw_env.set_curriculum_depth(target_final_d)
             self.best_state_depth = raw_env.current_depth
             self._rollout_tracked_depth = raw_env.current_depth
@@ -614,6 +638,181 @@ class RecurrentPPOTrainer:
             self._vec_buf_delta[:, 0].copy_(torch.as_tensor(obs_dict["delta_obs"], dtype=torch.float32))
         return self._vec_input_dict
 
+    def _apply_teacher_lookahead(
+        self,
+        e: int,
+        env_e: Any,
+        dist_sample: Any,
+        current_hx: Optional[torch.Tensor],
+    ) -> Optional[Tuple[Union[int, np.ndarray], torch.Tensor]]:
+        """Aplica busca proximal 1-step lookahead guiada pelo Critic para o worker professor e.
+        Retorna (teacher_action, teacher_log_prob) se acionado, ou None se mantiver a política."""
+        if not hasattr(env_e, "simulate_step"):
+            return None
+
+        d_e = int(getattr(env_e, "_episode_depth", getattr(env_e, "current_depth", 1)))
+        if d_e < self.teacher_min_depth:
+            return None
+
+        if not self.agent.is_discrete or not hasattr(dist_sample, "logits"):
+            return None
+
+        raw_logits = dist_sample.logits[e]
+
+        if self.action_chunk_size == 1:
+            logits_1d = raw_logits.squeeze()
+            probs = torch.softmax(logits_1d, dim=-1)
+            top_p, top_indices = torch.topk(probs, k=min(self.teacher_top_k, len(probs)))
+            conf = float(top_p[0].item())
+            if conf >= self.teacher_confidence_threshold:
+                return None
+
+            cand_acts = [int(idx.item()) for idx in top_indices]
+            cand_obs = []
+            cand_rews = []
+            valid_acts = []
+            immediate_solve = None
+
+            for a in cand_acts:
+                try:
+                    s_obs, s_rew, s_done, _ = env_e.simulate_step(a)
+                except Exception:
+                    continue
+                if s_done:
+                    immediate_solve = a
+                    break
+                cand_obs.append(s_obs["obs"] if isinstance(s_obs, dict) else s_obs)
+                cand_rews.append(float(s_rew))
+                valid_acts.append(a)
+
+            if immediate_solve is not None:
+                best_act = immediate_solve
+            elif len(valid_acts) > 1:
+                M = len(valid_acts)
+                b_obs = torch.from_numpy(np.stack(cand_obs).astype(np.float32)).unsqueeze(1).to(self.device)
+                b_delta = torch.zeros_like(b_obs)
+                b_act = torch.tensor(valid_acts, dtype=torch.long, device=self.device).view(M, 1)
+                b_rew = torch.tensor(cand_rews, dtype=torch.float32, device=self.device).view(M, 1, 1)
+
+                hx_e = current_hx[:, e : e + 1, :].repeat(1, M, 1) if current_hx is not None else None
+                z_cands = self.agent.front_end(obs=b_obs, delta_obs=b_delta, prev_action=b_act, prev_reward=b_rew)
+                h_cands, _ = self.agent.trunk(z_cands, hx=hx_e)
+                v_cands = self.agent.value_head(h_cands).squeeze(-1).squeeze(-1)
+                q_scores = torch.tensor(cand_rews, device=self.device) + self.effective_gamma * v_cands
+                best_idx = int(torch.argmax(q_scores).item())
+                best_act = valid_acts[best_idx]
+            elif len(valid_acts) == 1:
+                best_act = valid_acts[0]
+            else:
+                return None
+
+            best_t = torch.tensor(best_act, device=self.device)
+            new_logp = dist_sample.log_prob(best_t[None, None])[e]
+            new_logp = torch.clamp(new_logp, min=-6.0, max=0.0)
+            return best_act, new_logp
+
+        elif self.action_chunk_size == 2 and hasattr(env_e, "core"):
+            logits_chunk = raw_logits.squeeze()  # [2, num_acts]
+            p0 = torch.softmax(logits_chunk[0], dim=-1)
+            top_p0, top_idx0 = torch.topk(p0, k=min(self.teacher_top_k, len(p0)))
+            conf0 = float(top_p0[0].item())
+            if conf0 >= self.teacher_confidence_threshold:
+                return None
+
+            # Step 1 lookahead
+            cand_acts0 = [int(idx.item()) for idx in top_idx0]
+            cand_obs0 = []
+            cand_rews0 = []
+            valid_acts0 = []
+            imm0 = None
+            for a in cand_acts0:
+                try:
+                    s_obs, s_rew, s_done, _ = env_e.simulate_step(a)
+                except Exception:
+                    continue
+                if s_done:
+                    imm0 = a
+                    break
+                cand_obs0.append(s_obs["obs"] if isinstance(s_obs, dict) else s_obs)
+                cand_rews0.append(float(s_rew))
+                valid_acts0.append(a)
+
+            if imm0 is not None:
+                a0_best = imm0
+            elif len(valid_acts0) > 1:
+                M = len(valid_acts0)
+                b_obs = torch.from_numpy(np.stack(cand_obs0).astype(np.float32)).unsqueeze(1).to(self.device)
+                b_delta = torch.zeros_like(b_obs)
+                b_act = torch.tensor(valid_acts0, dtype=torch.long, device=self.device).view(M, 1)
+                b_rew = torch.tensor(cand_rews0, dtype=torch.float32, device=self.device).view(M, 1, 1)
+                hx_e = current_hx[:, e : e + 1, :].repeat(1, M, 1) if current_hx is not None else None
+                z_cands = self.agent.front_end(obs=b_obs, delta_obs=b_delta, prev_action=b_act, prev_reward=b_rew)
+                h_cands, _ = self.agent.trunk(z_cands, hx=hx_e)
+                v_cands = self.agent.value_head(h_cands).squeeze(-1).squeeze(-1)
+                q0 = torch.tensor(cand_rews0, device=self.device) + 0.99 * v_cands
+                a0_best = valid_acts0[int(torch.argmax(q0).item())]
+            elif len(valid_acts0) == 1:
+                a0_best = valid_acts0[0]
+            else:
+                return None
+
+            # Step 2 lookahead (aplica a0 temporariamente no simulador do core)
+            m0_name = env_e.core.ATOMIC_MOVES[a0_best]
+            inv0_name = env_e.core.INVERSE_ATOMIC[m0_name]
+            env_e.core.apply_atomic(m0_name)
+
+            p1 = torch.softmax(logits_chunk[1], dim=-1)
+            top_p1, top_idx1 = torch.topk(p1, k=min(self.teacher_top_k + 2, len(p1)))
+            cand_acts1 = [int(idx.item()) for idx in top_idx1 if env_e.core.ATOMIC_MOVES[int(idx.item())] != inv0_name][:self.teacher_top_k]
+            if not cand_acts1:
+                cand_acts1 = [int(top_idx1[0].item())]
+
+            cand_obs1 = []
+            cand_rews1 = []
+            valid_acts1 = []
+            imm1 = None
+            for a in cand_acts1:
+                try:
+                    s_obs, s_rew, s_done, _ = env_e.simulate_step(a)
+                except Exception:
+                    continue
+                if s_done:
+                    imm1 = a
+                    break
+                cand_obs1.append(s_obs["obs"] if isinstance(s_obs, dict) else s_obs)
+                cand_rews1.append(float(s_rew))
+                valid_acts1.append(a)
+
+            # Desfaz a0 no simulador imediatamente
+            env_e.core.apply_atomic(inv0_name)
+
+            if imm1 is not None:
+                a1_best = imm1
+            elif len(valid_acts1) > 1:
+                M = len(valid_acts1)
+                b_obs = torch.from_numpy(np.stack(cand_obs1).astype(np.float32)).unsqueeze(1).to(self.device)
+                b_delta = torch.zeros_like(b_obs)
+                b_act = torch.tensor(valid_acts1, dtype=torch.long, device=self.device).view(M, 1)
+                b_rew = torch.tensor(cand_rews1, dtype=torch.float32, device=self.device).view(M, 1, 1)
+                hx_e = current_hx[:, e : e + 1, :].repeat(1, M, 1) if current_hx is not None else None
+                z_cands = self.agent.front_end(obs=b_obs, delta_obs=b_delta, prev_action=b_act, prev_reward=b_rew)
+                h_cands, _ = self.agent.trunk(z_cands, hx=hx_e)
+                v_cands = self.agent.value_head(h_cands).squeeze(-1).squeeze(-1)
+                q1 = torch.tensor(cand_rews1, device=self.device) + 0.99 * v_cands
+                a1_best = valid_acts1[int(torch.argmax(q1).item())]
+            elif len(valid_acts1) == 1:
+                a1_best = valid_acts1[0]
+            else:
+                a1_best = cand_acts1[0]
+
+            chunk_act = np.array([a0_best, a1_best], dtype=np.int64)
+            chunk_t = torch.tensor(chunk_act, device=self.device)
+            new_logp = dist_sample.log_prob(chunk_t[None, None])[e].sum(dim=-1)
+            new_logp = torch.clamp(new_logp, min=-8.0, max=0.0)
+            return chunk_act, new_logp
+
+        return None
+
     def _collect_rollouts_vectorized(
         self,
         current_obs_dict: Dict[str, Any],
@@ -624,6 +823,8 @@ class RecurrentPPOTrainer:
         """Coleta interações vetorizadas em lote com num_envs simultâneos e inferência GPU batch."""
         self.buffer.reset()
         self.agent.eval()
+        if self.tracker is not None:
+            self.tracker.reset_step_timer()
 
         S = self.steps_per_env
         E = self.num_envs
@@ -631,8 +832,9 @@ class RecurrentPPOTrainer:
         K = S // T
 
         obs_shape = self.buffer.obs_shape
+        delta_shape = self.env.observation_space.spaces["delta_obs"].shape if hasattr(self.env, "observation_space") and isinstance(self.env.observation_space, gym.spaces.Dict) and "delta_obs" in self.env.observation_space.spaces else obs_shape
         stored_obs = np.empty((S, E, *obs_shape), dtype=np.float32)
-        stored_delta = np.empty((S, E, *obs_shape), dtype=np.float32) if not self.env.is_visual else None
+        stored_delta = np.empty((S, E, *delta_shape), dtype=np.float32) if not self.env.is_visual else None
         if self.agent.is_discrete:
             stored_prev_act = np.empty((S, E), dtype=np.int64)
             if self.action_chunk_size > 1:
@@ -754,6 +956,25 @@ class RecurrentPPOTrainer:
                         log_prob = log_prob.sum(dim=-1)
                     env_action = action.squeeze(1).cpu().numpy()
 
+                    # -------------------------------------------------------------
+                    # Teacher-Assisted SIL Rollouts (Lookahead Proximal Assimétrico)
+                    # -------------------------------------------------------------
+                    if self.teacher_sil_envs > 0 and self.sil_enabled:
+                        raw_env_obj = getattr(self.env, "unwrapped", self.env)
+                        if hasattr(raw_env_obj, "envs"):
+                            for e in range(min(self.teacher_sil_envs, E)):
+                                env_e = raw_env_obj.envs[e]
+                                res = self._apply_teacher_lookahead(
+                                    e=e,
+                                    env_e=env_e,
+                                    dist_sample=dist_sample,
+                                    current_hx=current_hx,
+                                )
+                                if res is not None:
+                                    t_act, t_logp = res
+                                    env_action[e] = t_act
+                                    log_prob[e] = t_logp
+
                     # Chunking adaptativo por incerteza: aborta a execução aberta caso a confiança caia
                     chunk_mask = None
                     if self.adaptive_chunk and self.action_chunk_size > 1:
@@ -841,17 +1062,19 @@ class RecurrentPPOTrainer:
                 if stored_env_infos is not None:
                     stored_env_infos.append(env_infos)
 
+                # Sincroniza tensores para numpy uma única vez por passo de rollout
+                step_logp_np = log_prob.squeeze(1).detach().cpu().numpy()
+                step_vals_np = value.squeeze(1).squeeze(1).detach().cpu().numpy()
+
+                stored_val[step] = step_vals_np
+                stored_logp[step] = step_logp_np
+
                 if self.sil_enabled or self.sterility_memory is not None:
-                    step_logp_np = log_prob.squeeze(1).detach().cpu().numpy()
-                    step_vals_np = (
-                        value.squeeze(1).squeeze(1).detach().cpu().numpy()
-                        if self.sterility_memory is not None
-                        else None
-                    )
+                    has_delta = "delta_obs" in current_obs_dict and current_obs_dict["delta_obs"] is not None
                     for e in range(E):
                         delta_v = (
                             current_obs_dict["delta_obs"][e].copy()
-                            if "delta_obs" in current_obs_dict and current_obs_dict["delta_obs"] is not None
+                            if has_delta
                             else None
                         )
                         prev_act_v = current_obs_dict["prev_action"][e]
@@ -860,7 +1083,7 @@ class RecurrentPPOTrainer:
                         act_v = env_action[e]
                         if hasattr(act_v, "copy"):
                             act_v = act_v.copy()
-                        self._active_vec_trajectories[e].append({
+                        entry = {
                             "obs": current_obs_dict["obs"][e].copy(),
                             "delta_obs": delta_v,
                             "prev_action": prev_act_v,
@@ -868,11 +1091,11 @@ class RecurrentPPOTrainer:
                             "action": act_v,
                             "reward": float(rewards[e]),
                             "log_prob": float(step_logp_np[e]),
-                            "latent": step_latents[e].detach().cpu() if step_latents is not None else None,
-                            "value": float(step_vals_np[e]) if step_vals_np is not None else 0.0,
-                        })
-                        if len(self._active_vec_trajectories[e]) > 200:
-                            self._active_vec_trajectories[e].pop(0)
+                        }
+                        if self.sterility_memory is not None:
+                            entry["latent"] = step_latents[e].detach().cpu() if step_latents is not None else None
+                            entry["value"] = float(step_vals_np[e])
+                        self._active_vec_trajectories[e].append(entry)
 
                 if self.tracker is not None:
                     primary_info = env_infos[0] if isinstance(env_infos, list) and len(env_infos) > 0 else {}
@@ -892,8 +1115,6 @@ class RecurrentPPOTrainer:
                 stored_rew[step] = rewards
                 stored_done[step] = terminateds
                 stored_ep_start[step] = ep_starts
-                stored_val[step] = value.squeeze(1).squeeze(1).cpu().numpy()
-                stored_logp[step] = log_prob.squeeze(1).cpu().numpy()
 
                 curr_ep_returns += rewards
                 self.total_steps += E * self.action_chunk_size
@@ -1039,7 +1260,7 @@ class RecurrentPPOTrainer:
         # Transposição [S, E, ...] -> [E, S, ...] e linearização ordenada por ambiente
         flat_obs = stored_obs.transpose(1, 0, *range(2, stored_obs.ndim)).reshape(E * S, *obs_shape)
         flat_delta = (
-            stored_delta.transpose(1, 0, *range(2, stored_delta.ndim)).reshape(E * S, *obs_shape)
+            stored_delta.transpose(1, 0, *range(2, stored_delta.ndim)).reshape(E * S, *delta_shape)
             if stored_delta is not None
             else None
         )
@@ -1227,6 +1448,8 @@ class RecurrentPPOTrainer:
 
         self.buffer.reset()
         self.agent.eval()
+        if self.tracker is not None:
+            self.tracker.reset_step_timer()
         last_env_info: Dict[str, Any] = {}
         stored_step_infos: Optional[List[Any]] = [] if self.hindsight_replay else None
 
@@ -1373,7 +1596,7 @@ class RecurrentPPOTrainer:
                     act_v = env_action
                     if hasattr(act_v, "copy"):
                         act_v = act_v.copy()
-                    self._active_single_trajectory.append({
+                    entry_s = {
                         "obs": current_obs_dict["obs"].copy(),
                         "delta_obs": delta_v,
                         "prev_action": prev_act_v,
@@ -1381,11 +1604,11 @@ class RecurrentPPOTrainer:
                         "action": act_v,
                         "reward": float(reward),
                         "log_prob": float(log_prob.squeeze(0).squeeze(0).item()),
-                        "latent": step_latent.detach().cpu() if step_latent is not None else None,
-                        "value": float(value.squeeze(0).squeeze(0).item()) if self.sterility_memory is not None else 0.0,
-                    })
-                    if len(self._active_single_trajectory) > 200:
-                        self._active_single_trajectory.pop(0)
+                    }
+                    if self.sterility_memory is not None:
+                        entry_s["latent"] = step_latent.detach().cpu() if step_latent is not None else None
+                        entry_s["value"] = float(value.squeeze(0).squeeze(0).item())
+                    self._active_single_trajectory.append(entry_s)
 
                 if self.tracker is not None:
                     self.tracker.record_env_step(
@@ -1592,18 +1815,21 @@ class RecurrentPPOTrainer:
                         new_log_probs = dist_eval.log_prob(batch.actions).sum(dim=-1)
                         entropy = dist_eval.entropy().sum(dim=-1)
 
-                # Ratio
-                ratio = torch.exp(new_log_probs - batch.old_log_probs)
+                # Ratio robusto com clamping numérico para evitar explosões de razão de amostragem de importância
+                log_ratio = new_log_probs - batch.old_log_probs
+                log_ratio = torch.clamp(log_ratio, min=-10.0, max=2.5)  # exp(2.5) ~= 12.18
+                ratio = torch.exp(log_ratio)
 
                 # Advantages are already globally normalized across rollout
                 norm_adv = batch.advantages
 
-                # Clipped surrogate policy loss
+                # Clipped surrogate policy loss (com proteção estrita contra picos desmedidos de vantagem negativa)
                 surr1 = ratio * norm_adv
                 surr2 = (
                     torch.clamp(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range) * norm_adv
                 )
-                policy_loss = -torch.min(surr1, surr2).mean()
+                surr = torch.min(surr1, surr2)
+                policy_loss = -torch.clamp(surr, min=-15.0, max=15.0).mean()
 
                 # Robust MSE value loss
                 val_loss = 0.5 * ((values_sq - batch.returns) ** 2).mean()
@@ -1814,7 +2040,8 @@ class RecurrentPPOTrainer:
         hx: Optional[torch.Tensor] = None
         episode_start = True
 
-        total_updates = max(1, max_steps // self.rollout_steps)
+        remaining_steps = max(1, max_steps - self.total_steps)
+        total_updates = max(1, remaining_steps // self.rollout_steps)
         self.scheduler = optim.lr_scheduler.LinearLR(
             self.optimizer,
             start_factor=1.0,

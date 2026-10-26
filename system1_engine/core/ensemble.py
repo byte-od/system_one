@@ -42,7 +42,15 @@ class TrajectoryResult:
 
 
 class QualityEnsembleEvaluator:
-    """Avaliador e seletor de trajetórias para garantia de qualidade em múltiplos cenários simultâneos."""
+    """Avaliador e seletor de trajetórias para garantia de qualidade em múltiplos cenários simultâneos.
+
+    [DEPRECATED]: QualityEnsembleEvaluator requer clonagem de ambiente (env.clone()) e simulação
+    de trajetórias completas (estilo Sistema 2 / MCTS leve), violando a latência de reflexo puro (< 1ms)
+    e o princípio agnóstico a domínio.
+    Para reflexos de alta qualidade sob incerteza em tempo real, utilize ConfidenceGatedEnsemble (A.2),
+    que opera diretamente no vetor latente h em < 0.1 ms sem interagir com o ambiente.
+    Mantido para compatibilidade retroativa com suítes de teste existentes.
+    """
 
     DEFAULT_CALIBRATIONS = [0.0, 0.15, "auto", 0.35]
 

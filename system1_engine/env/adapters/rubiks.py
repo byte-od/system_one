@@ -613,6 +613,7 @@ class RubiksCubeEnv(gym.Env):
         min_depth: int = 1,
         max_depth: Optional[int] = None,
         target_success_rate: float = 0.90,
+        elastic_curriculum: bool = True,
         curriculum_window: int = 64,
         mixed_replay_rate: float = 0.15,
         dynamic_frontier: bool = True,
@@ -626,6 +627,7 @@ class RubiksCubeEnv(gym.Env):
         self.min_depth = max(1, int(min_depth))
         self.max_depth = max_depth
         self.target_success_rate = target_success_rate
+        self.elastic_curriculum = bool(elastic_curriculum)
         self.curriculum_window = curriculum_window
         self.mixed_replay_rate = max(0.0, min(1.0, float(mixed_replay_rate)))
         self.dynamic_frontier = bool(dynamic_frontier)
@@ -648,6 +650,32 @@ class RubiksCubeEnv(gym.Env):
         self._last_action_name = "NONE"
         self._prev_score = 0.0
         self.rng = np.random.default_rng()
+
+    def get_target_success_rate(self, depth: Optional[int] = None) -> float:
+        """Retorna a meta de taxa de sucesso necessária para promoção curricular.
+
+        Se elastic_curriculum estiver ativo, aplica uma curva decrescente adaptada à
+        complexidade combinatória do espaço de estados (evitando o platô de erro composto
+        p^d em profundidades elevadas):
+          - D1..D4 (até 10k estados): 85%
+          - D5..D7 (até 8M estados): 70%
+          - D8..D10 (até 700M estados): 50%
+          - D11..D14: 40%
+          - D15+: 35%
+        """
+        d = depth if depth is not None else self.current_depth
+        if not getattr(self, "elastic_curriculum", True):
+            return self.target_success_rate
+        if d <= 4:
+            return min(self.target_success_rate, 0.85)
+        elif d <= 6:
+            return min(self.target_success_rate, 0.65)
+        elif d <= 10:
+            return min(self.target_success_rate, 0.50)
+        elif d <= 14:
+            return min(self.target_success_rate, 0.40)
+        else:
+            return min(self.target_success_rate, 0.35)
 
     @property
     def inverse_action_map(self) -> Dict[int, int]:
@@ -751,7 +779,8 @@ class RubiksCubeEnv(gym.Env):
             if len(eval_window) >= self.curriculum_window:
                 success_rate = float(np.mean(eval_window))
                 can_promote = self.max_depth is None or self.current_depth < self.max_depth
-                if success_rate >= self.target_success_rate and can_promote:
+                eff_target = self.get_target_success_rate()
+                if success_rate >= eff_target and can_promote:
                     old_d = self.current_depth
                     self.current_depth += 1
                     self.curriculum_promotions += 1
@@ -759,7 +788,7 @@ class RubiksCubeEnv(gym.Env):
                     self.frontier_successes.clear()
                     max_d_str = str(self.max_depth) if self.max_depth is not None else "∞"
                     print(
-                        f"\n🚀 [CURRICULUM ATÔMICO] Sucesso {success_rate*100:.1f}% >= {self.target_success_rate*100:.0f}%! "
+                        f"\n🚀 [CURRICULUM ATÔMICO] Sucesso {success_rate*100:.1f}% >= {eff_target*100:.0f}%! "
                         f"Profundidade promovida: {old_d} -> {self.current_depth}/{max_d_str}"
                     )
             # Focalização Dinâmica na Fronteira Proximal
@@ -788,6 +817,7 @@ class RubiksCubeEnv(gym.Env):
             "curriculum_promotions": self.curriculum_promotions,
             "curriculum_p_frontier": getattr(self, "_last_p_frontier", 1.0),
             "dynamic_frontier": getattr(self, "dynamic_frontier", True),
+            "target_success_rate": self.get_target_success_rate(),
             "curriculum_success_rate": (
                 float(np.mean(self.frontier_successes)) if len(self.frontier_successes) > 0 else (
                     float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
@@ -855,6 +885,7 @@ class RubiksCubeEnv(gym.Env):
             "max_depth": self.max_depth,
             "curriculum": self.curriculum,
             "curriculum_promotions": self.curriculum_promotions,
+            "target_success_rate": self.get_target_success_rate(),
             "curriculum_success_rate": (
                 float(np.mean(self.frontier_successes)) if len(self.frontier_successes) > 0 else (
                     float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
@@ -882,6 +913,7 @@ class RubiksCubeEnv(gym.Env):
             min_depth=self.min_depth,
             max_depth=self.max_depth,
             target_success_rate=self.target_success_rate,
+            elastic_curriculum=self.elastic_curriculum,
             curriculum_window=self.curriculum_window,
             mixed_replay_rate=self.mixed_replay_rate,
             dynamic_frontier=self.dynamic_frontier,
@@ -930,6 +962,7 @@ class RubiksCubeMacroEnv(gym.Env):
         min_depth: int = 1,
         max_depth: Optional[int] = None,
         target_success_rate: float = 0.90,
+        elastic_curriculum: bool = True,
         curriculum_window: int = 64,
         mixed_replay_rate: float = 0.15,
         dynamic_frontier: bool = True,
@@ -943,6 +976,7 @@ class RubiksCubeMacroEnv(gym.Env):
         self.min_depth = max(1, int(min_depth))
         self.max_depth = max_depth
         self.target_success_rate = target_success_rate
+        self.elastic_curriculum = bool(elastic_curriculum)
         self.curriculum_window = curriculum_window
         self.mixed_replay_rate = max(0.0, min(1.0, float(mixed_replay_rate)))
         self.dynamic_frontier = bool(dynamic_frontier)
@@ -965,6 +999,31 @@ class RubiksCubeMacroEnv(gym.Env):
         self._last_action_name = "NONE"
         self._prev_score = 0.0
         self.rng = np.random.default_rng()
+
+    def get_target_success_rate(self, depth: Optional[int] = None) -> float:
+        """Retorna a meta de taxa de sucesso necessária para promoção curricular.
+
+        Se elastic_curriculum estiver ativo, aplica uma curva decrescente adaptada à
+        complexidade combinatória do espaço de estados:
+          - D1..D4: 85%
+          - D5..D7: 70%
+          - D8..D10: 50%
+          - D11..D14: 40%
+          - D15+: 35%
+        """
+        d = depth if depth is not None else self.current_depth
+        if not getattr(self, "elastic_curriculum", True):
+            return self.target_success_rate
+        if d <= 4:
+            return min(self.target_success_rate, 0.85)
+        elif d <= 6:
+            return min(self.target_success_rate, 0.65)
+        elif d <= 10:
+            return min(self.target_success_rate, 0.50)
+        elif d <= 14:
+            return min(self.target_success_rate, 0.40)
+        else:
+            return min(self.target_success_rate, 0.35)
 
     @property
     def inverse_action_map(self) -> Dict[int, int]:
@@ -1066,7 +1125,8 @@ class RubiksCubeMacroEnv(gym.Env):
             if len(eval_window) >= self.curriculum_window:
                 success_rate = float(np.mean(eval_window))
                 can_promote = self.max_depth is None or self.current_depth < self.max_depth
-                if success_rate >= self.target_success_rate and can_promote:
+                eff_target = self.get_target_success_rate()
+                if success_rate >= eff_target and can_promote:
                     old_d = self.current_depth
                     self.current_depth += 1
                     self.curriculum_promotions += 1
@@ -1074,7 +1134,7 @@ class RubiksCubeMacroEnv(gym.Env):
                     self.frontier_successes.clear()
                     max_d_str = str(self.max_depth) if self.max_depth is not None else "∞"
                     print(
-                        f"\n🚀 [CURRICULUM MACRO] Sucesso {success_rate*100:.1f}% >= {self.target_success_rate*100:.0f}%! "
+                        f"\n🚀 [CURRICULUM MACRO] Sucesso {success_rate*100:.1f}% >= {eff_target*100:.0f}%! "
                         f"Profundidade promovida: {old_d} -> {self.current_depth}/{max_d_str}"
                     )
             # Focalização Dinâmica na Fronteira Proximal
@@ -1103,6 +1163,7 @@ class RubiksCubeMacroEnv(gym.Env):
             "curriculum_promotions": self.curriculum_promotions,
             "curriculum_p_frontier": getattr(self, "_last_p_frontier", 1.0),
             "dynamic_frontier": getattr(self, "dynamic_frontier", True),
+            "target_success_rate": self.get_target_success_rate(),
             "curriculum_success_rate": (
                 float(np.mean(self.frontier_successes)) if len(self.frontier_successes) > 0 else (
                     float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
@@ -1165,6 +1226,7 @@ class RubiksCubeMacroEnv(gym.Env):
             "max_depth": self.max_depth,
             "curriculum": self.curriculum,
             "curriculum_promotions": self.curriculum_promotions,
+            "target_success_rate": self.get_target_success_rate(),
             "curriculum_success_rate": (
                 float(np.mean(self.frontier_successes)) if len(self.frontier_successes) > 0 else (
                     float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
@@ -1192,6 +1254,7 @@ class RubiksCubeMacroEnv(gym.Env):
             min_depth=self.min_depth,
             max_depth=self.max_depth,
             target_success_rate=self.target_success_rate,
+            elastic_curriculum=self.elastic_curriculum,
             curriculum_window=self.curriculum_window,
             mixed_replay_rate=self.mixed_replay_rate,
             dynamic_frontier=self.dynamic_frontier,
@@ -1301,7 +1364,10 @@ class VectorizedRubiksEnv(gym.Env):
 
     @property
     def target_success_rate(self) -> float:
-        return self.envs[0].target_success_rate
+        return self.envs[0].get_target_success_rate()
+
+    def get_target_success_rate(self, depth: Optional[int] = None) -> float:
+        return self.envs[0].get_target_success_rate(depth)
 
     @property
     def curriculum_promotions(self) -> int:
@@ -1428,14 +1494,8 @@ class VectorizedRubiksEnv(gym.Env):
         truncateds = np.empty(self.num_envs, dtype=bool)
         info_list = []
 
-        shared_depth = max(e.current_depth for e in self.envs)
-        shared_promos = max(e.curriculum_promotions for e in self.envs)
-        for env in self.envs:
-            if env.curriculum and env.current_depth != shared_depth:
-                env.current_depth = shared_depth
-            if env.curriculum and env.curriculum_promotions != shared_promos:
-                env.curriculum_promotions = shared_promos
-
+        shared_depth = self.envs[0].current_depth
+        shared_promos = self.envs[0].curriculum_promotions
         any_promoted = False
 
         for i, env in enumerate(self.envs):
@@ -1477,17 +1537,21 @@ class VectorizedRubiksEnv(gym.Env):
                 other.curriculum_promotions = shared_promos
                 other.recent_successes.clear()
                 other.frontier_successes.clear()
+            eff_target = self.get_target_success_rate()
             for inf in info_list:
                 inf["current_depth"] = shared_depth
                 inf["curriculum_promotions"] = shared_promos
                 inf["curriculum_promoted"] = True
                 inf["curriculum_success_rate"] = 0.0
+                inf["target_success_rate"] = eff_target
         else:
             global_rate = self.curriculum_success_rate
+            eff_target = self.get_target_success_rate()
             for inf in info_list:
                 inf["current_depth"] = shared_depth
                 inf["curriculum_promotions"] = shared_promos
                 inf["curriculum_success_rate"] = global_rate
+                inf["target_success_rate"] = eff_target
 
         return (
             np.stack(next_obs_list, axis=0),

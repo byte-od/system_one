@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "updated_at": 1792602864.905083,
-  "updated_at_str": "21/10/2026 14:14:24",
+  "updated_at": 1793025167.973584,
+  "updated_at_str": "26/10/2026 11:32:47",
   "models": {
     "acrobot": {
       "key": "acrobot",
@@ -72,9 +72,9 @@
       "description": "Equilíbrio invertido amortizado em sub-milissegundo com reflexos ultra-estáveis.",
       "file": "s1_cartpole.onnx",
       "size_mb": 2.77,
-      "size_bytes": 2909005,
-      "mtime": 1792602847.5229576,
-      "mtime_str": "21/10/2026 14:14:07",
+      "size_bytes": 2909589,
+      "mtime": 1793025145.6862824,
+      "mtime_str": "26/10/2026 11:32:25",
       "checkpoint_source": "s1_cartpole_v1_trained.pt",
       "checkpoint_version": "v1",
       "action_chunk_size": 1
@@ -129,12 +129,12 @@
       "description": "Tronco recorrente de 1.6M parâmetros com Fast GRU + Slow GRU + Residual Highway. 12 giros atômicos, latência sub-milissegundo.",
       "default": true,
       "file": "s1_rubiks_atomic.onnx",
-      "size_mb": 6.36,
-      "size_bytes": 6672655,
-      "mtime": 1792602845.2701,
-      "mtime_str": "21/10/2026 14:14:05",
-      "checkpoint_source": "s1_rubikscube_v0_trained_v21.pt",
-      "checkpoint_version": "v21",
+      "size_mb": 6.4,
+      "size_bytes": 6715857,
+      "mtime": 1793025167.568101,
+      "mtime_str": "26/10/2026 11:32:47",
+      "checkpoint_source": "s1_rubikscube_v0_trained_v23.pt",
+      "checkpoint_version": "v23",
       "action_chunk_size": 1
     },
     "rubiks_macro": {

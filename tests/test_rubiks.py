@@ -233,6 +233,23 @@ class TestRubiksGymEnvironments:
             _, _, term, trunc, _ = env.step(0)
             assert trunc is True, "Deveria truncar exatamente no passo 15 (max(15, D*5))"
 
+    def test_curriculum_elastic_promotion_d8(self):
+        """Valida que o currículo elástico reduz o limiar em D8 para 50%, permitindo promoção com 52%."""
+        env = RubiksCubeEnv(curriculum=True, min_depth=1, max_depth=12, curriculum_window=10)
+        env.set_curriculum_depth(8)
+        assert env.current_depth == 8
+        assert env.get_target_success_rate() == 0.50
+
+        # Adiciona 6 sucessos e 4 fracassos (60% de taxa de sucesso)
+        for _ in range(6):
+            env.frontier_successes.append(1.0)
+        for _ in range(4):
+            env.frontier_successes.append(0.0)
+
+        obs, info = env.reset()
+        assert env.current_depth == 9, "Deveria promover de D8 para D9 com 60% de sucesso (meta elástica 50%)"
+        assert info["current_depth"] == 9
+
 
 class TestRubiksSystemOneIntegration:
     """Valida a integração completa com o UniversalS1Agent e o loop de PPO."""

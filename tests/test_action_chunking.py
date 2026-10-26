@@ -573,5 +573,91 @@ def test_anti_collapse_exploration_floor():
     wrapped.close()
 
 
+def test_net2net_action_chunking_expansion():
+    """Valida a expansão Net2Net de k=1 para k=2 preservando pesos e comportamento inicial."""
+    import tempfile
+    from system1_engine.transfer.manager import KnowledgeTransferManager
+
+    obs_space = gym.spaces.Box(low=0.0, high=1.0, shape=(324,), dtype=np.float32)
+    act_space = gym.spaces.Discrete(12)
+
+    # 1. Agente k=1
+    agent_k1 = UniversalS1Agent(obs_space=obs_space, action_space=act_space, trunk_type="lean", action_chunk_size=1)
+    # Define pesos arbitrários conhecidos na cabeça de política
+    with torch.no_grad():
+        agent_k1.policy_head.linear.weight.fill_(0.42)
+        agent_k1.policy_head.linear.bias.fill_(0.15)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ckpt_path = os.path.join(tmpdir, "ckpt_k1.pt")
+        KnowledgeTransferManager.save_checkpoint(
+            agent_k1,
+            ckpt_path,
+            extra_info={"env_id": "RubiksCube-v0", "steps": 50000000, "curriculum_depth": 8},
+            auto_sync_web=False,
+        )
+
+        # 2. Agente k=2 (Action Chunking)
+        agent_k2 = UniversalS1Agent(obs_space=obs_space, action_space=act_space, trunk_type="lean", action_chunk_size=2)
+        assert agent_k2.policy_head.linear.weight.shape == (24, 512)
+
+        # 3. Carrega via load_for_training (deve acionar Net2Net Action Chunking)
+        res = KnowledgeTransferManager.load_for_training(agent_k2, ckpt_path)
+        assert res["mode"] == "net2net_expansion"
+
+        # Verifica preservação exata dos pesos nos 2 slots atômicos
+        w = agent_k2.policy_head.linear.weight.data
+        b = agent_k2.policy_head.linear.bias.data
+        assert torch.allclose(w[:12], torch.full((12, 512), 0.42))
+        assert torch.allclose(w[12:24], torch.full((12, 512), 0.42))
+        assert torch.allclose(b[:12], torch.full((12,), 0.15))
+        assert torch.allclose(b[12:24], torch.full((12,), 0.15))
+
+        # Testa inferência rápida
+        obs_dict = {
+            "obs": np.zeros(324, dtype=np.float32),
+            "delta_obs": np.zeros(324, dtype=np.float32),
+            "prev_action": 0,
+            "prev_reward": 0.0,
+        }
+        action = agent_k2.act_fast(obs_dict)
+        assert isinstance(action, np.ndarray)
+        assert len(action) == 2
+
+
+def test_teacher_assisted_sil_rollouts():
+    """Valida a coleta vetorizada com workers professores (1-Step Lookahead SIL) no ACT k=2."""
+    from system1_engine.env.adapters.rubiks import VectorizedRubiksEnv
+
+    raw_env = VectorizedRubiksEnv(num_envs=4, curriculum=True, scramble_depth=6)
+    wrapped = UniversalS1Wrapper(raw_env)
+    agent = UniversalS1Agent(obs_space=wrapped.observation_space, action_space=wrapped.action_space, trunk_type="lean", action_chunk_size=2)
+
+    trainer = RecurrentPPOTrainer(
+        agent=agent,
+        env=wrapped,
+        action_chunk_size=2,
+        rollout_steps=16,
+        chunk_length=8,
+        chunk_batch_size=2,
+        sil_enabled=True,
+        teacher_sil_envs=2,
+        teacher_min_depth=2,
+        teacher_confidence_threshold=0.99,
+        teacher_top_k=3,
+    )
+
+    obs, _ = wrapped.reset()
+    obs_dict, hx, ep_start, mean_ret = trainer.collect_rollouts(obs, None, True)
+    assert isinstance(mean_ret, (float, np.floating))
+
+    metrics = trainer.train_epoch()
+    assert "policy_loss" in metrics
+    assert "value_loss" in metrics
+    wrapped.close()
+
+
+
+
 
 

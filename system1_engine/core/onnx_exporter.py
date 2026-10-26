@@ -119,7 +119,10 @@ def auto_sync_web_model(
             obs_dim = getattr(agent.front_end, "obs_dim", 4)
 
         dummy_obs = torch.zeros(1, 1, obs_dim, dtype=torch.float32)
-        dummy_delta = torch.zeros(1, 1, obs_dim, dtype=torch.float32)
+        if getattr(agent, "tri_compass", False):
+            dummy_delta = torch.zeros(1, 1, 3 * obs_dim, dtype=torch.float32)
+        else:
+            dummy_delta = torch.zeros(1, 1, obs_dim, dtype=torch.float32)
         if agent.is_discrete:
             dummy_act = torch.zeros(1, 1, dtype=torch.long)
         else:
@@ -483,8 +486,9 @@ def export_checkpoint_to_onnx(
             print(f"⚠️ Não foi possível instanciar ambiente para {checkpoint_path}")
             return None
 
-    wrapped_env = UniversalS1Wrapper(raw_env)
     from system1_engine.transfer.manager import KnowledgeTransferManager
+    tri_compass = KnowledgeTransferManager.detect_tri_compass(checkpoint_path)
+    wrapped_env = UniversalS1Wrapper(raw_env, tri_compass=tri_compass)
     trunk_type = KnowledgeTransferManager.detect_trunk_type(checkpoint_path)
     action_chunk_size = KnowledgeTransferManager.detect_action_chunk_size(checkpoint_path, wrapped_env.action_space)
     agent = UniversalS1Agent(
@@ -492,6 +496,7 @@ def export_checkpoint_to_onnx(
         action_space=wrapped_env.action_space,
         trunk_type=trunk_type,
         action_chunk_size=action_chunk_size,
+        tri_compass=tri_compass,
     )
 
     state_dict = ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt

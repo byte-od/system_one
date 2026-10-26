@@ -655,7 +655,12 @@ class SuccessReplayBuffer:
         # Prealocação de tensores padronizados com zeros
         b_obs = np.zeros((k, max_len, *self.obs_shape), dtype=np.float32)
         has_delta = any(t.delta_obs is not None for t in sampled_trajs)
-        b_delta = np.zeros((k, max_len, *self.obs_shape), dtype=np.float32) if has_delta else None
+        if has_delta:
+            sample_delta = next(t.delta_obs for t in sampled_trajs if t.delta_obs is not None)
+            delta_shape = sample_delta.shape[1:] if sample_delta.ndim > 1 else self.obs_shape
+            b_delta = np.zeros((k, max_len, *delta_shape), dtype=np.float32)
+        else:
+            b_delta = None
 
         act_dtype = np.int64 if self.is_discrete else np.float32
         if self.is_discrete:

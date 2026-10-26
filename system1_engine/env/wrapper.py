@@ -5,11 +5,27 @@ import numpy as np
 from PIL import Image
 
 
-class S1Observation(TypedDict):
+class S1Observation(TypedDict, total=False):
     obs: np.ndarray
     delta_obs: Optional[np.ndarray]
     prev_action: Union[int, np.ndarray]
-    prev_reward: float
+    prev_reward: Union[float, np.ndarray]
+    local_delta: Optional[np.ndarray]
+    origin_delta: Optional[np.ndarray]
+    goal_delta: Optional[np.ndarray]
+
+
+def _fast_copy_action(act: Any) -> Any:
+    """Zero-overhead action copy without Python deepcopy reflection."""
+    if isinstance(act, np.ndarray):
+        return act.copy()
+    elif isinstance(act, (int, float, bool, str)) or act is None:
+        return act
+    elif isinstance(act, (list, tuple)):
+        return type(act)(_fast_copy_action(x) for x in act)
+    elif hasattr(act, "clone"):
+        return act.clone()
+    return copy.copy(act)
 
 
 class UniversalS1Wrapper(gym.Wrapper):
@@ -17,15 +33,27 @@ class UniversalS1Wrapper(gym.Wrapper):
 
     Augments standard observations with:
     - delta_obs: s_t - s_{t-1} for vector observations, or channel stacking for visual.
+      When tri_compass=True, separates 3 orthogonal channels:
+      [Delta_local, Delta_origin, Delta_goal] -> (3 * obs_dim,)
     - prev_action: a_{t-1}.
     - prev_reward: r_{t-1}.
 
     Prevents causal blindness and cyclic attractors in reflexive policies.
     """
 
-    def __init__(self, env: gym.Env, is_visual: Optional[bool] = None, gamma: float = 0.99) -> None:
+    def __init__(
+        self,
+        env: gym.Env,
+        is_visual: Optional[bool] = None,
+        gamma: float = 0.99,
+        tri_compass: bool = False,
+    ) -> None:
         super().__init__(env)
         self.gamma = float(gamma)
+        self.tri_compass = bool(tri_compass)
+        self.elite_goal_obs: Optional[np.ndarray] = None
+        self._best_terminal_reward: float = -float("inf")
+
         if is_visual is None:
             # Auto-detect visual observations:
             # 1. Box with 3 dims where min dim in (1, 3, 4) and max spatial dims >= 10
@@ -63,6 +91,10 @@ class UniversalS1Wrapper(gym.Wrapper):
 
         # Build dictionary observation space
         self._setup_spaces()
+
+    def set_elite_goal_obs(self, goal_obs: np.ndarray) -> None:
+        """Configura ou atualiza o atrator geodésico de meta auto-descoberto."""
+        self.elite_goal_obs = np.asarray(goal_obs, dtype=np.float32).copy()
 
     def _get_initial_action(self) -> Union[int, np.ndarray]:
         if self.is_vectorized:
@@ -222,10 +254,11 @@ class UniversalS1Wrapper(gym.Wrapper):
                 shape=(obs_dim,),
                 dtype=np.float32,
             )
+            delta_shape = (3 * obs_dim,) if self.tri_compass else (obs_dim,)
             spaces["delta_obs"] = gym.spaces.Box(
                 low=-np.inf,
                 high=np.inf,
-                shape=(obs_dim,),
+                shape=delta_shape,
                 dtype=np.float32,
             )
 
@@ -247,13 +280,31 @@ class UniversalS1Wrapper(gym.Wrapper):
             self.prev_action = self._get_initial_action()
             self.prev_reward = np.zeros(self.num_envs, dtype=np.float32)
 
-            delta_obs = np.zeros_like(current_obs, dtype=np.float32)
-            obs_dict: S1Observation = {
-                "obs": current_obs,
-                "delta_obs": delta_obs,
-                "prev_action": copy.deepcopy(self.prev_action),
-                "prev_reward": np.array(self.prev_reward, copy=True),
-            }
+            if self.tri_compass:
+                local_delta = np.zeros_like(current_obs, dtype=np.float32)
+                origin_delta = np.zeros_like(current_obs, dtype=np.float32)
+                if self.elite_goal_obs is not None:
+                    goal_delta = current_obs - self.elite_goal_obs
+                else:
+                    goal_delta = np.zeros_like(current_obs, dtype=np.float32)
+                delta_obs = np.concatenate([local_delta, origin_delta, goal_delta], axis=-1)
+                obs_dict: S1Observation = {
+                    "obs": current_obs,
+                    "delta_obs": delta_obs,
+                    "prev_action": _fast_copy_action(self.prev_action),
+                    "prev_reward": np.array(self.prev_reward, copy=True),
+                    "local_delta": local_delta,
+                    "origin_delta": origin_delta,
+                    "goal_delta": goal_delta,
+                }
+            else:
+                delta_obs = np.zeros_like(current_obs, dtype=np.float32)
+                obs_dict: S1Observation = {
+                    "obs": current_obs,
+                    "delta_obs": delta_obs,
+                    "prev_action": _fast_copy_action(self.prev_action),
+                    "prev_reward": np.array(self.prev_reward, copy=True),
+                }
             self.latest_obs_dict = obs_dict
             return obs_dict, info
 
@@ -267,7 +318,7 @@ class UniversalS1Wrapper(gym.Wrapper):
             obs_dict: S1Observation = {
                 "obs": stacked_obs,
                 "delta_obs": None,
-                "prev_action": copy.deepcopy(self.prev_action),
+                "prev_action": _fast_copy_action(self.prev_action),
                 "prev_reward": float(self.prev_reward),
             }
         else:
@@ -277,13 +328,31 @@ class UniversalS1Wrapper(gym.Wrapper):
             self.prev_action = self._get_initial_action()
             self.prev_reward = 0.0
 
-            delta_obs = np.zeros_like(current_obs, dtype=np.float32)
-            obs_dict = {
-                "obs": current_obs,
-                "delta_obs": delta_obs,
-                "prev_action": copy.deepcopy(self.prev_action),
-                "prev_reward": float(self.prev_reward),
-            }
+            if self.tri_compass:
+                local_delta = np.zeros_like(current_obs, dtype=np.float32)
+                origin_delta = np.zeros_like(current_obs, dtype=np.float32)
+                if self.elite_goal_obs is not None:
+                    goal_delta = current_obs - self.elite_goal_obs
+                else:
+                    goal_delta = np.zeros_like(current_obs, dtype=np.float32)
+                delta_obs = np.concatenate([local_delta, origin_delta, goal_delta], axis=-1)
+                obs_dict = {
+                    "obs": current_obs,
+                    "delta_obs": delta_obs,
+                    "prev_action": _fast_copy_action(self.prev_action),
+                    "prev_reward": float(self.prev_reward),
+                    "local_delta": local_delta,
+                    "origin_delta": origin_delta,
+                    "goal_delta": goal_delta,
+                }
+            else:
+                delta_obs = np.zeros_like(current_obs, dtype=np.float32)
+                obs_dict = {
+                    "obs": current_obs,
+                    "delta_obs": delta_obs,
+                    "prev_action": _fast_copy_action(self.prev_action),
+                    "prev_reward": float(self.prev_reward),
+                }
 
         self.latest_obs_dict = obs_dict
         return obs_dict, info
@@ -303,21 +372,36 @@ class UniversalS1Wrapper(gym.Wrapper):
                 sim_obs_dict: S1Observation = {
                     "obs": stacked,
                     "delta_obs": None,
-                    "prev_action": copy.deepcopy(action),
+                    "prev_action": _fast_copy_action(action),
                     "prev_reward": float(rew),
                 }
             else:
                 cur_obs = self._vectorize_obs(raw_obs, self.env.observation_space)
-                if self.compass_mode and self.init_obs is not None:
-                    delta = cur_obs - self.init_obs
+                if self.tri_compass:
+                    local_delta = cur_obs - self.prev_obs if self.prev_obs is not None else np.zeros_like(cur_obs)
+                    origin_delta = cur_obs - self.init_obs if self.init_obs is not None else np.zeros_like(cur_obs)
+                    goal_delta = (cur_obs - self.elite_goal_obs) if self.elite_goal_obs is not None else np.zeros_like(cur_obs)
+                    delta = np.concatenate([local_delta, origin_delta, goal_delta], axis=-1)
+                    sim_obs_dict = {
+                        "obs": cur_obs,
+                        "delta_obs": delta,
+                        "prev_action": _fast_copy_action(action),
+                        "prev_reward": float(rew),
+                        "local_delta": local_delta,
+                        "origin_delta": origin_delta,
+                        "goal_delta": goal_delta,
+                    }
                 else:
-                    delta = np.zeros_like(cur_obs)
-                sim_obs_dict = {
-                    "obs": cur_obs,
-                    "delta_obs": delta,
-                    "prev_action": copy.deepcopy(action),
-                    "prev_reward": float(rew),
-                }
+                    if self.compass_mode and self.init_obs is not None:
+                        delta = cur_obs - self.init_obs
+                    else:
+                        delta = np.zeros_like(cur_obs)
+                    sim_obs_dict = {
+                        "obs": cur_obs,
+                        "delta_obs": delta,
+                        "prev_action": _fast_copy_action(action),
+                        "prev_reward": float(rew),
+                    }
             return sim_obs_dict, float(rew), bool(done), info
         raise NotImplementedError(
             f"O ambiente base {type(self.env).__name__} não implementa simulate_step()."
@@ -382,26 +466,55 @@ class UniversalS1Wrapper(gym.Wrapper):
                         break
 
                 current_obs = np.asarray(last_obs, dtype=np.float32)
-                local_delta = current_obs - self.prev_obs
-                if self.compass_mode and self.init_obs is not None:
-                    global_delta = current_obs - self.init_obs
-                    delta_obs = (1.0 - self.compass_alpha) * local_delta + self.compass_alpha * global_delta
-                else:
-                    delta_obs = local_delta
                 done_mask = np.asarray(all_terminateds | all_truncateds, dtype=bool)
-                if np.any(done_mask):
-                    delta_obs[done_mask] = 0.0
-                    if self.compass_mode and self.init_obs is not None:
-                        self.init_obs[done_mask] = current_obs[done_mask]
+                success_mask = done_mask & (total_rewards > 0)
+                if np.any(success_mask):
+                    best_idx = int(np.argmax(total_rewards))
+                    if total_rewards[best_idx] >= self._best_terminal_reward:
+                        self._best_terminal_reward = float(total_rewards[best_idx])
+                        self.elite_goal_obs = np.array(current_obs[best_idx], copy=True)
 
-                obs_dict: S1Observation = {
-                    "obs": current_obs,
-                    "delta_obs": delta_obs,
-                    "prev_action": copy.deepcopy(last_executed_actions),
-                    "prev_reward": total_rewards,
-                }
+                if self.tri_compass:
+                    local_delta = current_obs - self.prev_obs
+                    origin_delta = current_obs - self.init_obs if self.init_obs is not None else np.zeros_like(current_obs)
+                    if self.elite_goal_obs is not None:
+                        goal_delta = current_obs - self.elite_goal_obs
+                    else:
+                        goal_delta = np.zeros_like(current_obs)
+                    if np.any(done_mask):
+                        local_delta[done_mask] = 0.0
+                        origin_delta[done_mask] = 0.0
+                        if self.init_obs is not None:
+                            self.init_obs[done_mask] = current_obs[done_mask]
+                    delta_obs = np.concatenate([local_delta, origin_delta, goal_delta], axis=-1)
+                    obs_dict: S1Observation = {
+                        "obs": current_obs,
+                        "delta_obs": delta_obs,
+                        "prev_action": _fast_copy_action(last_executed_actions),
+                        "prev_reward": total_rewards,
+                        "local_delta": local_delta,
+                        "origin_delta": origin_delta,
+                        "goal_delta": goal_delta,
+                    }
+                else:
+                    local_delta = current_obs - self.prev_obs
+                    if self.compass_mode and self.init_obs is not None:
+                        global_delta = current_obs - self.init_obs
+                        delta_obs = (1.0 - self.compass_alpha) * local_delta + self.compass_alpha * global_delta
+                    else:
+                        delta_obs = local_delta
+                    if np.any(done_mask):
+                        delta_obs[done_mask] = 0.0
+                        if self.compass_mode and self.init_obs is not None:
+                            self.init_obs[done_mask] = current_obs[done_mask]
+                    obs_dict = {
+                        "obs": current_obs,
+                        "delta_obs": delta_obs,
+                        "prev_action": _fast_copy_action(last_executed_actions),
+                        "prev_reward": total_rewards,
+                    }
                 self.prev_obs = np.array(current_obs, copy=True)
-                self.prev_action = copy.deepcopy(last_executed_actions)
+                self.prev_action = _fast_copy_action(last_executed_actions)
                 self.prev_reward = total_rewards
                 self.latest_obs_dict = obs_dict
                 return obs_dict, total_rewards, all_terminateds, all_truncateds, last_info
@@ -409,27 +522,56 @@ class UniversalS1Wrapper(gym.Wrapper):
             # Passo unitário vetorizado clássico
             next_obs, rewards, terminateds, truncateds, info = self.env.step(action)
             current_obs = np.asarray(next_obs, dtype=np.float32)
-            local_delta = current_obs - self.prev_obs
-            if self.compass_mode and self.init_obs is not None:
-                global_delta = current_obs - self.init_obs
-                delta_obs = (1.0 - self.compass_alpha) * local_delta + self.compass_alpha * global_delta
-            else:
-                delta_obs = local_delta
-            done_mask = np.asarray(terminateds | truncateds, dtype=bool)
-            if np.any(done_mask):
-                delta_obs[done_mask] = 0.0
-                if self.compass_mode and self.init_obs is not None:
-                    self.init_obs[done_mask] = current_obs[done_mask]
-
             rew_arr = np.asarray(rewards, dtype=np.float32)
-            obs_dict = {
-                "obs": current_obs,
-                "delta_obs": delta_obs,
-                "prev_action": copy.deepcopy(action),
-                "prev_reward": rew_arr,
-            }
+            done_mask = np.asarray(terminateds | truncateds, dtype=bool)
+            success_mask = done_mask & (rew_arr > 0)
+            if np.any(success_mask):
+                best_idx = int(np.argmax(rew_arr))
+                if rew_arr[best_idx] >= self._best_terminal_reward:
+                    self._best_terminal_reward = float(rew_arr[best_idx])
+                    self.elite_goal_obs = np.array(current_obs[best_idx], copy=True)
+
+            if self.tri_compass:
+                local_delta = current_obs - self.prev_obs
+                origin_delta = current_obs - self.init_obs if self.init_obs is not None else np.zeros_like(current_obs)
+                if self.elite_goal_obs is not None:
+                    goal_delta = current_obs - self.elite_goal_obs
+                else:
+                    goal_delta = np.zeros_like(current_obs)
+                if np.any(done_mask):
+                    local_delta[done_mask] = 0.0
+                    origin_delta[done_mask] = 0.0
+                    if self.init_obs is not None:
+                        self.init_obs[done_mask] = current_obs[done_mask]
+                delta_obs = np.concatenate([local_delta, origin_delta, goal_delta], axis=-1)
+                obs_dict = {
+                    "obs": current_obs,
+                    "delta_obs": delta_obs,
+                    "prev_action": _fast_copy_action(action),
+                    "prev_reward": rew_arr,
+                    "local_delta": local_delta,
+                    "origin_delta": origin_delta,
+                    "goal_delta": goal_delta,
+                }
+            else:
+                local_delta = current_obs - self.prev_obs
+                if self.compass_mode and self.init_obs is not None:
+                    global_delta = current_obs - self.init_obs
+                    delta_obs = (1.0 - self.compass_alpha) * local_delta + self.compass_alpha * global_delta
+                else:
+                    delta_obs = local_delta
+                if np.any(done_mask):
+                    delta_obs[done_mask] = 0.0
+                    if self.compass_mode and self.init_obs is not None:
+                        self.init_obs[done_mask] = current_obs[done_mask]
+                obs_dict = {
+                    "obs": current_obs,
+                    "delta_obs": delta_obs,
+                    "prev_action": _fast_copy_action(action),
+                    "prev_reward": rew_arr,
+                }
             self.prev_obs = np.array(current_obs, copy=True)
-            self.prev_action = copy.deepcopy(action)
+            self.prev_action = _fast_copy_action(action)
             self.prev_reward = rew_arr
             self.latest_obs_dict = obs_dict
             return obs_dict, rew_arr, terminateds, truncateds, info
@@ -482,30 +624,58 @@ class UniversalS1Wrapper(gym.Wrapper):
                 obs_dict = {
                     "obs": stacked_obs,
                     "delta_obs": None,
-                    "prev_action": copy.deepcopy(last_executed_act),
+                    "prev_action": _fast_copy_action(last_executed_act),
                     "prev_reward": total_reward,
                 }
             else:
                 current_obs = self._vectorize_obs(last_obs, self.env.observation_space)
-                local_delta = current_obs - self.prev_obs
-                if self.compass_mode and self.init_obs is not None:
-                    global_delta = current_obs - self.init_obs
-                    delta_obs = (1.0 - self.compass_alpha) * local_delta + self.compass_alpha * global_delta
-                else:
-                    delta_obs = local_delta
-                if terminated or truncated:
-                    delta_obs = np.zeros_like(current_obs)
-                    if self.compass_mode:
+                # Attractor auto-discovery
+                if total_reward > 0 and (terminated or (isinstance(last_info, dict) and last_info.get("is_success", False))):
+                    if total_reward >= self._best_terminal_reward:
+                        self._best_terminal_reward = float(total_reward)
+                        self.elite_goal_obs = np.array(current_obs, copy=True)
+
+                if self.tri_compass:
+                    local_delta = current_obs - self.prev_obs
+                    origin_delta = current_obs - self.init_obs if self.init_obs is not None else np.zeros_like(current_obs)
+                    if self.elite_goal_obs is not None:
+                        goal_delta = current_obs - self.elite_goal_obs
+                    else:
+                        goal_delta = np.zeros_like(current_obs)
+                    if terminated or truncated:
+                        local_delta = np.zeros_like(current_obs)
+                        origin_delta = np.zeros_like(current_obs)
                         self.init_obs = np.array(current_obs, copy=True)
-                obs_dict = {
-                    "obs": current_obs,
-                    "delta_obs": delta_obs,
-                    "prev_action": copy.deepcopy(last_executed_act),
-                    "prev_reward": total_reward,
-                }
+                    delta_obs = np.concatenate([local_delta, origin_delta, goal_delta], axis=-1)
+                    obs_dict = {
+                        "obs": current_obs,
+                        "delta_obs": delta_obs,
+                        "prev_action": _fast_copy_action(last_executed_act),
+                        "prev_reward": total_reward,
+                        "local_delta": local_delta,
+                        "origin_delta": origin_delta,
+                        "goal_delta": goal_delta,
+                    }
+                else:
+                    local_delta = current_obs - self.prev_obs
+                    if self.compass_mode and self.init_obs is not None:
+                        global_delta = current_obs - self.init_obs
+                        delta_obs = (1.0 - self.compass_alpha) * local_delta + self.compass_alpha * global_delta
+                    else:
+                        delta_obs = local_delta
+                    if terminated or truncated:
+                        delta_obs = np.zeros_like(current_obs)
+                        if self.compass_mode:
+                            self.init_obs = np.array(current_obs, copy=True)
+                    obs_dict = {
+                        "obs": current_obs,
+                        "delta_obs": delta_obs,
+                        "prev_action": _fast_copy_action(last_executed_act),
+                        "prev_reward": total_reward,
+                    }
 
             self.prev_obs = np.array(current_obs, copy=True)
-            self.prev_action = copy.deepcopy(last_executed_act)
+            self.prev_action = _fast_copy_action(last_executed_act)
             self.prev_reward = total_reward
             self.latest_obs_dict = obs_dict
             return obs_dict, total_reward, terminated, truncated, last_info
@@ -522,29 +692,57 @@ class UniversalS1Wrapper(gym.Wrapper):
             obs_dict: S1Observation = {
                 "obs": stacked_obs,
                 "delta_obs": None,
-                "prev_action": copy.deepcopy(action),
+                "prev_action": _fast_copy_action(action),
                 "prev_reward": reward_float,
             }
         else:
             current_obs = self._vectorize_obs(next_obs, self.env.observation_space)
-            local_delta = current_obs - self.prev_obs
-            if self.compass_mode and self.init_obs is not None:
-                global_delta = current_obs - self.init_obs
-                delta_obs = (1.0 - self.compass_alpha) * local_delta + self.compass_alpha * global_delta
+            # Attractor auto-discovery
+            if reward_float > 0 and (terminated or (isinstance(info, dict) and info.get("is_success", False))):
+                if reward_float >= self._best_terminal_reward:
+                    self._best_terminal_reward = float(reward_float)
+                    self.elite_goal_obs = np.array(current_obs, copy=True)
+
+            if self.tri_compass:
+                local_delta = current_obs - self.prev_obs
+                origin_delta = current_obs - self.init_obs if self.init_obs is not None else np.zeros_like(current_obs)
+                if self.elite_goal_obs is not None:
+                    goal_delta = current_obs - self.elite_goal_obs
+                else:
+                    goal_delta = np.zeros_like(current_obs)
+                if terminated or truncated:
+                    local_delta = np.zeros_like(current_obs)
+                    origin_delta = np.zeros_like(current_obs)
+                    self.init_obs = np.array(current_obs, copy=True)
+                delta_obs = np.concatenate([local_delta, origin_delta, goal_delta], axis=-1)
+                obs_dict = {
+                    "obs": current_obs,
+                    "delta_obs": delta_obs,
+                    "prev_action": _fast_copy_action(action),
+                    "prev_reward": reward_float,
+                    "local_delta": local_delta,
+                    "origin_delta": origin_delta,
+                    "goal_delta": goal_delta,
+                }
             else:
-                delta_obs = local_delta
-            obs_dict = {
-                "obs": current_obs,
-                "delta_obs": delta_obs,
-                "prev_action": copy.deepcopy(action),
-                "prev_reward": reward_float,
-            }
+                local_delta = current_obs - self.prev_obs
+                if self.compass_mode and self.init_obs is not None:
+                    global_delta = current_obs - self.init_obs
+                    delta_obs = (1.0 - self.compass_alpha) * local_delta + self.compass_alpha * global_delta
+                else:
+                    delta_obs = local_delta
+                obs_dict = {
+                    "obs": current_obs,
+                    "delta_obs": delta_obs,
+                    "prev_action": _fast_copy_action(action),
+                    "prev_reward": reward_float,
+                }
 
         # Update buffers for next step
         self.prev_obs = np.array(current_obs, copy=True)
-        self.prev_action = copy.deepcopy(action)
+        self.prev_action = _fast_copy_action(action)
         self.prev_reward = reward_float
-        if (terminated or truncated) and self.compass_mode:
+        if (terminated or truncated) and (self.compass_mode or self.tri_compass):
             self.init_obs = np.array(current_obs, copy=True)
         self.latest_obs_dict = obs_dict
 

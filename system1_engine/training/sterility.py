@@ -1,10 +1,10 @@
 """Memória Latente Estéril Auto-Corretiva (Self-Healing Latent Tabu Memory).
 
-Rastreia hipóteses de ação não produtivas associadas ao estado cognitivo latente (motivo da decisão)
-do agente, aplicando resistência suave sobre os logits de ações estéreis para forçar a exploração
-direcionada rumo a ações virgens, com reabilitação imediata caso a ação venha a ser produtiva.
-
-Otimizado para altíssimo throughput (10.000+ FPS) sem sincronização bloqueante de GPU/MPS.
+[DEPRECATED / LEGACY COMPONENT]:
+Substituído pelo aprendizado contrastivo c-SIL (Contrastive Online DPO-SIL), que
+grava a aversão a falhas diretamente nos 1.750.226 pesos neurais do modelo via gradiente
+de preferência L_DPO, sem alocar memória k-NN externa ou buffers de CPU.
+Mantido para compatibilidade retroativa com suítes de teste e scripts existentes.
 """
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -16,7 +16,8 @@ import torch.nn.functional as F
 class LatentSterilityMemory:
     """Memória episódica de esterilidade latente baseada em similaridade de cosseno.
 
-    Associa vetores latentes h (saída do Trunk de 256-D) a pesos de esterilidade por ação.
+    [DEPRECATED]: Utilize c-SIL (DPO-SIL) para aversão a falhas nativa no modelo.
+    Associa vetores latentes h (saída do Trunk) a pesos de esterilidade por ação.
     Opera como um sistema de crédito negativo auto-corretivo:
     - Incrementa resistência quando uma ação falha sob determinado motivo cognitivo.
     - Zera a resistência e reabilita a ação imediatamente se ela produzir avanço de Bellman.

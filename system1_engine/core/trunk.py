@@ -48,7 +48,12 @@ class System1Trunk(nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
 
-        self.input_norm = nn.LayerNorm(input_dim)
+        if input_dim > 337:
+            self.input_norm = nn.LayerNorm(337)
+            self.compass_input_norm = nn.LayerNorm(input_dim - 337)
+        else:
+            self.input_norm = nn.LayerNorm(input_dim)
+            self.compass_input_norm = None
         self.gru = nn.GRU(
             input_size=input_dim,
             hidden_size=hidden_dim,
@@ -106,9 +111,15 @@ class System1Trunk(nn.Module):
             hx = torch.zeros(1, b, self.hidden_dim, device=x.device, dtype=x.dtype)
 
         # Normalize input
-        x_norm = self.input_norm(x)
+        if self.compass_input_norm is not None:
+            x_norm = torch.cat([
+                self.input_norm(x[:, :, :337]),
+                self.compass_input_norm(x[:, :, 337:]),
+            ], dim=-1)
+        else:
+            x_norm = self.input_norm(x)
 
-        if dones is None:
+        if dones is None or not dones.any():
             # Fast vectorized unroll
             gru_out, next_hx = self.gru(x_norm, hx)
         else:
@@ -173,7 +184,12 @@ class LeanResidualTrunk(nn.Module):
         self.slow_dim = slow_dim
         self.hidden_dim = fast_dim + slow_dim
 
-        self.input_norm = nn.LayerNorm(input_dim)
+        if input_dim > 337:
+            self.input_norm = nn.LayerNorm(337)
+            self.compass_input_norm = nn.LayerNorm(input_dim - 337)
+        else:
+            self.input_norm = nn.LayerNorm(input_dim)
+            self.compass_input_norm = None
         self.fast_gru = nn.GRU(
             input_size=input_dim,
             hidden_size=fast_dim,
@@ -248,9 +264,15 @@ class LeanResidualTrunk(nn.Module):
             h_slow = torch.zeros(1, b, self.slow_dim, device=x.device, dtype=x.dtype)
 
         # Normalize sensory input
-        x_norm = self.input_norm(x)
+        if self.compass_input_norm is not None:
+            x_norm = torch.cat([
+                self.input_norm(x[:, :, :337]),
+                self.compass_input_norm(x[:, :, 337:]),
+            ], dim=-1)
+        else:
+            x_norm = self.input_norm(x)
 
-        if dones is None:
+        if dones is None or not dones.any():
             # Fast vectorized unroll across both GRU stages
             out_fast, next_h_fast = self.fast_gru(x_norm, h_fast)
             out_slow, next_h_slow = self.slow_gru(out_fast, h_slow)

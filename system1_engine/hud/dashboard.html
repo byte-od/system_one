@@ -638,6 +638,205 @@
     }
 
     /* ========================================================= */
+    /* EFEITO DE VIDRO QUEBRADO / FRATURA (EXPLOSÃO & COLAPSO)   */
+    /* ========================================================= */
+
+    /* 1. Estado de Explosão de Valor (Overload / Gradiente / Loss Spikes) */
+    .vessel-container.vessel-broken-explode {
+      border-color: #ef4444 !important;
+      background: radial-gradient(circle at 60% 40%, rgba(185, 28, 28, 0.45) 0%, rgba(15, 23, 42, 0.96) 85%) !important;
+      box-shadow: 
+        inset 0 0 25px rgba(239, 68, 68, 0.45),
+        0 0 25px rgba(239, 68, 68, 0.65),
+        0 0 50px rgba(239, 68, 68, 0.3) !important;
+      animation: vessel-shatter-shake 0.5s ease-out, vessel-explode-pulse 2s infinite ease-in-out !important;
+    }
+    .vessel-container.vessel-broken-explode .vessel-liquid-fill {
+      filter: hue-rotate(140deg) saturate(2.5) brightness(1.2) !important;
+    }
+
+    /* 2. Estado de Colapso (Entropia Zero / Deadlock / Congelamento) */
+    .vessel-container.vessel-broken-collapse {
+      border-color: #38bdf8 !important;
+      background: radial-gradient(circle at 60% 40%, rgba(8, 47, 73, 0.55) 0%, rgba(5, 10, 20, 0.98) 85%) !important;
+      box-shadow: 
+        inset 0 0 25px rgba(14, 165, 233, 0.4),
+        0 0 25px rgba(56, 189, 248, 0.6),
+        0 0 50px rgba(56, 189, 248, 0.25) !important;
+      animation: vessel-shatter-shake 0.45s ease-out, vessel-collapse-pulse 2.5s infinite ease-in-out !important;
+    }
+    .vessel-container.vessel-broken-collapse .vessel-liquid-fill {
+      filter: saturate(0.2) brightness(0.7) hue-rotate(180deg) !important;
+    }
+
+    /* Camada de Vidro Rachado / Fractured Glass */
+    .vessel-crack-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 15;
+      pointer-events: none;
+      opacity: 0;
+      transform: scale(0.96);
+      transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+      border-radius: inherit;
+    }
+
+    .vessel-container.vessel-broken-explode .vessel-crack-layer,
+    .vessel-container.vessel-broken-collapse .vessel-crack-layer {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .vessel-crack-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8));
+    }
+
+    /* Linhas de Fratura na Explosão (Fogo / Vermelho) */
+    .vessel-container.vessel-broken-explode .crack-line.primary {
+      stroke: #fca5a5;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 0 3px #ef4444) drop-shadow(0 0 8px #dc2626);
+    }
+    .vessel-container.vessel-broken-explode .crack-line.ring-inner {
+      stroke: #f87171;
+      stroke-width: 1.2;
+      stroke-dasharray: 4, 1.5;
+      filter: drop-shadow(0 0 3px #ef4444);
+    }
+    .vessel-container.vessel-broken-explode .crack-line.ring-outer {
+      stroke: #ef4444;
+      stroke-width: 0.9;
+      filter: drop-shadow(0 0 2px #b91c1c);
+    }
+    .vessel-container.vessel-broken-explode .crack-shard {
+      fill: rgba(239, 68, 68, 0.18);
+      stroke: rgba(254, 202, 202, 0.8);
+      stroke-width: 0.8;
+    }
+
+    /* Linhas de Fratura no Colapso (Gelo / Ciano Glacial) */
+    .vessel-container.vessel-broken-collapse .crack-line.primary {
+      stroke: #e0f2fe;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 0 3px #38bdf8) drop-shadow(0 0 8px #0284c7);
+    }
+    .vessel-container.vessel-broken-collapse .crack-line.ring-inner {
+      stroke: #bae6fd;
+      stroke-width: 1.2;
+      stroke-dasharray: 3, 1;
+      filter: drop-shadow(0 0 3px #38bdf8);
+    }
+    .vessel-container.vessel-broken-collapse .crack-line.ring-outer {
+      stroke: #38bdf8;
+      stroke-width: 0.9;
+      filter: drop-shadow(0 0 2px #0369a1);
+    }
+    .vessel-container.vessel-broken-collapse .crack-shard {
+      fill: rgba(56, 189, 248, 0.16);
+      stroke: rgba(224, 242, 254, 0.8);
+      stroke-width: 0.8;
+    }
+
+    /* Selo / Badge de Ruptura */
+    .vessel-shatter-badge {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-4deg);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: clamp(9px, 8cqi, 11px);
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.9), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+      z-index: 20;
+      white-space: nowrap;
+      pointer-events: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      animation: shatter-badge-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .vessel-container.vessel-broken-explode .vessel-shatter-badge {
+      background: linear-gradient(135deg, rgba(220, 38, 38, 0.95), rgba(153, 27, 27, 0.98));
+      color: #fff;
+      border: 1px solid #fca5a5;
+      text-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+    }
+    .vessel-container.vessel-broken-collapse .vessel-shatter-badge {
+      background: linear-gradient(135deg, rgba(2, 132, 199, 0.95), rgba(8, 47, 73, 0.98));
+      color: #fff;
+      border: 1px solid #bae6fd;
+      text-shadow: 0 0 8px rgba(186, 230, 253, 0.8);
+    }
+
+    /* Flash inicial de impacto */
+    .vessel-shatter-flash {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 60% 40%, rgba(255, 255, 255, 0.85) 0%, transparent 70%);
+      opacity: 0;
+      pointer-events: none;
+    }
+    .vessel-container.vessel-broken-explode .vessel-shatter-flash,
+    .vessel-container.vessel-broken-collapse .vessel-shatter-flash {
+      animation: vessel-crack-flash 0.6s ease-out forwards;
+    }
+
+    @keyframes vessel-shatter-shake {
+      0% { transform: translate(0, 0) rotate(0deg); }
+      12% { transform: translate(-4px, 3px) rotate(-1.5deg); }
+      24% { transform: translate(4px, -3px) rotate(1.5deg); }
+      36% { transform: translate(-3px, -2px) rotate(-1deg); }
+      48% { transform: translate(3px, 2px) rotate(1deg); }
+      60% { transform: translate(-2px, 1px) rotate(-0.5deg); }
+      75% { transform: translate(1.5px, -1px) rotate(0.4deg); }
+      90% { transform: translate(-0.5px, 0.5px) rotate(-0.1deg); }
+      100% { transform: translate(0, 0) rotate(0deg); }
+    }
+
+    @keyframes vessel-explode-pulse {
+      0%, 100% {
+        box-shadow: inset 0 0 20px rgba(239, 68, 68, 0.4), 0 0 25px rgba(239, 68, 68, 0.6);
+      }
+      50% {
+        box-shadow: inset 0 0 35px rgba(239, 68, 68, 0.7), 0 0 45px rgba(239, 68, 68, 0.95), 0 0 70px rgba(220, 38, 38, 0.5);
+      }
+    }
+
+    @keyframes vessel-collapse-pulse {
+      0%, 100% {
+        box-shadow: inset 0 0 20px rgba(14, 165, 233, 0.35), 0 0 25px rgba(56, 189, 248, 0.55);
+      }
+      50% {
+        box-shadow: inset 0 0 35px rgba(14, 165, 233, 0.65), 0 0 45px rgba(56, 189, 248, 0.9), 0 0 65px rgba(2, 132, 199, 0.45);
+      }
+    }
+
+    @keyframes shatter-badge-pop {
+      0% { transform: translate(-50%, -50%) scale(0.4) rotate(-15deg); opacity: 0; }
+      70% { transform: translate(-50%, -50%) scale(1.15) rotate(-2deg); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(1) rotate(-4deg); opacity: 1; }
+    }
+
+    @keyframes vessel-crack-flash {
+      0% { opacity: 0.95; }
+      100% { opacity: 0; }
+    }
+
+    /* ========================================================= */
     /* LAYOUT DA JANELA FLUTUANTE / MINI-MODE                    */
     /* ========================================================= */
     body.mini-mode #train-status-cards-container {
@@ -796,6 +995,9 @@
       <div id="hud-model-badge" class="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-950/80 border border-amber-500/70 text-amber-300 font-mono text-[11px] font-bold shadow-sm" title="Modelo ativo no motor System 1">
         <span>⚡ Modelo:</span> <span id="hud-model-name" class="text-white">RubiksCube-v0</span>
       </div>
+      <div id="hud-tri-compass-badge" class="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/70 text-cyan-300 font-mono text-[11px] font-bold shadow-sm" title="Triangulação Desacoplada (Tri-Compass 465D) ativa">
+        <span>🧭 Bússolas:</span> <span id="hud-tri-compass-status" class="text-white font-extrabold">Tri-465D</span>
+      </div>
       <div id="hud-act-badge" class="hidden flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-indigo-950/80 border border-indigo-500/70 text-indigo-300 font-mono text-[11px] font-bold shadow-sm" title="Action Chunking Temporal (ACT) ativo">
         <span>🧩 ACT:</span> <span id="hud-act-k" class="text-white font-extrabold">k=1</span>
       </div>
@@ -891,7 +1093,7 @@
       <!-- BARRA DE STATUS E MÉTRICAS DE ALTO IMPACTO (6 Cards: Passos & FPS, WinRate, Retorno, Loss, Confiança/Calibração, DPO Loss) -->
       <div id="train-status-cards-container" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
         <!-- 1. Passos PPO & Throughput (Recipiente 1: Ciano) -->
-        <div class="card vessel-container vessel-theme-cyan p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between">
+        <div id="vessel-card-1" class="card vessel-container vessel-theme-cyan p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between cursor-pointer" onclick="handleVesselCardClick(event, 1)" title="Shift+Clique ou Alt+Clique para alternar teste de Ruptura (Explosão / Colapso)">
           <div class="vessel-scale-ticks" title="Escala de Volume">
             <span id="vessel-tick-max-1" class="vessel-tick vessel-tick-max" style="top: 15%" title="Máx atingido: 0.0 FPS">
               <span class="vessel-tick-label">
@@ -944,7 +1146,7 @@
             <div class="vessel-metric-row flex items-baseline justify-center sm:justify-start my-0.5 w-full">
               <div class="hidden">
                 <span id="train-metric-steps">0</span>
-                <span id="train-metric-total-steps">/ 40k</span>
+                <span id="train-metric-total-steps">/ 10M</span>
               </div>
               <div class="flex items-baseline gap-1 mx-auto sm:mx-0">
                 <span id="train-metric-fps" class="text-base sm:text-xl font-black font-mono text-emerald-300">0.0</span>
@@ -973,10 +1175,27 @@
               </div>
             </div>
           </div>
+          <!-- Efeito de Vidro Quebrado (Explosão / Colapso) -->
+          <div class="vessel-crack-layer" id="vessel-crack-layer-1">
+            <svg class="vessel-crack-svg" viewBox="0 0 200 200" preserveAspectRatio="none">
+              <polygon points="110,85 85,50 102,40" class="crack-shard" />
+              <polygon points="110,85 138,52 150,80" class="crack-shard" />
+              <polygon points="110,85 118,125 92,120" class="crack-shard" />
+              <polygon points="110,85 68,100 65,88" class="crack-shard" />
+              <path d="M110,85 L85,50 L55,30 L20,15 L0,5 M110,85 L138,52 L168,32 L200,16 M110,85 L145,110 L178,145 L200,180 M110,85 L118,125 L106,165 L96,200 M110,85 L78,115 L45,155 L16,200 M110,85 L65,88 L30,92 L0,102 M110,85 L76,62 L42,42 L0,36" class="crack-line primary" />
+              <path d="M85,50 L102,40 L138,52 M138,52 L150,80 L145,110 M145,110 L130,122 L118,125 M118,125 L92,120 L78,115 M78,115 L68,100 L65,88 M65,88 L72,70 L85,50" class="crack-line ring-inner" />
+              <path d="M55,30 L95,18 L168,32 M168,32 L185,90 L178,145 M178,145 L148,160 L106,165 M106,165 L65,158 L45,155 M45,155 L35,120 L30,92 M30,92 L38,60 L55,30" class="crack-line ring-outer" />
+            </svg>
+            <div class="vessel-shatter-flash"></div>
+            <div class="vessel-shatter-badge" id="vessel-shatter-badge-1">
+              <span class="shatter-badge-icon">💥</span>
+              <span class="shatter-badge-txt">EXPLOSÃO</span>
+            </div>
+          </div>
         </div>
 
         <!-- 2. Nível Curricular & Win Rate (Recipiente 2: Âmbar) -->
-        <div class="card vessel-container vessel-theme-amber p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between">
+        <div id="vessel-card-2" class="card vessel-container vessel-theme-amber p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between cursor-pointer" onclick="handleVesselCardClick(event, 2)" title="Shift+Clique ou Alt+Clique para alternar teste de Ruptura (Explosão / Colapso)">
           <div class="vessel-scale-ticks" title="Escala de Volume">
             <span id="vessel-tick-max-2" class="vessel-tick vessel-tick-max" style="top: 15%" title="Máx atingido: 0.0%">
               <span class="vessel-tick-label">
@@ -1044,10 +1263,27 @@
               </div>
             </div>
           </div>
+          <!-- Efeito de Vidro Quebrado (Explosão / Colapso) -->
+          <div class="vessel-crack-layer" id="vessel-crack-layer-2">
+            <svg class="vessel-crack-svg" viewBox="0 0 200 200" preserveAspectRatio="none">
+              <polygon points="110,85 85,50 102,40" class="crack-shard" />
+              <polygon points="110,85 138,52 150,80" class="crack-shard" />
+              <polygon points="110,85 118,125 92,120" class="crack-shard" />
+              <polygon points="110,85 68,100 65,88" class="crack-shard" />
+              <path d="M110,85 L85,50 L55,30 L20,15 L0,5 M110,85 L138,52 L168,32 L200,16 M110,85 L145,110 L178,145 L200,180 M110,85 L118,125 L106,165 L96,200 M110,85 L78,115 L45,155 L16,200 M110,85 L65,88 L30,92 L0,102 M110,85 L76,62 L42,42 L0,36" class="crack-line primary" />
+              <path d="M85,50 L102,40 L138,52 M138,52 L150,80 L145,110 M145,110 L130,122 L118,125 M118,125 L92,120 L78,115 M78,115 L68,100 L65,88 M65,88 L72,70 L85,50" class="crack-line ring-inner" />
+              <path d="M55,30 L95,18 L168,32 M168,32 L185,90 L178,145 M178,145 L148,160 L106,165 L106,165 L65,158 L45,155 M45,155 L35,120 L30,92 M30,92 L38,60 L55,30" class="crack-line ring-outer" />
+            </svg>
+            <div class="vessel-shatter-flash"></div>
+            <div class="vessel-shatter-badge" id="vessel-shatter-badge-2">
+              <span class="shatter-badge-icon">❄️</span>
+              <span class="shatter-badge-txt">COLAPSO</span>
+            </div>
+          </div>
         </div>
 
         <!-- 3. Recompensa / Retorno (Recipiente 3: Esmeralda) -->
-        <div class="card vessel-container vessel-theme-emerald p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between">
+        <div id="vessel-card-3" class="card vessel-container vessel-theme-emerald p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between cursor-pointer" onclick="handleVesselCardClick(event, 3)" title="Shift+Clique ou Alt+Clique para alternar teste de Ruptura (Explosão / Colapso)">
           <div class="vessel-scale-ticks" title="Escala de Volume">
             <span id="vessel-tick-max-3" class="vessel-tick vessel-tick-max" style="top: 15%" title="Máx atingido: 0.00">
               <span class="vessel-tick-label">
@@ -1118,10 +1354,27 @@
               </div>
             </div>
           </div>
+          <!-- Efeito de Vidro Quebrado (Explosão / Colapso) -->
+          <div class="vessel-crack-layer" id="vessel-crack-layer-3">
+            <svg class="vessel-crack-svg" viewBox="0 0 200 200" preserveAspectRatio="none">
+              <polygon points="110,85 85,50 102,40" class="crack-shard" />
+              <polygon points="110,85 138,52 150,80" class="crack-shard" />
+              <polygon points="110,85 118,125 92,120" class="crack-shard" />
+              <polygon points="110,85 68,100 65,88" class="crack-shard" />
+              <path d="M110,85 L85,50 L55,30 L20,15 L0,5 M110,85 L138,52 L168,32 L200,16 M110,85 L145,110 L178,145 L200,180 M110,85 L118,125 L106,165 L96,200 M110,85 L78,115 L45,155 L16,200 M110,85 L65,88 L30,92 L0,102 M110,85 L76,62 L42,42 L0,36" class="crack-line primary" />
+              <path d="M85,50 L102,40 L138,52 M138,52 L150,80 L145,110 M145,110 L130,122 L118,125 M118,125 L92,120 L78,115 M78,115 L68,100 L65,88 M65,88 L72,70 L85,50" class="crack-line ring-inner" />
+              <path d="M55,30 L95,18 L168,32 M168,32 L185,90 L178,145 M178,145 L148,160 L106,165 L106,165 L65,158 L45,155 M45,155 L35,120 L30,92 M30,92 L38,60 L55,30" class="crack-line ring-outer" />
+            </svg>
+            <div class="vessel-shatter-flash"></div>
+            <div class="vessel-shatter-badge" id="vessel-shatter-badge-3">
+              <span class="shatter-badge-icon">💥</span>
+              <span class="shatter-badge-txt">EXPLOSÃO</span>
+            </div>
+          </div>
         </div>
 
         <!-- 4. Perdas PPO & Entropia (Recipiente 4: Violeta) -->
-        <div class="card vessel-container vessel-theme-violet p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between">
+        <div id="vessel-card-4" class="card vessel-container vessel-theme-violet p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between cursor-pointer" onclick="handleVesselCardClick(event, 4)" title="Shift+Clique ou Alt+Clique para alternar teste de Ruptura (Explosão / Colapso)">
           <div class="vessel-scale-ticks" title="Escala de Volume">
             <span id="vessel-tick-max-4" class="vessel-tick vessel-tick-max" style="top: 15%" title="Máx atingido: 0.00">
               <span class="vessel-tick-label">
@@ -1189,10 +1442,27 @@
               </div>
             </div>
           </div>
+          <!-- Efeito de Vidro Quebrado (Explosão / Colapso) -->
+          <div class="vessel-crack-layer" id="vessel-crack-layer-4">
+            <svg class="vessel-crack-svg" viewBox="0 0 200 200" preserveAspectRatio="none">
+              <polygon points="110,85 85,50 102,40" class="crack-shard" />
+              <polygon points="110,85 138,52 150,80" class="crack-shard" />
+              <polygon points="110,85 118,125 92,120" class="crack-shard" />
+              <polygon points="110,85 68,100 65,88" class="crack-shard" />
+              <path d="M110,85 L85,50 L55,30 L20,15 L0,5 M110,85 L138,52 L168,32 L200,16 M110,85 L145,110 L178,145 L200,180 M110,85 L118,125 L106,165 L96,200 M110,85 L78,115 L45,155 L16,200 M110,85 L65,88 L30,92 L0,102 M110,85 L76,62 L42,42 L0,36" class="crack-line primary" />
+              <path d="M85,50 L102,40 L138,52 M138,52 L150,80 L145,110 M145,110 L130,122 L118,125 M118,125 L92,120 L78,115 M78,115 L68,100 L65,88 M65,88 L72,70 L85,50" class="crack-line ring-inner" />
+              <path d="M55,30 L95,18 L168,32 M168,32 L185,90 L178,145 M178,145 L148,160 L106,165 L106,165 L65,158 L45,155 M45,155 L35,120 L30,92 M30,92 L38,60 L55,30" class="crack-line ring-outer" />
+            </svg>
+            <div class="vessel-shatter-flash"></div>
+            <div class="vessel-shatter-badge" id="vessel-shatter-badge-4">
+              <span class="shatter-badge-icon">💥</span>
+              <span class="shatter-badge-txt">EXPLOSÃO</span>
+            </div>
+          </div>
         </div>
 
         <!-- 5. Confiança & Calibração (Recipiente 5: Rosa) -->
-        <div class="card vessel-container vessel-theme-rose p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between">
+        <div id="vessel-card-5" class="card vessel-container vessel-theme-rose p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between cursor-pointer" onclick="handleVesselCardClick(event, 5)" title="Shift+Clique ou Alt+Clique para alternar teste de Ruptura (Explosão / Colapso)">
           <div class="vessel-scale-ticks" title="Escala de Volume">
             <span id="vessel-tick-max-5" class="vessel-tick vessel-tick-max" style="top: 15%" title="Máx atingido: 0.0%">
               <span class="vessel-tick-label">
@@ -1277,10 +1547,27 @@
               <span id="train-metric-sil-max-val">0</span>
             </div>
           </div>
+          <!-- Efeito de Vidro Quebrado (Explosão / Colapso) -->
+          <div class="vessel-crack-layer" id="vessel-crack-layer-5">
+            <svg class="vessel-crack-svg" viewBox="0 0 200 200" preserveAspectRatio="none">
+              <polygon points="110,85 85,50 102,40" class="crack-shard" />
+              <polygon points="110,85 138,52 150,80" class="crack-shard" />
+              <polygon points="110,85 118,125 92,120" class="crack-shard" />
+              <polygon points="110,85 68,100 65,88" class="crack-shard" />
+              <path d="M110,85 L85,50 L55,30 L20,15 L0,5 M110,85 L138,52 L168,32 L200,16 M110,85 L145,110 L178,145 L200,180 M110,85 L118,125 L106,165 L96,200 M110,85 L78,115 L45,155 L16,200 M110,85 L65,88 L30,92 L0,102 M110,85 L76,62 L42,42 L0,36" class="crack-line primary" />
+              <path d="M85,50 L102,40 L138,52 M138,52 L150,80 L145,110 M145,110 L130,122 L118,125 M118,125 L92,120 L78,115 M78,115 L68,100 L65,88 M65,88 L72,70 L85,50" class="crack-line ring-inner" />
+              <path d="M55,30 L95,18 L168,32 M168,32 L185,90 L178,145 M178,145 L148,160 L106,165 L106,165 L65,158 L45,155 M45,155 L35,120 L30,92 M30,92 L38,60 L55,30" class="crack-line ring-outer" />
+            </svg>
+            <div class="vessel-shatter-flash"></div>
+            <div class="vessel-shatter-badge" id="vessel-shatter-badge-5">
+              <span class="shatter-badge-icon">❄️</span>
+              <span class="shatter-badge-txt">COLAPSO</span>
+            </div>
+          </div>
         </div>
 
         <!-- 6. Perda DPO Contrastiva (Recipiente 6: Índigo) -->
-        <div class="card vessel-container vessel-theme-indigo p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between">
+        <div id="vessel-card-6" class="card vessel-container vessel-theme-indigo p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between cursor-pointer" onclick="handleVesselCardClick(event, 6)" title="Shift+Clique ou Alt+Clique para alternar teste de Ruptura (Explosão / Colapso)">
           <div class="vessel-scale-ticks" title="Escala de Volume">
             <span id="vessel-tick-max-6" class="vessel-tick vessel-tick-max" style="top: 15%" title="Máx atingido: 0.00">
               <span class="vessel-tick-label">
@@ -1348,6 +1635,23 @@
               </div>
             </div>
           </div>
+          <!-- Efeito de Vidro Quebrado (Explosão / Colapso) -->
+          <div class="vessel-crack-layer" id="vessel-crack-layer-6">
+            <svg class="vessel-crack-svg" viewBox="0 0 200 200" preserveAspectRatio="none">
+              <polygon points="110,85 85,50 102,40" class="crack-shard" />
+              <polygon points="110,85 138,52 150,80" class="crack-shard" />
+              <polygon points="110,85 118,125 92,120" class="crack-shard" />
+              <polygon points="110,85 68,100 65,88" class="crack-shard" />
+              <path d="M110,85 L85,50 L55,30 L20,15 L0,5 M110,85 L138,52 L168,32 L200,16 M110,85 L145,110 L178,145 L200,180 M110,85 L118,125 L106,165 L96,200 M110,85 L78,115 L45,155 L16,200 M110,85 L65,88 L30,92 L0,102 M110,85 L76,62 L42,42 L0,36" class="crack-line primary" />
+              <path d="M85,50 L102,40 L138,52 M138,52 L150,80 L145,110 M145,110 L130,122 L118,125 M118,125 L92,120 L78,115 M78,115 L68,100 L65,88 M65,88 L72,70 L85,50" class="crack-line ring-inner" />
+              <path d="M55,30 L95,18 L168,32 M168,32 L185,90 L178,145 M178,145 L148,160 L106,165 L106,165 L65,158 L45,155 M45,155 L35,120 L30,92 M30,92 L38,60 L55,30" class="crack-line ring-outer" />
+            </svg>
+            <div class="vessel-shatter-flash"></div>
+            <div class="vessel-shatter-badge" id="vessel-shatter-badge-6">
+              <span class="shatter-badge-icon">💥</span>
+              <span class="shatter-badge-txt">EXPLOSÃO</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1376,6 +1680,9 @@
             </button>
             <button type="button" onclick="clearLogs()" class="px-2 py-0.5 rounded text-[10px] bg-slate-800 hover:bg-slate-700 text-rose-300 font-mono transition cursor-pointer" title="Limpar janela de logs">
               🗑️ Limpar
+            </button>
+            <button type="button" onclick="toggleSettingsDrawer(true)" class="px-2 py-0.5 rounded text-[10px] bg-slate-900 hover:bg-slate-800 text-cyan-300 font-mono transition cursor-pointer flex items-center gap-1 border border-cyan-800/50" title="Configurar Parâmetros de Execução">
+              ⚙️ Configurações
             </button>
           </div>
         </div>
@@ -1492,6 +1799,9 @@
                 </button>
                 <button type="button" onclick="clearLogs()" class="py-1.5 px-2.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 text-xs font-semibold flex items-center gap-1 transition cursor-pointer">
                   <span>🔄</span> Reset
+                </button>
+                <button type="button" onclick="toggleSettingsDrawer(true)" class="py-1.5 px-2.5 rounded bg-gray-900 hover:bg-gray-800 text-cyan-300 border border-cyan-800/80 text-xs font-semibold flex items-center gap-1 transition cursor-pointer shadow-sm" title="Configurar Parâmetros de Execução">
+                  <span>⚙️</span> Configurações
                 </button>
               </div>
 
@@ -1803,6 +2113,92 @@
         </div>
       </div>
 
+      <!-- SEÇÃO: ARQUITETURA, BÚSSOLAS E HARDWARE -->
+      <div class="card p-3 flex flex-col gap-2.5 bg-gray-950/60 border-gray-800">
+        <div class="flex justify-between items-center">
+          <span class="text-[11px] font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🧭</span> Bússolas, Tronco & Hardware
+          </span>
+          <span class="text-[9px] font-mono text-cyan-400/90 font-semibold" id="hud-arch-summary-badge">Tri-465D • Lean 512D</span>
+        </div>
+
+        <!-- 1. TRIANGULAÇÃO DESACOPLADA (TRI-COMPASS 465D) -->
+        <div class="bg-[#0b101c] p-2.5 rounded border border-cyan-900/60 flex flex-col gap-1.5">
+          <div class="flex items-center justify-between">
+            <label class="flex items-center gap-1.5 cursor-pointer select-none text-[11px] text-cyan-300 font-semibold">
+              <input type="checkbox" id="cfg-tri-compass" checked onchange="onTriCompassToggle(this.checked)" class="w-3.5 h-3.5 rounded bg-gray-900 border-gray-700 text-cyan-500 focus:ring-0 cursor-pointer" />
+              <span>Triangulação Desacoplada (Tri-Compass 465D)</span>
+            </label>
+            <span class="tooltip-wrap tooltip-down tooltip-left">
+              <span class="tooltip-icon" title="Separa o sinal perceptual em 3 bússolas ortogonais em R^64 com Normalização Modular isolada.">ⓘ</span>
+              <span class="tooltip-bubble"><strong>--tri-compass</strong>: Desacopla 3 canais de direção fundamentais sem wrappers específicos por jogo:<br>• <strong>Δ_local</strong> (64D): Velocidade instantânea (s_t - s_{t-1}).<br>• <strong>Δ_origem</strong> (64D): Deslocamento cumulativo em relação ao início do episódio (s_t - s_0).<br>• <strong>Δ_meta</strong> (64D): Atrator geodésico auto-descoberto via c-SIL/DPO (s_t - s*).<br>Usa <em>Normalização Modular Desacoplada</em> (zero vazamento estatístico).</span>
+            </span>
+          </div>
+          <div class="grid grid-cols-3 gap-1 pt-1 border-t border-gray-800/60 text-[9.5px] font-mono text-gray-400">
+            <div class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>Δ_local (64D)</div>
+            <div class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>Δ_origem (64D)</div>
+            <div class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span>Δ_meta (64D)</div>
+          </div>
+        </div>
+
+        <!-- 2. ARQUITETURA DO TRONCO & DISPOSITIVO DE COMPUTAÇÃO -->
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <!-- Tronco Neural -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-[10px] text-gray-400 font-semibold flex items-center gap-1">
+                <span>🏛️</span> Tronco Neural (--trunk)
+              </label>
+              <span class="tooltip-wrap tooltip-down tooltip-left">
+                <span class="tooltip-icon" title="Arquitetura do núcleo universal reflexivo.">ⓘ</span>
+                <span class="tooltip-bubble"><strong>--trunk</strong>: Seleciona o núcleo universal:<br>• <strong>Lean 512D</strong>: Fast GRU (256D) + Slow GRU (256D) + Skip Highway linear direto + ResMLP (~1.5M parâmetros). Recomendado para alta capacidade e raciocínio profundo.<br>• <strong>Classic 256D</strong>: GRU monocamada clássico (~400k parâmetros).</span>
+              </span>
+            </div>
+            <select id="cfg-trunk" onchange="onTrunkChange(this.value)" class="hud-input text-[11px]">
+              <option value="lean" selected>⚡ Lean Residual (512D • 1.5M)</option>
+              <option value="classic">Recorrente Clássico (256D • 400k)</option>
+            </select>
+          </div>
+
+          <!-- Acelerador de Hardware -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-[10px] text-gray-400 font-semibold flex items-center gap-1">
+                <span>💻</span> Dispositivo (--device)
+              </label>
+              <span class="tooltip-wrap tooltip-down tooltip-left">
+                <span class="tooltip-icon" title="Dispositivo de execução computacional (CPU vs GPU/MPS/CUDA).">ⓘ</span>
+                <span class="tooltip-bubble"><strong>--device</strong>: Alocação inteligente de hardware:<br>• <strong>Auto</strong>: Seleciona o hardware ótimo (CPU no Mac para modelos vetoriais &lt;5M, GPU para visão computacional ou CUDA).<br>• <strong>CPU</strong>: Zero overhead de barramento.<br>• <strong>MPS / CUDA</strong>: Força aceleração gráfica.</span>
+              </span>
+            </div>
+            <select id="cfg-device" class="hud-input text-[11px]">
+              <option value="auto" selected>⚡ Auto (CPU p/ Vetor, GPU p/ Visão)</option>
+              <option value="cpu">🖥️ CPU Universal (Sub-ms)</option>
+              <option value="mps">🍏 Apple Silicon GPU (MPS)</option>
+              <option value="cuda">🟢 NVIDIA CUDA</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 3. VETORIZAÇÃO PARALELA (NUM_ENVS) -->
+        <div class="flex items-center justify-between bg-gray-950/70 p-1.5 rounded border border-gray-800/80 text-[10px]">
+          <div class="flex items-center gap-1.5">
+            <span class="text-gray-300 font-semibold flex items-center gap-1"><span>👥</span> Ambientes Paralelos (--num-envs)</span>
+            <span class="tooltip-wrap tooltip-left">
+              <span class="tooltip-icon" title="Número de instâncias simultâneas do ambiente coletando dados no PPO.">ⓘ</span>
+              <span class="tooltip-bubble"><strong>--num-envs</strong>: Vetorização PPO simultânea.<br>Ambientes paralelos aumentam a diversidade e throughput de rollouts. 64 é o padrão ideal para Apple Silicon e GPUs modernas.</span>
+            </span>
+          </div>
+          <div class="flex items-center gap-1">
+            <button type="button" onclick="setNumEnvs(16)" class="badge-btn">16</button>
+            <button type="button" onclick="setNumEnvs(32)" class="badge-btn">32</button>
+            <button type="button" onclick="setNumEnvs(64)" class="badge-btn font-bold text-cyan-300 border-cyan-700 bg-cyan-950" id="btn-num-envs-64">64</button>
+            <button type="button" onclick="setNumEnvs(128)" class="badge-btn">128</button>
+            <input type="number" id="cfg-num-envs" value="64" min="1" max="512" class="hud-input w-12 text-center font-mono font-bold text-cyan-300 py-0.5 ml-1" />
+          </div>
+        </div>
+      </div>
+
       <!-- SEÇÃO: GERENCIAMENTO DE CHECKPOINTS & MODELOS -->
       <div class="card p-3 flex flex-col gap-2.5 bg-gray-950/60 border-gray-800">
         <div class="flex justify-between items-center">
@@ -1902,18 +2298,23 @@
           <div>
             <div class="flex justify-between items-center mb-0.5">
               <div class="flex items-center gap-1">
-                <span class="text-[10px] text-gray-400">Passos</span>
+                <span class="text-[10px] text-gray-400">Passos (Milhões)</span>
                 <span class="tooltip-wrap tooltip-left">
-                  <span class="tooltip-icon" title="Quantidade total de timesteps de ambiente a coletar e otimizar no PPO.">ⓘ</span>
-                  <span class="tooltip-bubble"><strong>--steps</strong>: Horizonte total de passos de ambiente a coletar e otimizar durante a sessão de treino PPO.</span>
+                  <span class="tooltip-icon" title="Quantidade de passos em Milhões (M) a coletar e otimizar no treino.">ⓘ</span>
+                  <span class="tooltip-bubble"><strong>--steps</strong>: Horizonte total de passos de ambiente em <strong>Milhões (M)</strong>.<br>Exemplo: Digitar <strong>10</strong> registrará automaticamente como <strong>10.000.000</strong> de passos.</span>
                 </span>
               </div>
               <div class="flex gap-0.5">
-                <button type="button" onclick="setSteps(10000)" class="badge-btn">10k</button>
-                <button type="button" onclick="setSteps(40000)" class="badge-btn">40k</button>
+                <button type="button" onclick="setSteps(10)" class="badge-btn font-bold text-cyan-300 border-cyan-700 bg-cyan-950" id="btn-steps-10m" title="10 Milhões de passos (10M)">10M</button>
+                <button type="button" onclick="setSteps(25)" class="badge-btn" id="btn-steps-25m" title="25 Milhões de passos (25M)">25M</button>
+                <button type="button" onclick="setSteps(50)" class="badge-btn" id="btn-steps-50m" title="50 Milhões de passos (50M)">50M</button>
+                <button type="button" onclick="setSteps(100)" class="badge-btn" id="btn-steps-100m" title="100 Milhões de passos (100M)">100M</button>
               </div>
             </div>
-            <input type="number" id="cfg-steps" value="40000" class="hud-input" />
+            <div class="relative flex items-center">
+              <input type="number" id="cfg-steps" value="10" step="1" min="0.001" oninput="updateStepsButtons(this.value)" class="hud-input pr-6 font-mono font-bold text-cyan-200" placeholder="10" />
+              <span class="absolute right-2 text-[11px] font-bold font-mono text-cyan-400/80 pointer-events-none select-none">M</span>
+            </div>
           </div>
           <div>
             <div class="flex justify-between items-center mb-0.5">
@@ -2015,9 +2416,9 @@
                 </div>
                 <div>
                   <div class="flex items-center gap-1 mb-0.5">
-                    <span class="text-[10px] text-gray-400 block">Taxa Mixed Replay</span>
+                    <span class="text-[10px] text-gray-400 block">Batch Size SIL</span>
                   </div>
-                  <input type="number" id="cfg-mixed-replay-rate" value="0.05" step="0.01" min="0" max="0.5" class="hud-input text-center" />
+                  <input type="number" id="cfg-sil-batch-size" value="8" step="1" min="1" max="64" class="hud-input text-center" />
                 </div>
               </div>
             </div>
@@ -2170,18 +2571,22 @@
           </p>
         </div>
 
-        <!-- Value Re-ranking (Crítico Top-2) na Avaliação -->
+        <!-- Abordagem Híbrida: Value Re-ranking & Teacher SIL Rollouts -->
         <div class="bg-[#090d16] p-2.5 rounded border border-gray-800/80 flex flex-col gap-1.5 text-xs">
           <div class="flex justify-between items-center text-[10px] text-gray-300 font-semibold px-0.5">
-            <span class="flex items-center gap-1.5"><span class="text-amber-400">🎯</span> Value Re-ranking (Crítico Top-2)</span>
+            <span class="flex items-center gap-1.5"><span class="text-amber-400">🎯</span> Abordagem Híbrida (Re-rank + Teacher SIL)</span>
             <label class="flex items-center gap-1.5 cursor-pointer select-none">
-              <input type="checkbox" id="cfg-value-rerank" class="accent-amber-500 rounded cursor-pointer" />
-              <span class="text-[10px] text-amber-300 font-semibold">Ativar Re-ranking</span>
+              <input type="checkbox" id="cfg-value-rerank" class="accent-amber-500 rounded cursor-pointer" checked />
+              <span class="text-[10px] text-amber-300 font-semibold">Ativar Híbrido</span>
             </label>
           </div>
           <p class="text-[9px] text-gray-400 px-0.5 leading-relaxed">
-            Sob ambiguidade (&lt; 85% de confiança), avalia o crítico V(s') para as 2 melhores ações em um único batch tensor O(1). Eleva vitórias em até +10% em D7/D9 e rompe 50% em D8.
+            Sob ambiguidade (&lt; 85% conf), avalia o crítico V(s') via 1-step lookahead O(1). Na avaliação desempata ações; no treino aloca workers professores para semear comutadores no buffer SIL.
           </p>
+          <div class="flex items-center justify-between text-[10px] text-gray-400 pt-1 border-t border-gray-800/50">
+            <span>Workers Professores (Treino):</span>
+            <input type="number" id="cfg-teacher-sil-envs" class="w-16 bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-amber-300 text-right text-xs" value="16" min="0" max="64" />
+          </div>
         </div>
       </div>
 
@@ -2904,6 +3309,177 @@
       return n.toFixed(decimals).replace(/\.0$/, '');
     }
 
+    // =========================================================
+    // GESTÃO DE EFEITO DE VIDRO QUEBRADO / FRATURA (STATUS CARDS)
+    // =========================================================
+    window._manualBrokenCards = {};
+
+    function setVesselBrokenState(cardIdx, mode, customText) {
+      const card = document.getElementById(`vessel-card-${cardIdx}`);
+      if (!card) return;
+      const badge = document.getElementById(`vessel-shatter-badge-${cardIdx}`);
+      const badgeIcon = badge ? badge.querySelector('.shatter-badge-icon') : null;
+      const badgeTxt = badge ? badge.querySelector('.shatter-badge-txt') : null;
+
+      const hadExplode = card.classList.contains('vessel-broken-explode');
+      const hadCollapse = card.classList.contains('vessel-broken-collapse');
+
+      card.classList.remove('vessel-broken-explode', 'vessel-broken-collapse');
+
+      if (mode === 'explode') {
+        card.classList.add('vessel-broken-explode');
+        if (badgeIcon) badgeIcon.textContent = '💥';
+        if (badgeTxt) badgeTxt.textContent = customText || 'EXPLOSÃO';
+        if (!hadExplode) {
+          triggerCardShatterFlash(card);
+        }
+      } else if (mode === 'collapse') {
+        card.classList.add('vessel-broken-collapse');
+        if (badgeIcon) badgeIcon.textContent = '❄️';
+        if (badgeTxt) badgeTxt.textContent = customText || 'COLAPSO';
+        if (!hadCollapse) {
+          triggerCardShatterFlash(card);
+        }
+      }
+    }
+
+    function triggerCardShatterFlash(card) {
+      const flash = card.querySelector('.vessel-shatter-flash');
+      if (flash) {
+        flash.style.animation = 'none';
+        void flash.offsetHeight; // trigger reflow
+        flash.style.animation = 'vessel-crack-flash 0.6s ease-out forwards';
+      }
+    }
+
+    function handleVesselCardClick(event, cardIdx) {
+      // Shift+Clique ou Alt+Clique: Cicla entre [Explosão -> Colapso -> Normal] para teste imediato
+      if (event && (event.shiftKey || event.altKey)) {
+        event.preventDefault();
+        event.stopPropagation();
+        const currentMode = (window._manualBrokenCards && window._manualBrokenCards[cardIdx]) 
+          ? window._manualBrokenCards[cardIdx].mode 
+          : null;
+        
+        let nextMode = null;
+        if (!currentMode) nextMode = 'explode';
+        else if (currentMode === 'explode') nextMode = 'collapse';
+        else nextMode = null; // volta ao modo automático normal
+
+        window.testBrokenCard(cardIdx, nextMode);
+        
+        const toastTxt = nextMode ? `Card ${cardIdx}: Efeito de ${nextMode.toUpperCase()} ativado!` : `Card ${cardIdx}: Efeito desativado (automático)`;
+        console.log(`[HUD] ${toastTxt}`);
+      }
+    }
+
+    window.testBrokenCard = function(cardIdx, mode, customText) {
+      if (!window._manualBrokenCards) window._manualBrokenCards = {};
+      
+      if (!cardIdx || cardIdx === 0 || mode === 'clear' || mode === false || mode === 'reset') {
+        window._manualBrokenCards = {};
+        for (let i = 1; i <= 6; i++) {
+          setVesselBrokenState(i, null);
+        }
+        console.log('🧹 Todos os efeitos de quebrado foram resetados para automático.');
+        return 'Resetado com sucesso';
+      }
+
+      if (!mode) {
+        delete window._manualBrokenCards[cardIdx];
+        setVesselBrokenState(cardIdx, null);
+        return `Card ${cardIdx} restaurado ao automático`;
+      }
+
+      const m = String(mode).toLowerCase();
+      window._manualBrokenCards[cardIdx] = { mode: m, text: customText };
+      setVesselBrokenState(cardIdx, m, customText);
+      return `Card ${cardIdx} -> ${m.toUpperCase()} (${customText || (m === 'explode' ? 'EXPLOSÃO' : 'COLAPSO')})`;
+    };
+
+    function evaluateVesselAnomalies(telemetry, curFps, curWinRate, curLossNum, trainConfPct, curTrainCalib, curDpoNum) {
+      // 1. Prioridade a overrides manuais de teste
+      const hasManualOverrides = window._manualBrokenCards && Object.keys(window._manualBrokenCards).length > 0;
+      if (hasManualOverrides) {
+        for (let i = 1; i <= 6; i++) {
+          if (window._manualBrokenCards[i]) {
+            setVesselBrokenState(i, window._manualBrokenCards[i].mode, window._manualBrokenCards[i].text);
+          } else {
+            setVesselBrokenState(i, null);
+          }
+        }
+        return;
+      }
+
+      const steps = Number(telemetry.total_steps || 0);
+      const isRunning = (window._currentRunnerState && window._currentRunnerState.status === 'RUNNING') || (curFps > 0);
+
+      // Card 1: Throughput (FPS / Passos)
+      // Colapso se o motor estiver rodando mas estagnado com FPS < 2.0 após o warmup inicial
+      if (isRunning && steps > 10000 && curFps > 0 && curFps < 2.0) {
+        setVesselBrokenState(1, 'collapse', 'TRAVAMENTO');
+      } else {
+        setVesselBrokenState(1, null);
+      }
+
+      // Card 2: Currículo / Win Rate
+      // Colapso se em nível avançado com taxa de sucesso em 0% persistindo e muitas falhas acumuladas
+      const depth = Number(telemetry.curriculum_depth || 1);
+      const failCount = Number(telemetry.sil_failures || 0);
+      const epsComp = Number(telemetry.episodes_completed || 0);
+      // Evita falso-positivo imediatamente após promoção curricular (onde a taxa recente zera naturalmente)
+      if (depth >= 5 && curWinRate === 0 && steps > 5000000 && failCount > 800 && epsComp > 50) {
+        setVesselBrokenState(2, 'collapse', 'COLAPSO CURRICULAR');
+      } else {
+        setVesselBrokenState(2, null);
+      }
+
+      // Card 3: Retorno / Recompensa
+      const meanRet = (telemetry.mean_return_20 !== undefined && telemetry.mean_return_20 !== null) ? Number(telemetry.mean_return_20) : 0;
+      if (isNaN(meanRet) || !isFinite(meanRet)) {
+        setVesselBrokenState(3, 'explode', 'RETORNO NaN');
+      } else if (meanRet < -80.0) {
+        setVesselBrokenState(3, 'collapse', 'COLAPSO RETORNO');
+      } else {
+        setVesselBrokenState(3, null);
+      }
+
+      // Card 4: Perdas PPO & Gradientes (Explosão clássica de loss / divergência)
+      const pLoss = (telemetry.policy_loss !== undefined && telemetry.policy_loss !== null) ? Number(telemetry.policy_loss) : 0;
+      const vLoss = (telemetry.value_loss !== undefined && telemetry.value_loss !== null) ? Number(telemetry.value_loss) : 0;
+      const gradNorms = telemetry.grad_norms || {};
+      const maxGrad = Math.max(Number(gradNorms.FrontEnd || 0), Number(gradNorms.Trunk || 0), Number(gradNorms.PolicyHead || 0));
+
+      if (isNaN(pLoss) || !isFinite(pLoss) || isNaN(vLoss) || !isFinite(vLoss)) {
+        setVesselBrokenState(4, 'explode', 'LOSS NaN');
+      } else if (Math.abs(pLoss) > 20.0 || vLoss > 50.0 || maxGrad > 15.0) {
+        setVesselBrokenState(4, 'explode', maxGrad > 15.0 ? 'GRAD EXPLODIU' : 'LOSS EXPLODIU');
+      } else {
+        setVesselBrokenState(4, null);
+      }
+
+      // Card 5: Confiança, Calibração & Entropia (Colapso de Entropia ou Incerteza Explodida)
+      const entropy = (telemetry.mean_entropy !== undefined && telemetry.mean_entropy !== null) ? Number(telemetry.mean_entropy) : null;
+      const uncertainty = (telemetry.mean_uncertainty !== undefined && telemetry.mean_uncertainty !== null) ? Number(telemetry.mean_uncertainty) : null;
+
+      if (entropy !== null && entropy > 0 && entropy < 0.10 && steps > 100000) {
+        setVesselBrokenState(5, 'collapse', 'COLAPSO ENTROPIA');
+      } else if (uncertainty !== null && uncertainty > 0.998 && trainConfPct < 0.5 && steps > 100000) {
+        setVesselBrokenState(5, 'explode', 'INCERTEZA MAX');
+      } else {
+        setVesselBrokenState(5, null);
+      }
+
+      // Card 6: DPO Loss Contrastiva
+      if (isNaN(curDpoNum) || !isFinite(curDpoNum)) {
+        setVesselBrokenState(6, 'explode', 'DPO NaN');
+      } else if (curDpoNum > 8.0) {
+        setVesselBrokenState(6, 'explode', 'DPO EXPLODIU');
+      } else {
+        setVesselBrokenState(6, null);
+      }
+    }
+
     function autoFitMiniWindow() {
       if (!document.body.classList.contains('mini-mode')) return;
       requestAnimationFrame(() => {
@@ -3520,10 +4096,25 @@
         }
         const retStr = formatCheckpointReturns(item, false);
         const retInfo = retStr ? ` • ${retStr}` : '';
+        const triInfo = item.tri_compass ? ' • 🧭 Tri-465D' : '';
         const actInfo = (item.action_chunk_size && item.action_chunk_size > 1) ? ` • 🧩 ACT: k=${item.action_chunk_size}` : '';
-        metaEl.innerText = `${modelLabel}Tamanho: ${item.size_mb} MB${envInfo}${dimInfo}${actInfo}${depthInfo}${retInfo} • Modificado em: ${item.mtime}`;
+        metaEl.innerText = `${modelLabel}Tamanho: ${item.size_mb} MB${envInfo}${dimInfo}${triInfo}${actInfo}${depthInfo}${retInfo} • Modificado em: ${item.mtime}`;
         if (item.action_chunk_size && item.action_chunk_size >= 1) {
           setActK(item.action_chunk_size);
+        }
+        if (item.tri_compass !== undefined) {
+          const triBox = document.getElementById('cfg-tri-compass');
+          if (triBox) {
+            triBox.checked = Boolean(item.tri_compass);
+            onTriCompassToggle(triBox.checked);
+          }
+        }
+        if (item.trunk_type) {
+          const trunkSel = document.getElementById('cfg-trunk');
+          if (trunkSel) {
+            trunkSel.value = item.trunk_type;
+            onTrunkChange(item.trunk_type);
+          }
         }
 
         const modelBadgeEl = document.getElementById('hud-model-name');
@@ -3671,6 +4262,10 @@
         if (isSameEnv) {
           boxEl.className = 'mt-1.5 p-2 rounded bg-emerald-950/70 border border-emerald-600/80 text-[10px] text-emerald-200 flex flex-col gap-1';
           const retSummary = formatCheckpointReturns(item, true) || (item.final_return !== null && item.final_return !== undefined ? `${item.final_return.toFixed(1)}` : '8.5+');
+          const isTriCompassActive = document.getElementById('cfg-tri-compass')?.checked;
+          const triNote = (isTriCompassActive && !item.tri_compass)
+            ? `<div class="mt-1 pt-1 border-t border-emerald-800/60 text-cyan-300 font-mono text-[9.5px]">🧭 Expansão Net2Net Tri-Compass 465D Ativa: expansão funcional exata com preservação dos 337 canais legados.</div>`
+            : (item.tri_compass ? `<div class="mt-1 pt-1 border-t border-emerald-800/60 text-cyan-300 font-mono text-[9.5px]">🧭 Checkpoint já em formato nativo 465D Tri-Compass.</div>` : '');
           boxEl.innerHTML = `
             <div class="flex items-center gap-1 font-bold text-emerald-300">
               <span>🚀 Warm-Start Compatível (Mesmo Ambiente)</span>
@@ -3678,6 +4273,7 @@
             <div>
               Restaura <strong>100% dos parâmetros</strong> (percepção, tronco, política e valor).
               O agente continuará com o conhecimento prévio de retorno (<strong>${retSummary}</strong>) e avançará de nível no currículo sem regredir!
+              ${triNote}
             </div>
           `;
           if (freezeEl && !freezeEl.dataset.manuallyToggled) {
@@ -3721,7 +4317,41 @@
       const evalFpsLabel = document.getElementById('eval-fps-label');
       if (evalFpsLabel) evalFpsLabel.innerText = `${val} FPS`;
     }
-    function setSteps(val) { document.getElementById('cfg-steps').value = val; }
+    function setSteps(val) {
+      let num = parseFloat(val);
+      if (isNaN(num)) num = 10;
+      if (num >= 1000) {
+        num = num / 1000000;
+      }
+      const inp = document.getElementById('cfg-steps');
+      if (inp) {
+        inp.value = (num % 1 === 0) ? num : parseFloat(num.toFixed(3));
+      }
+      updateStepsButtons(num);
+    }
+    function updateStepsButtons(val) {
+      let num = parseFloat(val);
+      if (isNaN(num)) return;
+      if (num >= 1000) {
+        num = num / 1000000;
+      }
+      const stepsMap = {
+        '10m': 10,
+        '25m': 25,
+        '50m': 50,
+        '100m': 100,
+      };
+      Object.entries(stepsMap).forEach(([id, target]) => {
+        const btn = document.getElementById('btn-steps-' + id);
+        if (btn) {
+          if (Math.abs(num - target) < 0.001) {
+            btn.className = 'badge-btn font-bold text-cyan-300 border-cyan-700 bg-cyan-950';
+          } else {
+            btn.className = 'badge-btn';
+          }
+        }
+      });
+    }
     function setTargetReturn(val) { document.getElementById('cfg-target-return').value = val; }
     function setLR(val) { document.getElementById('cfg-lr').value = val; }
     function setEpisodes(val) { document.getElementById('cfg-episodes').value = val; }
@@ -4419,7 +5049,13 @@
               const maxStepsPerEp = (envName && envName.toLowerCase().includes('rubik')) ? 40 : 500;
               targetSteps = targetEps * maxStepsPerEp;
             } else {
-              targetSteps = (runCfg && runCfg.steps) ? parseInt(runCfg.steps, 10) : (parseInt(document.getElementById('cfg-steps')?.value, 10) || 40000);
+              if (runCfg && runCfg.steps) {
+                targetSteps = parseInt(runCfg.steps, 10);
+              } else {
+                const rawV = parseFloat(document.getElementById('cfg-steps')?.value);
+                const valM = (!isNaN(rawV) && rawV > 0) ? rawV : 10;
+                targetSteps = (valM >= 1000) ? Math.round(valM) : Math.round(valM * 1000000);
+              }
             }
           }
           const curSteps = telemetry.total_steps || 0;
@@ -4677,7 +5313,12 @@
           if (trainSteps) trainSteps.innerText = isMini ? formatCompactNumber(curSteps) : curSteps.toLocaleString();
 
           const trainTotalSteps = document.getElementById('train-metric-total-steps');
-          if (trainTotalSteps) trainTotalSteps.innerText = `/ ${(targetSteps >= 1000 ? (targetSteps/1000).toFixed(0) + 'k' : targetSteps)}`;
+          if (trainTotalSteps) {
+            const fmtTotal = targetSteps >= 1000000
+              ? (targetSteps / 1000000).toFixed(targetSteps % 1000000 === 0 ? 0 : 1) + 'M'
+              : (targetSteps >= 1000 ? (targetSteps / 1000).toFixed(0) + 'k' : targetSteps);
+            trainTotalSteps.innerText = `/ ${fmtTotal}`;
+          }
 
           const trainBar = document.getElementById('train-metric-progress-bar');
           if (trainBar) trainBar.style.width = `${pct}%`;
@@ -4694,7 +5335,12 @@
           const trainStepsMinText = document.getElementById('train-metric-steps-min-text');
           if (trainStepsMinText) trainStepsMinText.innerText = '0';
           const trainStepsMaxText = document.getElementById('train-metric-steps-max-text');
-          if (trainStepsMaxText) trainStepsMaxText.innerText = (targetSteps >= 1000 ? (targetSteps/1000).toFixed(0) + 'k' : (targetSteps || '40k'));
+          if (trainStepsMaxText) {
+            const fmtTarget = targetSteps >= 1000000
+              ? (targetSteps / 1000000).toFixed(targetSteps % 1000000 === 0 ? 0 : 1) + 'M'
+              : (targetSteps >= 1000 ? (targetSteps / 1000).toFixed(0) + 'k' : (targetSteps || '1M'));
+            trainStepsMaxText.innerText = fmtTarget;
+          }
 
           // =========================================================
           // Rastreamento por Nível Curricular (D1, D3, D6 ...)
@@ -4974,7 +5620,8 @@
             if (_trainMetricsState.minObservedLoss === null || curLossNum < _trainMetricsState.minObservedLoss) {
               _trainMetricsState.minObservedLoss = curLossNum;
             }
-            if (_trainMetricsState.maxObservedLoss === null || curLossNum > _trainMetricsState.maxObservedLoss) {
+            // Descarta spikes anômalos (>50.0) para não estragar a escala visual da telemetria
+            if (curLossNum <= 50.0 && (_trainMetricsState.maxObservedLoss === null || curLossNum > _trainMetricsState.maxObservedLoss)) {
               _trainMetricsState.maxObservedLoss = curLossNum;
             }
           }
@@ -5363,6 +6010,11 @@
             trainDeckLoss.innerText = `P: ${pLoss} | V: ${vLoss}`;
           }
 
+          // Avaliação e Renderização de Anomalias (Efeito de Vidro Quebrado / Fratura)
+          try {
+            evaluateVesselAnomalies(telemetry, curFps, curWinRate, curLossNum, trainConfPct, curTrainCalib, curDpoNum);
+          } catch (_) {}
+
           if (telemetry.latency_p50_us !== undefined && chartLat) {
             pushDataPoint(chartLat, 0, telemetry.latency_p50_us);
             pushDataPoint(chartLat, 1, telemetry.latency_p99_us || telemetry.latency_p50_us);
@@ -5537,6 +6189,7 @@
         const maxDepthVal = getCheckpointMaxDepth(ckpt);
         const displayDepth = reachedDepth || succDepth;
         const leanTag = ckpt.trunk_type === 'lean' ? ' [⚡ Lean 512D]' : '';
+        const triTag = ckpt.tri_compass ? ' [🧭 Tri-465D]' : '';
         const envTag = ckpt.env_id ? ` [${ckpt.env_id}]` : '';
         let depthTag = '';
         if (displayDepth) {
@@ -5547,7 +6200,7 @@
         const retText = formatCheckpointReturns(ckpt, false);
         const retTag = retText ? ` [${retText}]` : '';
         const dimTag = (ckpt.obs_dim && ckpt.act_dim) ? ` (${ckpt.obs_dim}D→${ckpt.act_dim}A)` : '';
-        const optText = `${ckpt.path}${leanTag}${envTag}${depthTag}${retTag}${dimTag} • ${ckpt.size_mb} MB`;
+        const optText = `${ckpt.path}${leanTag}${triTag}${envTag}${depthTag}${retTag}${dimTag} • ${ckpt.size_mb} MB`;
         loadSel.innerHTML += `<option value="${ckpt.path}">${optText}</option>`;
         transSel.innerHTML += `<option value="${ckpt.path}">${optText}</option>`;
       });
@@ -5588,6 +6241,7 @@
         const displayDepth = reachedDepth || succDepth;
         const isLean = item.trunk_type === 'lean';
         const leanBadge = isLean ? `<span class="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 text-[9px] border border-amber-800 font-bold" title="Tronco LeanResidualTrunk 512D Multi-Timescale, 1.6M">⚡ Lean 512D</span>` : '';
+        const triBadge = item.tri_compass ? `<span class="px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 text-[9px] border border-cyan-800 font-bold" title="Triangulação Desacoplada (Tri-Compass 465D)">🧭 Tri-465D</span>` : '';
         const div = document.createElement('div');
         div.className = 'flex items-center justify-between p-1.5 rounded bg-gray-900/70 border border-gray-800 text-xs';
         const envBadge = item.env_id ? `<span class="px-1 py-0.2 rounded bg-cyan-950 text-cyan-400 text-[9px] border border-cyan-800 font-bold">${item.env_id}</span>` : '';
@@ -5623,6 +6277,7 @@
             <div class="flex items-center gap-1.5 flex-wrap">
               <span class="font-bold text-gray-200 truncate font-mono text-[11px]">${item.path}</span>
               ${leanBadge}
+              ${triBadge}
               ${envBadge}
               ${depthBadge}
             </div>
@@ -5712,9 +6367,47 @@
           currentCubeViewMode = data.cube_view_mode;
           updateCubeViewModeButtons(currentCubeViewMode);
         }
+
+        updateArchSummaryBadge();
       } catch (err) {
         console.error('Falha ao obter estado inicial:', err);
       }
+    }
+
+    // Configurações e Parâmetros Arquiteturais
+    function onTriCompassToggle(checked) {
+      const statusEl = document.getElementById('hud-tri-compass-status');
+      if (statusEl) statusEl.innerText = checked ? 'Tri-465D' : '337D';
+      updateArchSummaryBadge();
+    }
+
+    function onTrunkChange(val) {
+      updateArchSummaryBadge();
+    }
+
+    function updateArchSummaryBadge() {
+      const badge = document.getElementById('hud-arch-summary-badge');
+      if (!badge) return;
+      const isTri = document.getElementById('cfg-tri-compass') ? document.getElementById('cfg-tri-compass').checked : true;
+      const trunkVal = document.getElementById('cfg-trunk') ? document.getElementById('cfg-trunk').value : 'lean';
+      const triText = isTri ? 'Tri-465D' : '337D';
+      const trunkText = trunkVal === 'lean' ? 'Lean 512D' : 'Classic 256D';
+      badge.innerText = `${triText} • ${trunkText}`;
+    }
+
+    function setNumEnvs(n) {
+      const input = document.getElementById('cfg-num-envs');
+      if (input) input.value = n;
+      [16, 32, 64, 128].forEach(v => {
+        const btn = document.getElementById(`btn-num-envs-${v}`);
+        if (btn) {
+          if (v === n) {
+            btn.className = 'badge-btn font-bold text-cyan-300 border-cyan-700 bg-cyan-950';
+          } else {
+            btn.className = 'badge-btn';
+          }
+        }
+      });
     }
 
     // Ações de Início e Interrupção
@@ -5728,7 +6421,10 @@
         mode: activeMode,
         env: actualEnv,
         scenario: document.getElementById('cfg-scenario').value,
-        device: 'auto',
+        device: document.getElementById('cfg-device') ? document.getElementById('cfg-device').value : 'auto',
+        trunk: document.getElementById('cfg-trunk') ? document.getElementById('cfg-trunk').value : 'lean',
+        tri_compass: document.getElementById('cfg-tri-compass') ? document.getElementById('cfg-tri-compass').checked : true,
+        num_envs: document.getElementById('cfg-num-envs') ? (parseInt(document.getElementById('cfg-num-envs').value, 10) || 64) : 64,
         vision_mode: currentVisionMode,
         cube_view_mode: currentCubeViewMode,
         load: (activeMode === 'eval') ? (document.getElementById('cfg-load').value || null) : null,
@@ -5739,7 +6435,11 @@
         auto_sync_web: document.getElementById('chk-auto-sync-web') ? document.getElementById('chk-auto-sync-web').checked : true,
         render_mode: (activeMode === 'train') ? 'none' : 'in_browser',
         fps: (activeMode === 'train') ? 0.0 : (parseFloat(document.getElementById('cfg-fps')?.value) || 50.0),
-        steps: parseInt(document.getElementById('cfg-steps').value) || 40000,
+        steps: (() => {
+          const rawV = parseFloat(document.getElementById('cfg-steps')?.value);
+          const valM = (!isNaN(rawV) && rawV > 0) ? rawV : 10;
+          return (valM >= 1000) ? Math.round(valM) : Math.round(valM * 1000000);
+        })(),
         target_return: parseFloat(document.getElementById('cfg-target-return').value) || (actualEnv === 'RubiksCube-v0' ? 12.0 : 475.0),
         lr: parseFloat(document.getElementById('cfg-lr').value) || 0.0001,
         entropy_coef: parseFloat(document.getElementById('cfg-entropy').value) || 0.01,
@@ -5757,15 +6457,16 @@
         proximal_decay: 0.8,
         sil_enabled: document.getElementById('cfg-sil') ? document.getElementById('cfg-sil').checked : true,
         sil_coef: document.getElementById('cfg-sil-coef') ? (parseFloat(document.getElementById('cfg-sil-coef').value) || 0.08) : 0.08,
+        sil_batch_size: document.getElementById('cfg-sil-batch-size') ? (parseInt(document.getElementById('cfg-sil-batch-size').value, 10) || 8) : 8,
         sil_dpo_enabled: document.getElementById('cfg-dpo') ? document.getElementById('cfg-dpo').checked : true,
         dpo_coef: document.getElementById('cfg-dpo-coef') ? (parseFloat(document.getElementById('cfg-dpo-coef').value) || 0.05) : 0.05,
         dpo_beta: document.getElementById('cfg-dpo-beta') ? (parseFloat(document.getElementById('cfg-dpo-beta').value) || 0.10) : 0.10,
         action_chunk_size: parseInt(document.getElementById('cfg-act-k')?.value, 10) || 1,
         adaptive_chunk: document.getElementById('cfg-adaptive-chunk') ? document.getElementById('cfg-adaptive-chunk').checked : false,
-        value_rerank: document.getElementById('cfg-value-rerank') ? document.getElementById('cfg-value-rerank').checked : false,
+        value_rerank: document.getElementById('cfg-value-rerank') ? document.getElementById('cfg-value-rerank').checked : true,
         value_rerank_top_k: 2,
         value_rerank_threshold: 0.85,
-        trunk: 'lean'
+        teacher_sil_envs: document.getElementById('cfg-teacher-sil-envs') ? (parseInt(document.getElementById('cfg-teacher-sil-envs').value, 10) || 16) : (document.getElementById('cfg-value-rerank')?.checked ? 16 : 0)
       };
 
       if (activeMode === 'run' && payload.load) {
