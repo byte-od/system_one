@@ -159,7 +159,10 @@ def auto_sync_web_model(
                 synced_targets.append(str(dest))
 
         # 4. Atualiza o manifest.json unificado de modelos web
-        generate_web_manifest(web_models_dir)
+        source_map = {}
+        if checkpoint_path:
+            source_map[model_filename] = os.path.basename(checkpoint_path)
+        generate_web_manifest(web_models_dir, ckpt_sources=source_map)
 
         file_size_mb = primary_onnx_path.stat().st_size / (1024 * 1024)
         print(f"\n🌐 [Auto-Sync Web] Pesos ONNX sincronizados com sucesso ({file_size_mb:.2f} MB):")
@@ -243,7 +246,8 @@ def find_latest_trained_checkpoint(env_id: str, project_root: Optional[Path] = N
             mtime = p.stat().st_mtime
         except OSError:
             mtime = 0.0
-        return (is_aura, has_trained, ver, mtime)
+        # Prioriza o timestamp de modificação mais recente (evita anomalias como v23 antigo vs v6 recente)
+        return (is_aura, has_trained, mtime, ver)
 
     matching.sort(key=sort_key, reverse=True)
     return str(matching[0])
@@ -266,14 +270,15 @@ def generate_web_manifest(
     metadata_catalog = {
         "s1_rubiks_atomic.onnx": {
             "key": "rubiks_atomic",
-            "name": "⚡ Cubo Mágico 3x3 (Atômico 1.6M)",
+            "name": "⚡ AURA: Cubo Mágico 3x3 (Atômico 1.6M)",
             "env_id": "RubiksCube-v0",
             "type": "rubiks",
             "mode": "atomic",
             "obs_dim": 324,
             "act_dim": 12,
+            "hx_dim": 512,
             "discrete": True,
-            "description": "Tronco recorrente de 1.6M parâmetros com Fast GRU + Slow GRU + Residual Highway. 12 giros atômicos, latência sub-milissegundo.",
+            "description": "AURA (Sistema 1) — Tronco recorrente de 1.6M parâmetros com Lean GRU + Tri-Compass. 12 giros atômicos, latência sub-milissegundo em CPU pura, treinado até D10.",
             "default": True,
         },
         "s1_rubiks_macro.onnx": {
