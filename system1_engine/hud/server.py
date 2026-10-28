@@ -210,7 +210,7 @@ class HUDServer:
             "Humanoid-v5": {"target_return": 5000.0, "entropy_coef": 0.005, "steps": 500000},
             "Walker2d-v5": {"target_return": 4000.0, "entropy_coef": 0.005, "steps": 300000},
             "RubiksCubeMacro-v0": {"target_return": 12.0, "entropy_coef": 0.01, "steps": 30000},
-            "RubiksCube-v0": {"target_return": 12.0, "entropy_coef": 0.010, "steps": 40000, "chunk_length": 32, "rollout_steps": 2048, "trunk": "lean"},
+            "RubiksCube-v0": {"target_return": 12.0, "entropy_coef": 0.007, "steps": 40000, "chunk_length": 32, "rollout_steps": 2048, "trunk": "lean"},
         }
 
         # Garante registro dos ambientes customizados
