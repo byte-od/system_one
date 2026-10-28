@@ -3908,7 +3908,7 @@
       }
 
       const matching = _logsHistory.filter(item => matchesLogCategory(item.cleanLine, _currentLogCategory, query));
-      const sliced = matching.slice(-30);
+      const sliced = matching.slice(-30).reverse();
 
       const frag = document.createDocumentFragment();
       sliced.forEach(item => {
@@ -3929,7 +3929,7 @@
       if (countBadge) countBadge.innerText = `${sliced.length} / 30 linhas`;
 
       if (document.getElementById('chk-autoscroll')?.checked) {
-        term.scrollTop = term.scrollHeight;
+        term.scrollTop = 0;
       }
     }
 
@@ -3993,6 +3993,7 @@
       const textToCopy = _logsHistory
         .filter(item => matchesLogCategory(item.cleanLine, _currentLogCategory, query))
         .map(item => item.cleanLine)
+        .reverse()
         .join('\n');
 
       try {
@@ -5073,31 +5074,31 @@
             term.innerHTML = '';
           }
           const { div } = createLogDiv(line);
-          term.appendChild(div);
+          term.prepend(div);
 
-          // Limitar rigorosamente às últimas 30 linhas na DOM
+          // Limitar rigorosamente às últimas 30 linhas na DOM (mais antigas no final)
           while (term.children.length > 30) {
-            term.removeChild(term.firstElementChild);
+            term.removeChild(term.lastElementChild);
           }
 
           if (document.getElementById('chk-autoscroll')?.checked) {
-            term.scrollTop = term.scrollHeight;
+            term.scrollTop = 0;
           }
         }
       }
 
-      // Append ao mini-logs da avaliação (também limitado às últimas 30 linhas)
+      // Inserção no mini-logs da avaliação com o mais novo no topo
       const evalLogs = document.getElementById('eval-mini-logs');
       if (evalLogs) {
         if (evalLogs.children.length === 1 && evalLogs.children[0].classList.contains('italic')) {
           evalLogs.innerHTML = '';
         }
         const { div } = createLogDiv(line);
-        evalLogs.appendChild(div);
+        evalLogs.prepend(div);
         while (evalLogs.children.length > 30) {
-          evalLogs.removeChild(evalLogs.firstElementChild);
+          evalLogs.removeChild(evalLogs.lastElementChild);
         }
-        evalLogs.scrollTop = evalLogs.scrollHeight;
+        evalLogs.scrollTop = 0;
       }
     }
 
