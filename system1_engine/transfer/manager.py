@@ -17,7 +17,6 @@ class KnowledgeTransferManager:
         checkpoint_path: str,
         extra_info: Optional[Dict[str, Any]] = None,
         auto_sync_web: bool = True,
-        ema_agent: Optional[nn.Module] = None,
     ) -> None:
         """Saves agent weights and metadata to file, and auto-syncs ONNX for Web HUD."""
         os.makedirs(os.path.dirname(os.path.abspath(checkpoint_path)), exist_ok=True)
@@ -31,17 +30,12 @@ class KnowledgeTransferManager:
             "state_dict": state_dict_cpu,
             "extra_info": extra,
         }
-        if ema_agent is not None:
-            ema_dict_cpu = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in ema_agent.state_dict().items()}
-            payload["ema_state_dict"] = ema_dict_cpu
-
         torch.save(payload, checkpoint_path)
 
-        target_web_agent = ema_agent if ema_agent is not None else agent
-        if auto_sync_web and hasattr(target_web_agent, "front_end") and hasattr(target_web_agent, "trunk"):
+        if auto_sync_web and hasattr(agent, "front_end") and hasattr(agent, "trunk"):
             try:
                 from system1_engine.core.onnx_exporter import auto_sync_web_model
-                auto_sync_web_model(target_web_agent, checkpoint_path=checkpoint_path, extra_info=extra)
+                auto_sync_web_model(agent, checkpoint_path=checkpoint_path, extra_info=extra)
             except Exception:
                 pass
 
@@ -594,11 +588,9 @@ class KnowledgeTransferManager:
             "depth": None,
             "is_visual": False,
             "action_chunk_size": 1,
-            "has_ema": False,
         }
         try:
             checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-            info["has_ema"] = ("ema_state_dict" in checkpoint) if isinstance(checkpoint, dict) else False
             extra = checkpoint.get("extra_info", {}) if isinstance(checkpoint, dict) else {}
             state_dict = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else {}
 

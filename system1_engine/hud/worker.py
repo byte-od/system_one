@@ -494,13 +494,6 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     teacher_confidence_threshold = float(config.get("teacher_confidence_threshold", 0.30))
     teacher_top_k = int(config.get("teacher_top_k", 4))
 
-    ema_enabled = bool(config.get("ema_enabled", True))
-    ema_decay = float(config.get("ema_decay", 0.995))
-    if ema_enabled:
-        print(f"✨ Shadow EMA (Polyak Refined Weights): ATIVO (decay={ema_decay:.4f})")
-    else:
-        print("⚡ Shadow EMA (Polyak Refined Weights): DESATIVADO")
-
     entropy_floor_enabled = bool(config.get("entropy_floor_enabled", True))
     entropy_floor = float(config.get("entropy_floor", 0.18))
     entropy_floor_coef = float(config.get("entropy_floor_coef", 0.50))
@@ -553,17 +546,11 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         teacher_min_depth=teacher_min_depth,
         teacher_confidence_threshold=teacher_confidence_threshold,
         teacher_top_k=teacher_top_k,
-        ema_enabled=ema_enabled,
-        ema_decay=ema_decay,
         entropy_floor_enabled=entropy_floor_enabled,
         entropy_floor=entropy_floor,
         entropy_floor_coef=entropy_floor_coef,
         adaptive_entropy_coef=adaptive_entropy_coef,
     )
-
-    if checkpoint_to_load and trainer.ema_enabled:
-        if trainer.load_ema_weights(checkpoint_to_load):
-            print("✨ Pesos Refinados Shadow EMA restaurados do checkpoint com sucesso!")
 
     raw_env = getattr(env, "unwrapped", env)
     if (
@@ -679,7 +666,6 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
                 checkpoint_path=save_path,
                 extra_info=extra_info,
                 auto_sync_web=config.get("auto_sync_web", True),
-                ema_agent=getattr(trainer, "ema_agent", None),
             )
             tag = f" [{reason}]" if reason else ""
             print(f"💾 Checkpoint persistido com sucesso em: {save_path}{tag}")
@@ -1128,7 +1114,6 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
                 checkpoint_path=save_path,
                 extra_info=extra_info,
                 auto_sync_web=config.get("auto_sync_web", True),
-                ema_agent=None,
             )
             print(f"Checkpoint salvo com sucesso em: {save_path}")
 

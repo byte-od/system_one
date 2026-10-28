@@ -1,5 +1,4 @@
 from collections import deque
-import copy
 import os
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -74,9 +73,6 @@ class RecurrentPPOTrainer:
         teacher_min_depth: int = 5,
         teacher_confidence_threshold: float = 0.30,
         teacher_top_k: int = 4,
-        ema_enabled: bool = True,
-        ema_decay: float = 0.995,
-        ema_anti_collapse: bool = True,
         entropy_floor_enabled: bool = True,
         entropy_floor: float = 0.18,
         entropy_floor_coef: float = 0.50,
@@ -128,18 +124,6 @@ class RecurrentPPOTrainer:
         self.progressive_buffer_capacity = bool(progressive_buffer_capacity)
         self.max_failures_per_depth = max(1, int(max_failures_per_depth))
         self.min_failures_per_depth = max(1, int(min_failures_per_depth))
-
-        # Shadow EMA / Polyak Refined Weights Model
-        self.ema_enabled = bool(ema_enabled)
-        self.ema_decay = float(np.clip(float(ema_decay), 0.5, 0.9999))
-        self.ema_anti_collapse = bool(ema_anti_collapse)
-        if self.ema_enabled:
-            self.ema_agent: Optional[UniversalS1Agent] = copy.deepcopy(self.agent).to(self.device)
-            for p in self.ema_agent.parameters():
-                p.requires_grad = False
-            self.ema_agent.eval()
-        else:
-            self.ema_agent = None
 
         # Dynamic Entropy Floor & Adaptive Entropy Controller
         self.entropy_floor_enabled = bool(entropy_floor_enabled)
@@ -2127,12 +2111,6 @@ class RecurrentPPOTrainer:
                 elif self.entropy_coef < self.base_entropy_coef:
                     self.entropy_coef = min(self.base_entropy_coef, self.entropy_coef * 1.05)
 
-        # Shadow EMA: atualiza os pesos refinados e executa verificação anti-colapso
-        if self.ema_enabled and self.ema_agent is not None:
-            self.update_ema()
-            if self.ema_anti_collapse and mean_ent_val < 0.08:
-                self.sync_online_from_ema(alpha=0.20)
-
         if self.scheduler is not None:
             self.scheduler.step()
 
@@ -2153,49 +2131,6 @@ class RecurrentPPOTrainer:
             "sterility_prototypes": ster_prototypes,
             "sterility_rehabilitated": ster_rehab,
         }
-
-    def update_ema(self) -> None:
-        """Atualiza os pesos do modelo sombra refinado via Polyak averaging (Shadow EMA)."""
-        if not self.ema_enabled or self.ema_agent is None:
-            return
-        with torch.no_grad():
-            for ema_p, online_p in zip(self.ema_agent.parameters(), self.agent.parameters()):
-                ema_p.data.mul_(self.ema_decay).add_(online_p.data, alpha=1.0 - self.ema_decay)
-            for ema_b, online_b in zip(self.ema_agent.buffers(), self.agent.buffers()):
-                ema_b.data.copy_(online_b.data)
-
-    def get_eval_agent(self) -> UniversalS1Agent:
-        """Retorna o agente para avaliação / inferência (refinado via Shadow EMA se ativo)."""
-        if self.ema_enabled and self.ema_agent is not None:
-            return self.ema_agent
-        return self.agent
-
-    def sync_online_from_ema(self, alpha: float = 1.0) -> None:
-        """Restaura ou interpola suavemente a política online a partir dos pesos refinados da EMA."""
-        if not self.ema_enabled or self.ema_agent is None:
-            return
-        alpha = float(np.clip(alpha, 0.0, 1.0))
-        with torch.no_grad():
-            for online_p, ema_p in zip(self.agent.parameters(), self.ema_agent.parameters()):
-                if alpha >= 1.0:
-                    online_p.data.copy_(ema_p.data)
-                else:
-                    online_p.data.mul_(1.0 - alpha).add_(ema_p.data, alpha=alpha)
-
-    def load_ema_weights(self, checkpoint_path_or_dict: Union[str, Dict[str, Any]]) -> bool:
-        """Carrega os pesos refinados da EMA se disponíveis no checkpoint."""
-        if not self.ema_enabled or self.ema_agent is None:
-            return False
-        if isinstance(checkpoint_path_or_dict, str):
-            if not os.path.exists(checkpoint_path_or_dict):
-                return False
-            ckpt = torch.load(checkpoint_path_or_dict, map_location="cpu", weights_only=False)
-        else:
-            ckpt = checkpoint_path_or_dict
-        if isinstance(ckpt, dict) and "ema_state_dict" in ckpt:
-            self.ema_agent.load_state_dict(ckpt["ema_state_dict"], strict=False)
-            return True
-        return False
 
     def train(
         self,
