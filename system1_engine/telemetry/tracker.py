@@ -45,6 +45,12 @@ class PhaseMetrics:
     sil_value_losses: deque = field(default_factory=lambda: deque(maxlen=100))
     sil_dpo_losses: deque = field(default_factory=lambda: deque(maxlen=100))
 
+    # Métricas de Dynamic Entropy Floor
+    entropy_floor: float = 0.0
+    entropy_floor_active: bool = False
+    entropy_floor_losses: deque = field(default_factory=lambda: deque(maxlen=100))
+    effective_entropy_coef: float = 0.0
+
     # Métricas de Currículo (Progresso Dinâmico)
     curriculum_depth: Optional[int] = None
     curriculum_max_depth: Optional[int] = None
@@ -212,6 +218,9 @@ class LiveStatsTracker:
         clip_fraction: float,
         grad_norms: Dict[str, float],
         lr: float,
+        entropy_floor_loss: float = 0.0,
+        entropy_floor_active: bool = False,
+        effective_entropy_coef: float = 0.0,
     ) -> None:
         """Registra a fase de atualização dos gradientes e saúde numérica."""
         m = self.metrics
@@ -220,6 +229,11 @@ class LiveStatsTracker:
         m.clip_fractions.append(clip_fraction)
         m.grad_norms = dict(grad_norms)
         m.learning_rate = lr
+        if entropy_floor_loss > 0.0:
+            m.entropy_floor_losses.append(entropy_floor_loss)
+        m.entropy_floor_active = entropy_floor_active
+        if effective_entropy_coef > 0.0:
+            m.effective_entropy_coef = effective_entropy_coef
 
     def record_sil_step(
         self,
@@ -287,6 +301,10 @@ class LiveStatsTracker:
             "sil_policy_loss": m.sil_policy_losses[-1] if m.sil_policy_losses else 0.0,
             "sil_value_loss": m.sil_value_losses[-1] if m.sil_value_losses else 0.0,
             "sil_dpo_loss": m.sil_dpo_losses[-1] if m.sil_dpo_losses else 0.0,
+            "entropy_floor": m.entropy_floor,
+            "entropy_floor_active": m.entropy_floor_active,
+            "entropy_floor_loss": float(np.mean(m.entropy_floor_losses)) if m.entropy_floor_losses else 0.0,
+            "effective_entropy_coef": m.effective_entropy_coef,
             # Estado do Ciclo de Vida
             "is_completed": m.is_completed,
         }

@@ -78,8 +78,8 @@ def test_telemetry_server_sse_stream():
 
         raw_data = b""
         start_time = time.time()
-        while b"data: " not in raw_data and (time.time() - start_time) < 3.0:
-            chunk = s.recv(1024)
+        while (b"data: " not in raw_data or b"\n\n" not in raw_data.split(b"data: ", 1)[-1]) and (time.time() - start_time) < 3.0:
+            chunk = s.recv(4096)
             if not chunk:
                 break
             raw_data += chunk

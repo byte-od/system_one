@@ -1,4 +1,6 @@
 from collections import deque
+import copy
+import os
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import gymnasium as gym
@@ -72,6 +74,15 @@ class RecurrentPPOTrainer:
         teacher_min_depth: int = 5,
         teacher_confidence_threshold: float = 0.30,
         teacher_top_k: int = 4,
+        ema_enabled: bool = True,
+        ema_decay: float = 0.995,
+        ema_anti_collapse: bool = True,
+        entropy_floor_enabled: bool = True,
+        entropy_floor: float = 0.18,
+        entropy_floor_coef: float = 0.50,
+        adaptive_entropy_coef: bool = True,
+        min_entropy_coef: float = 0.003,
+        max_entropy_coef: float = 0.080,
     ) -> None:
         self.agent = agent.to(device)
         self.env = env
@@ -117,6 +128,29 @@ class RecurrentPPOTrainer:
         self.progressive_buffer_capacity = bool(progressive_buffer_capacity)
         self.max_failures_per_depth = max(1, int(max_failures_per_depth))
         self.min_failures_per_depth = max(1, int(min_failures_per_depth))
+
+        # Shadow EMA / Polyak Refined Weights Model
+        self.ema_enabled = bool(ema_enabled)
+        self.ema_decay = float(np.clip(float(ema_decay), 0.5, 0.9999))
+        self.ema_anti_collapse = bool(ema_anti_collapse)
+        if self.ema_enabled:
+            self.ema_agent: Optional[UniversalS1Agent] = copy.deepcopy(self.agent).to(self.device)
+            for p in self.ema_agent.parameters():
+                p.requires_grad = False
+            self.ema_agent.eval()
+        else:
+            self.ema_agent = None
+
+        # Dynamic Entropy Floor & Adaptive Entropy Controller
+        self.entropy_floor_enabled = bool(entropy_floor_enabled)
+        self.entropy_floor = float(entropy_floor)
+        self.entropy_floor_coef = float(entropy_floor_coef)
+        self.adaptive_entropy_coef = bool(adaptive_entropy_coef)
+        self.base_entropy_coef = float(entropy_coef)
+        self.min_entropy_coef = float(min_entropy_coef)
+        self.max_entropy_coef = float(max_entropy_coef)
+        if self.tracker is not None:
+            self.tracker.metrics.entropy_floor = self.entropy_floor
 
         # Suporte a exploração automática / homeostática no treino PPO (com piso seguro anti-colapso)
         self._min_adaptive_scale = 0.25 if self.action_chunk_size > 1 else 0.08
@@ -1310,47 +1344,55 @@ class RecurrentPPOTrainer:
         env_infos: Union[List[Dict[str, Any]], Dict[str, Any]],
     ) -> None:
         """Atualiza a escala de auto-calibração com base no momentum real de recompensa e platôs curriculares."""
-        if not self.is_auto_exploration:
-            return
+        if self.is_auto_exploration:
+            primary_info = (
+                env_infos[0]
+                if isinstance(env_infos, list) and len(env_infos) > 0
+                else (env_infos if isinstance(env_infos, dict) else {})
+            )
 
-        primary_info = (
-            env_infos[0]
-            if isinstance(env_infos, list) and len(env_infos) > 0
-            else (env_infos if isinstance(env_infos, dict) else {})
-        )
+            cur_promotions = primary_info.get("curriculum_promotions", 0)
+            cur_promoted = primary_info.get("curriculum_promoted", False)
+            cur_success_rate = primary_info.get("curriculum_success_rate", None)
 
-        cur_promotions = primary_info.get("curriculum_promotions", 0)
-        cur_promoted = primary_info.get("curriculum_promoted", False)
-        cur_success_rate = primary_info.get("curriculum_success_rate", None)
+            if self._reward_ema is None:
+                self._reward_ema = float(mean_return)
+                delta_ret = 0.0
+            else:
+                delta_ret = mean_return - self._reward_ema
+                self._reward_ema = 0.85 * self._reward_ema + 0.15 * mean_return
 
-        if self._reward_ema is None:
-            self._reward_ema = float(mean_return)
-            delta_ret = 0.0
-        else:
-            delta_ret = mean_return - self._reward_ema
-            self._reward_ema = 0.85 * self._reward_ema + 0.15 * mean_return
+            # Escala de referência relativa independente da magnitude absoluta de recompensa
+            scale_ref = max(1.0, abs(self._reward_ema))
+            # Progresso real: ganho de pelo menos 2.5% em relação à escala de retorno típica
+            is_progress = delta_ret > 0.025 * scale_ref
 
-        # Escala de referência relativa independente da magnitude absoluta de recompensa
-        scale_ref = max(1.0, abs(self._reward_ema))
-        # Progresso real: ganho de pelo menos 2.5% em relação à escala de retorno típica
-        is_progress = delta_ret > 0.025 * scale_ref
+            if cur_promoted or cur_promotions > getattr(self, "_last_promotions", 0):
+                # Promoção curricular: novo patamar requer exploração revigorada
+                self._last_promotions = cur_promotions
+                self._stagnation_count = 0
+                self._adaptive_scale = max(self._adaptive_scale, 0.75)
+            elif is_progress or (cur_success_rate is not None and cur_success_rate >= 0.80):
+                # Progresso consistente ou quase domínio do nível: consolida e refina política
+                self._stagnation_count = 0
+                self._adaptive_scale = max(self._min_adaptive_scale, self._adaptive_scale - 0.03)
+            else:
+                # Platô ou declínio de retorno: incrementa contagem e aquece exploração para escapar de mínimos locais
+                self._stagnation_count += 1
+                if self._stagnation_count >= 2:
+                    self._adaptive_scale = min(self._max_adaptive_scale, self._adaptive_scale + 0.04)
 
-        if cur_promoted or cur_promotions > getattr(self, "_last_promotions", 0):
-            # Promoção curricular: novo patamar requer exploração revigorada
-            self._last_promotions = cur_promotions
-            self._stagnation_count = 0
-            self._adaptive_scale = max(self._adaptive_scale, 0.75)
-        elif is_progress or (cur_success_rate is not None and cur_success_rate >= 0.80):
-            # Progresso consistente ou quase domínio do nível: consolida e refina política
-            self._stagnation_count = 0
-            self._adaptive_scale = max(self._min_adaptive_scale, self._adaptive_scale - 0.03)
-        else:
-            # Platô ou declínio de retorno: incrementa contagem e aquece exploração para escapar de mínimos locais
-            self._stagnation_count += 1
-            if self._stagnation_count >= 2:
-                self._adaptive_scale = min(self._max_adaptive_scale, self._adaptive_scale + 0.04)
-
-        self.exploration_scale = float(self._adaptive_scale)
+        # Dynamic Entropy Floor: Re-aquecimento térmico imediato de rollout em caso de inanição de entropia
+        if self.entropy_floor_enabled and self.tracker is not None and getattr(self.tracker.metrics, "entropies", None):
+            recent_entropies = list(self.tracker.metrics.entropies)[-50:]
+            if recent_entropies:
+                recent_ent = float(np.mean(recent_entropies))
+                if recent_ent < self.entropy_floor:
+                    # Injeta impulso térmico no próximo rollout para diversificar ramificações
+                    self._adaptive_scale = min(self._max_adaptive_scale, max(self._adaptive_scale, 0.85))
+                    self.exploration_scale = float(self._adaptive_scale)
+        elif self.is_auto_exploration:
+            self.exploration_scale = float(self._adaptive_scale)
 
     def _process_completed_trajectory(
         self,
@@ -1802,6 +1844,7 @@ class RecurrentPPOTrainer:
         total_policy_loss = 0.0
         total_val_loss = 0.0
         total_ent_loss = 0.0
+        total_floor_loss = 0.0
         n_updates = 0
 
         for _ in range(self.n_epochs):
@@ -1880,12 +1923,23 @@ class RecurrentPPOTrainer:
                 val_loss = 0.5 * ((values_sq - batch.returns) ** 2).mean()
 
                 # Entropy loss
-                entropy_loss = -entropy.mean()
+                batch_entropy = entropy.mean()
+                entropy_loss = -batch_entropy
+
+                # Dynamic Entropy Floor (Barrier Loss)
+                # Impede que a entropia caia abaixo do piso de segurança (ex: 0.18)
+                floor_loss = torch.tensor(0.0, device=self.device)
+                floor_active = False
+                if self.entropy_floor_enabled and batch_entropy < self.entropy_floor:
+                    deficit = (self.entropy_floor - batch_entropy) / max(1e-4, self.entropy_floor)
+                    floor_loss = self.entropy_floor_coef * (deficit ** 2)
+                    floor_active = True
 
                 loss = (
                     policy_loss
                     + self.value_coef * val_loss
                     + self.entropy_coef * entropy_loss
+                    + floor_loss
                 )
 
                 self.optimizer.zero_grad()
@@ -1914,11 +1968,15 @@ class RecurrentPPOTrainer:
                         clip_fraction=clip_frac,
                         grad_norms=grad_norms,
                         lr=current_lr,
+                        entropy_floor_loss=float(floor_loss.item()),
+                        entropy_floor_active=floor_active,
+                        effective_entropy_coef=float(self.entropy_coef),
                     )
 
                 total_policy_loss += policy_loss.item()
                 total_val_loss += val_loss.item()
                 total_ent_loss += entropy_loss.item()
+                total_floor_loss += float(floor_loss.item())
                 n_updates += 1
 
         # Self-Imitation Learning (SIL) update step
@@ -2052,6 +2110,29 @@ class RecurrentPPOTrainer:
                 sil_failures=len(self.sil_buffer.failures),
             )
 
+        # Cálculo da entropia média observada nos mini-batches
+        mean_ent_val = float(-(total_ent_loss / max(1, n_updates))) if n_updates > 0 else 0.0
+
+        # Dynamic Entropy Floor: Adaptação e Re-aquecimento do Coeficiente de Entropia
+        if self.adaptive_entropy_coef and n_updates > 0:
+            if mean_ent_val < self.entropy_floor:
+                deficit_ratio = (self.entropy_floor - mean_ent_val) / max(1e-4, self.entropy_floor)
+                # Re-aquece proporcionalmente ao déficit de exploração
+                new_coef = self.entropy_coef * (1.0 + 0.5 * deficit_ratio)
+                self.entropy_coef = float(np.clip(new_coef, self.min_entropy_coef, self.max_entropy_coef))
+            else:
+                # Decaimento suave de volta para o base_entropy_coef
+                if self.entropy_coef > self.base_entropy_coef:
+                    self.entropy_coef = max(self.base_entropy_coef, self.entropy_coef * 0.95)
+                elif self.entropy_coef < self.base_entropy_coef:
+                    self.entropy_coef = min(self.base_entropy_coef, self.entropy_coef * 1.05)
+
+        # Shadow EMA: atualiza os pesos refinados e executa verificação anti-colapso
+        if self.ema_enabled and self.ema_agent is not None:
+            self.update_ema()
+            if self.ema_anti_collapse and mean_ent_val < 0.08:
+                self.sync_online_from_ema(alpha=0.20)
+
         if self.scheduler is not None:
             self.scheduler.step()
 
@@ -2062,6 +2143,8 @@ class RecurrentPPOTrainer:
             "policy_loss": total_policy_loss / max(1, n_updates),
             "value_loss": total_val_loss / max(1, n_updates),
             "entropy_loss": total_ent_loss / max(1, n_updates),
+            "entropy_floor_loss": total_floor_loss / max(1, n_updates),
+            "effective_entropy_coef": float(self.entropy_coef),
             "sil_policy_loss": sil_p_loss,
             "sil_value_loss": sil_v_loss,
             "sil_dpo_loss": dpo_p_loss,
@@ -2070,6 +2153,49 @@ class RecurrentPPOTrainer:
             "sterility_prototypes": ster_prototypes,
             "sterility_rehabilitated": ster_rehab,
         }
+
+    def update_ema(self) -> None:
+        """Atualiza os pesos do modelo sombra refinado via Polyak averaging (Shadow EMA)."""
+        if not self.ema_enabled or self.ema_agent is None:
+            return
+        with torch.no_grad():
+            for ema_p, online_p in zip(self.ema_agent.parameters(), self.agent.parameters()):
+                ema_p.data.mul_(self.ema_decay).add_(online_p.data, alpha=1.0 - self.ema_decay)
+            for ema_b, online_b in zip(self.ema_agent.buffers(), self.agent.buffers()):
+                ema_b.data.copy_(online_b.data)
+
+    def get_eval_agent(self) -> UniversalS1Agent:
+        """Retorna o agente para avaliação / inferência (refinado via Shadow EMA se ativo)."""
+        if self.ema_enabled and self.ema_agent is not None:
+            return self.ema_agent
+        return self.agent
+
+    def sync_online_from_ema(self, alpha: float = 1.0) -> None:
+        """Restaura ou interpola suavemente a política online a partir dos pesos refinados da EMA."""
+        if not self.ema_enabled or self.ema_agent is None:
+            return
+        alpha = float(np.clip(alpha, 0.0, 1.0))
+        with torch.no_grad():
+            for online_p, ema_p in zip(self.agent.parameters(), self.ema_agent.parameters()):
+                if alpha >= 1.0:
+                    online_p.data.copy_(ema_p.data)
+                else:
+                    online_p.data.mul_(1.0 - alpha).add_(ema_p.data, alpha=alpha)
+
+    def load_ema_weights(self, checkpoint_path_or_dict: Union[str, Dict[str, Any]]) -> bool:
+        """Carrega os pesos refinados da EMA se disponíveis no checkpoint."""
+        if not self.ema_enabled or self.ema_agent is None:
+            return False
+        if isinstance(checkpoint_path_or_dict, str):
+            if not os.path.exists(checkpoint_path_or_dict):
+                return False
+            ckpt = torch.load(checkpoint_path_or_dict, map_location="cpu", weights_only=False)
+        else:
+            ckpt = checkpoint_path_or_dict
+        if isinstance(ckpt, dict) and "ema_state_dict" in ckpt:
+            self.ema_agent.load_state_dict(ckpt["ema_state_dict"], strict=False)
+            return True
+        return False
 
     def train(
         self,
