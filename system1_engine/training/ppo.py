@@ -1084,6 +1084,7 @@ class RecurrentPPOTrainer:
                             "action": act_v,
                             "reward": float(rewards[e]),
                             "log_prob": float(step_logp_np[e]),
+                            "value": float(step_vals_np[e]),
                         }
                         self._active_vec_trajectories[e].append(entry)
 
@@ -1126,62 +1127,8 @@ class RecurrentPPOTrainer:
                         is_win = is_solved or (bool(terminateds[d_i]) and float(rewards[d_i]) >= 5.0)
 
                         if len(traj_steps) > 0:
-                            T_traj = len(traj_steps)
-                            traj_rews = [s["reward"] for s in traj_steps]
-                            traj_returns = np.zeros(T_traj, dtype=np.float32)
-                            running_r = 0.0
-                            for t_idx in reversed(range(T_traj)):
-                                running_r = traj_rews[t_idx] + self.effective_gamma * running_r
-                                traj_returns[t_idx] = running_r
-
                             cur_d = int(d_info.get("scramble_depth", d_info.get("current_depth", self._get_current_curriculum_depth()))) if isinstance(d_info, dict) else self._get_current_curriculum_depth()
-                            has_positive_return = is_win or any(r > 0.0 for r in traj_returns)
-                            cur_d = int(d_info.get("scramble_depth", d_info.get("current_depth", 1))) if isinstance(d_info, dict) else 1
-                            should_store_win = self.sil_enabled and has_positive_return
-                            should_store_loss = self.sil_enabled and getattr(self, "sil_dpo_enabled", False)
-
-                            if should_store_win or should_store_loss:
-                                traj_obs = np.array([s["obs"] for s in traj_steps], dtype=np.float32)
-                                has_delta = any(s["delta_obs"] is not None for s in traj_steps)
-                                traj_delta = (
-                                    np.array([s["delta_obs"] for s in traj_steps], dtype=np.float32)
-                                    if has_delta
-                                    else None
-                                )
-                                traj_prev_act = np.array([s["prev_action"] for s in traj_steps])
-                                traj_prev_rew = np.array([s["prev_reward"] for s in traj_steps], dtype=np.float32)
-                                traj_act = np.array([s["action"] for s in traj_steps])
-                                traj_logp = np.array([s.get("log_prob", 0.0) for s in traj_steps], dtype=np.float32)
-
-                                if should_store_win:
-                                    self.sil_buffer.add(
-                                        FrontierTransition(
-                                            obs=traj_obs,
-                                            delta_obs=traj_delta,
-                                            prev_actions=traj_prev_act,
-                                            prev_rewards=traj_prev_rew,
-                                            actions=traj_act,
-                                            returns=traj_returns,
-                                            depth=cur_d,
-                                            length=T_traj,
-                                            td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
-                                            log_probs=traj_logp,
-                                        )
-                                    )
-                                elif should_store_loss:
-                                    self.sil_buffer.add_failure(
-                                        SuccessfulTrajectory(
-                                            obs=traj_obs,
-                                            delta_obs=traj_delta,
-                                            prev_actions=traj_prev_act,
-                                            prev_rewards=traj_prev_rew,
-                                            actions=traj_act,
-                                            returns=traj_returns,
-                                            depth=cur_d,
-                                            length=T_traj,
-                                            log_probs=traj_logp,
-                                        )
-                                    )
+                            self._process_completed_trajectory(traj_steps, is_win, cur_d)
                         self._active_vec_trajectories[d_i].clear()
 
                     next_hx[:, done_indices, :] = 0.0
@@ -1405,6 +1352,196 @@ class RecurrentPPOTrainer:
 
         self.exploration_scale = float(self._adaptive_scale)
 
+    def _process_completed_trajectory(
+        self,
+        traj_steps: List[Dict[str, Any]],
+        is_win: bool,
+        cur_depth: int,
+    ) -> None:
+        """Processa e armazena trajetórias concluídas no buffer SIL/DPO com Peak Slicing e Bellman Isolado.
+
+        Aplica a síntese universal híbrida:
+        1. Em vitórias completas (is_win=True), preserva o episódio integral com is_full_win=True.
+        2. Em episódios incompletos/truncados (is_win=False), aplica Peak Slicing no passo de maior
+           progresso cumulativo (t*), descartando a cauda de degradação.
+        3. Calcula o retorno de Bellman isolado na fatia [0...t*], ancorando o valor terminal via
+           bootstrapping de V(s_{t*+1}) para blindar a vantagem SIL positiva (max(0, R - V) > 0).
+        4. O gradiente da perda SIL refina a atribuição de valor a cada passo acima do crítico.
+        5. Se sil_dpo_enabled=True, a cauda de degradação pós-pico entra no buffer de falhas contrastivas.
+        """
+        if not self.sil_enabled or len(traj_steps) == 0:
+            return
+
+        traj_steps = list(traj_steps)
+        cur_d = max(1, int(cur_depth))
+        T_traj = len(traj_steps)
+
+        if is_win:
+            # Vitória Completa: preserva o episódio inteiro com retorno terminal canônico
+            traj_rews = [s["reward"] for s in traj_steps]
+            traj_returns = np.zeros(T_traj, dtype=np.float32)
+            running_r = 0.0
+            for t_idx in reversed(range(T_traj)):
+                running_r = traj_rews[t_idx] + self.effective_gamma * running_r
+                traj_returns[t_idx] = running_r
+
+            traj_obs = np.array([s["obs"] for s in traj_steps], dtype=np.float32)
+            has_delta = any(s["delta_obs"] is not None for s in traj_steps)
+            traj_delta = (
+                np.array([s["delta_obs"] for s in traj_steps], dtype=np.float32)
+                if has_delta
+                else None
+            )
+            traj_prev_act = np.array([s["prev_action"] for s in traj_steps])
+            traj_prev_rew = np.array([s["prev_reward"] for s in traj_steps], dtype=np.float32)
+            traj_act = np.array([s["action"] for s in traj_steps])
+            traj_logp = np.array([s.get("log_prob", 0.0) for s in traj_steps], dtype=np.float32)
+
+            self.sil_buffer.add(
+                FrontierTransition(
+                    obs=traj_obs,
+                    delta_obs=traj_delta,
+                    prev_actions=traj_prev_act,
+                    prev_rewards=traj_prev_rew,
+                    actions=traj_act,
+                    returns=traj_returns,
+                    depth=cur_d,
+                    length=T_traj,
+                    td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
+                    log_probs=traj_logp,
+                    is_full_win=True,
+                )
+            )
+        else:
+            # Episódio não resolvido: busca o pico de progresso cumulativo (Peak Slicing)
+            cum_rews = np.cumsum([s["reward"] for s in traj_steps])
+            t_star = int(np.argmax(cum_rews))
+            peak_gain = float(cum_rews[t_star])
+
+            # Critérios de elegibilidade:
+            # Pelo menos 2 passos de manobra coordenada e ganho líquido mensurável (> 0.05)
+            min_peak_steps = 2
+            min_cum_gain = 0.05
+            is_eligible_peak = (t_star >= min_peak_steps - 1) and (peak_gain >= min_cum_gain)
+
+            if is_eligible_peak:
+                L_slice = t_star + 1
+                peak_slice = traj_steps[:L_slice]
+
+                # Bootstrapping com V(s_{t*+1}) para blindar a vantagem de Bellman contra underestimation
+                if t_star + 1 < T_traj:
+                    next_val = float(traj_steps[t_star + 1].get("value", 0.0))
+                else:
+                    next_val = float(traj_steps[t_star].get("value", 0.0))
+
+                slice_returns = np.zeros(L_slice, dtype=np.float32)
+                running_r = next_val
+                for t_idx in reversed(range(L_slice)):
+                    running_r = float(peak_slice[t_idx]["reward"]) + self.effective_gamma * running_r
+                    slice_returns[t_idx] = running_r
+
+                peak_obs = np.array([s["obs"] for s in peak_slice], dtype=np.float32)
+                has_delta = any(s["delta_obs"] is not None for s in peak_slice)
+                peak_delta = (
+                    np.array([s["delta_obs"] for s in peak_slice], dtype=np.float32)
+                    if has_delta
+                    else None
+                )
+                peak_prev_act = np.array([s["prev_action"] for s in peak_slice])
+                peak_prev_rew = np.array([s["prev_reward"] for s in peak_slice], dtype=np.float32)
+                peak_act = np.array([s["action"] for s in peak_slice])
+                peak_logp = np.array([s.get("log_prob", 0.0) for s in peak_slice], dtype=np.float32)
+
+                self.sil_buffer.add(
+                    FrontierTransition(
+                        obs=peak_obs,
+                        delta_obs=peak_delta,
+                        prev_actions=peak_prev_act,
+                        prev_rewards=peak_prev_rew,
+                        actions=peak_act,
+                        returns=slice_returns,
+                        depth=cur_d,
+                        length=L_slice,
+                        td_error=float(slice_returns[0]) if len(slice_returns) > 0 else 0.0,
+                        log_probs=peak_logp,
+                        is_full_win=False,
+                    )
+                )
+
+                # Se DPO contrastivo estiver ativo, a cauda de degradação pós-pico entra no buffer de falhas
+                if getattr(self, "sil_dpo_enabled", False):
+                    deg_slice = traj_steps[t_star + 1 :]
+                    if len(deg_slice) >= 2:
+                        L_deg = len(deg_slice)
+                        deg_rews = [s["reward"] for s in deg_slice]
+                        deg_returns = np.zeros(L_deg, dtype=np.float32)
+                        running_d = 0.0
+                        for d_idx in reversed(range(L_deg)):
+                            running_d = deg_rews[d_idx] + self.effective_gamma * running_d
+                            deg_returns[d_idx] = running_d
+
+                        deg_obs = np.array([s["obs"] for s in deg_slice], dtype=np.float32)
+                        has_d_delta = any(s["delta_obs"] is not None for s in deg_slice)
+                        deg_delta = (
+                            np.array([s["delta_obs"] for s in deg_slice], dtype=np.float32)
+                            if has_d_delta
+                            else None
+                        )
+                        deg_prev_act = np.array([s["prev_action"] for s in deg_slice])
+                        deg_prev_rew = np.array([s["prev_reward"] for s in deg_slice], dtype=np.float32)
+                        deg_act = np.array([s["action"] for s in deg_slice])
+                        deg_logp = np.array([s.get("log_prob", 0.0) for s in deg_slice], dtype=np.float32)
+
+                        self.sil_buffer.add_failure(
+                            SuccessfulTrajectory(
+                                obs=deg_obs,
+                                delta_obs=deg_delta,
+                                prev_actions=deg_prev_act,
+                                prev_rewards=deg_prev_rew,
+                                actions=deg_act,
+                                returns=deg_returns,
+                                depth=cur_d,
+                                length=L_deg,
+                                log_probs=deg_logp,
+                                is_full_win=False,
+                            )
+                        )
+            elif getattr(self, "sil_dpo_enabled", False):
+                # Sem avanço mínimo: o episódio inteiro entra como falha se DPO ativo
+                traj_rews = [s["reward"] for s in traj_steps]
+                traj_returns = np.zeros(T_traj, dtype=np.float32)
+                running_r = 0.0
+                for t_idx in reversed(range(T_traj)):
+                    running_r = traj_rews[t_idx] + self.effective_gamma * running_r
+                    traj_returns[t_idx] = running_r
+
+                traj_obs = np.array([s["obs"] for s in traj_steps], dtype=np.float32)
+                has_delta = any(s["delta_obs"] is not None for s in traj_steps)
+                traj_delta = (
+                    np.array([s["delta_obs"] for s in traj_steps], dtype=np.float32)
+                    if has_delta
+                    else None
+                )
+                traj_prev_act = np.array([s["prev_action"] for s in traj_steps])
+                traj_prev_rew = np.array([s["prev_reward"] for s in traj_steps], dtype=np.float32)
+                traj_act = np.array([s["action"] for s in traj_steps])
+                traj_logp = np.array([s.get("log_prob", 0.0) for s in traj_steps], dtype=np.float32)
+
+                self.sil_buffer.add_failure(
+                    SuccessfulTrajectory(
+                        obs=traj_obs,
+                        delta_obs=traj_delta,
+                        prev_actions=traj_prev_act,
+                        prev_rewards=traj_prev_rew,
+                        actions=traj_act,
+                        returns=traj_returns,
+                        depth=cur_d,
+                        length=T_traj,
+                        log_probs=traj_logp,
+                        is_full_win=False,
+                    )
+                )
+
     def collect_rollouts(
         self,
         current_obs_dict: Dict[str, Any],
@@ -1570,6 +1707,7 @@ class RecurrentPPOTrainer:
                         "action": act_v,
                         "reward": float(reward),
                         "log_prob": float(log_prob.squeeze(0).squeeze(0).item()),
+                        "value": float(value.squeeze(0).squeeze(0).item()),
                     }
                     self._active_single_trajectory.append(entry_s)
 
@@ -1609,62 +1747,8 @@ class RecurrentPPOTrainer:
                     is_win = is_solved or (bool(terminated) and float(reward) >= 5.0)
 
                     if len(traj_steps) > 0:
-                        T_traj = len(traj_steps)
-                        traj_rews = [s["reward"] for s in traj_steps]
-                        traj_returns = np.zeros(T_traj, dtype=np.float32)
-                        running_r = 0.0
-                        for t_idx in reversed(range(T_traj)):
-                            running_r = traj_rews[t_idx] + self.effective_gamma * running_r
-                            traj_returns[t_idx] = running_r
-
                         cur_d = int(env_info.get("scramble_depth", env_info.get("current_depth", self._get_current_curriculum_depth()))) if isinstance(env_info, dict) else self._get_current_curriculum_depth()
-                        has_positive_return = is_win or any(r > 0.0 for r in traj_returns)
-                        cur_d = int(env_info.get("scramble_depth", env_info.get("current_depth", 1))) if isinstance(env_info, dict) else 1
-                        should_store_win = self.sil_enabled and has_positive_return
-                        should_store_loss = self.sil_enabled and getattr(self, "sil_dpo_enabled", False)
-
-                        if should_store_win or should_store_loss:
-                            traj_obs = np.array([s["obs"] for s in traj_steps], dtype=np.float32)
-                            has_delta = any(s["delta_obs"] is not None for s in traj_steps)
-                            traj_delta = (
-                                np.array([s["delta_obs"] for s in traj_steps], dtype=np.float32)
-                                if has_delta
-                                else None
-                            )
-                            traj_prev_act = np.array([s["prev_action"] for s in traj_steps])
-                            traj_prev_rew = np.array([s["prev_reward"] for s in traj_steps], dtype=np.float32)
-                            traj_act = np.array([s["action"] for s in traj_steps])
-                            traj_logp = np.array([s.get("log_prob", 0.0) for s in traj_steps], dtype=np.float32)
-
-                            if should_store_win:
-                                self.sil_buffer.add(
-                                    FrontierTransition(
-                                        obs=traj_obs,
-                                        delta_obs=traj_delta,
-                                        prev_actions=traj_prev_act,
-                                        prev_rewards=traj_prev_rew,
-                                        actions=traj_act,
-                                        returns=traj_returns,
-                                        depth=cur_d,
-                                        length=T_traj,
-                                        td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
-                                        log_probs=traj_logp,
-                                    )
-                                )
-                            elif should_store_loss:
-                                self.sil_buffer.add_failure(
-                                    SuccessfulTrajectory(
-                                        obs=traj_obs,
-                                        delta_obs=traj_delta,
-                                        prev_actions=traj_prev_act,
-                                        prev_rewards=traj_prev_rew,
-                                        actions=traj_act,
-                                        returns=traj_returns,
-                                        depth=cur_d,
-                                        length=T_traj,
-                                        log_probs=traj_logp,
-                                    )
-                                )
+                        self._process_completed_trajectory(traj_steps, is_win, cur_d)
                     self._active_single_trajectory.clear()
 
                     current_obs_dict, _ = self.env.reset()

@@ -317,6 +317,7 @@ class SuccessfulTrajectory:
     depth: int                       # Profundidade curricular ou do scramble
     length: int                      # Duração T em passos
     log_probs: Optional[np.ndarray] = None  # [T] log_probs da política de rollout (pi_old / pi_ref)
+    is_full_win: bool = True         # True se vitória terminal completa, False se fatia de pico (peak slice)
 
     def __len__(self) -> int:
         return self.length
@@ -373,6 +374,7 @@ class FrontierTransition(SuccessfulTrajectory):
             length=1,
             log_probs=log_probs,
             td_error=float(td_error),
+            is_full_win=True,
         )
 
 
@@ -604,20 +606,24 @@ class SuccessReplayBuffer:
 
         t_ret = float(trajectory.returns[0]) if len(trajectory.returns) > 0 else 0.0
         t_len = int(trajectory.length)
-        new_quality = (t_ret, -t_len)
+        is_full = bool(getattr(trajectory, "is_full_win", True))
+        new_quality = (is_full, t_ret, -t_len)
 
         # 3. Quota local por estrato com substituição prioritária por qualidade:
+        # Vitórias totais têm prioridade máxima sobre vitórias parciais (fatias de pico).
         quota = self.get_capacity_for_depth(depth)
         if len(d_buf) >= quota:
             worst_idx = min(
                 range(len(d_buf)),
                 key=lambda i: (
+                    bool(getattr(d_buf[i], "is_full_win", True)),
                     float(d_buf[i].returns[0]) if len(d_buf[i].returns) > 0 else 0.0,
                     -int(d_buf[i].length),
                 ),
             )
             worst_traj = d_buf[worst_idx]
             worst_quality = (
+                bool(getattr(worst_traj, "is_full_win", True)),
                 float(worst_traj.returns[0]) if len(worst_traj.returns) > 0 else 0.0,
                 -int(worst_traj.length),
             )

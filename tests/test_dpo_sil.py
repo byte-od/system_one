@@ -493,3 +493,149 @@ def test_anchor_floor_protection_during_global_eviction():
     assert caps[1] == 20
     assert caps[2] == 20
 
+
+def test_full_win_priority_over_peak_slice():
+    """Garante que vitórias totais têm prioridade estrita de retenção sobre fatias de pico parciais."""
+    buf = SuccessReplayBuffer(
+        max_trajectories=100,
+        max_per_depth=2,
+        progressive_capacity=False,
+    )
+
+    # Adiciona 2 fatias parciais em D5
+    p1 = FrontierTransition(
+        obs=np.zeros((3, 4), dtype=np.float32),
+        delta_obs=None,
+        prev_actions=np.zeros(3, dtype=np.int64),
+        prev_rewards=np.zeros(3, dtype=np.float32),
+        actions=np.zeros(3, dtype=np.int64),
+        returns=np.ones(3, dtype=np.float32) * 5.0,
+        depth=5,
+        length=3,
+        is_full_win=False,
+    )
+    p2 = FrontierTransition(
+        obs=np.zeros((4, 4), dtype=np.float32),
+        delta_obs=None,
+        prev_actions=np.zeros(4, dtype=np.int64),
+        prev_rewards=np.zeros(4, dtype=np.float32),
+        actions=np.zeros(4, dtype=np.int64),
+        returns=np.ones(4, dtype=np.float32) * 6.0,
+        depth=5,
+        length=4,
+        is_full_win=False,
+    )
+    buf.add(p1)
+    buf.add(p2)
+    assert len(buf._depth_buffers[5]) == 2
+    assert all(not getattr(t, "is_full_win", True) for t in buf._depth_buffers[5])
+
+    # Agora adiciona uma vitória completa (is_full_win=True) com retorno mesmo menor (ex: 2.0)
+    w1 = FrontierTransition(
+        obs=np.zeros((5, 4), dtype=np.float32),
+        delta_obs=None,
+        prev_actions=np.zeros(5, dtype=np.int64),
+        prev_rewards=np.zeros(5, dtype=np.float32),
+        actions=np.zeros(5, dtype=np.int64),
+        returns=np.ones(5, dtype=np.float32) * 2.0,
+        depth=5,
+        length=5,
+        is_full_win=True,
+    )
+    buf.add(w1)
+
+    # A vitória completa deve ter entrado no buffer, substituindo uma das parciais
+    assert len(buf._depth_buffers[5]) == 2
+    wins = [t for t in buf._depth_buffers[5] if getattr(t, "is_full_win", False)]
+    assert len(wins) == 1
+    assert wins[0] is w1
+
+
+def test_process_completed_trajectory_peak_slicing_isolated_bellman():
+    """Valida Peak Slicing com Bellman Isolado e Bootstrapping de Valor em PPOTrainer."""
+    import gymnasium as gym
+
+    env = gym.make("CartPole-v1")
+    wrapped_env = UniversalS1Wrapper(env, tri_compass=False)
+    agent = UniversalS1Agent(
+        obs_space=wrapped_env.observation_space,
+        action_space=wrapped_env.action_space,
+        trunk_type="lean",
+    )
+    trainer = RecurrentPPOTrainer(
+        agent=agent,
+        env=wrapped_env,
+        sil_enabled=True,
+        sil_dpo_enabled=True,
+        gamma=0.99,
+    )
+
+    # Cria passos simulados de um episódio incompleto (T=6 passos):
+    # Passos 0 a 2 progridem (recompensas positivas), passos 3 a 5 degradam (recompensas negativas)
+    traj_steps = [
+        {"obs": np.zeros(4, dtype=np.float32), "delta_obs": None, "prev_action": 0, "prev_reward": 0.0, "action": 0, "reward": 0.20, "log_prob": -0.5, "value": 1.0},
+        {"obs": np.ones(4, dtype=np.float32), "delta_obs": None, "prev_action": 0, "prev_reward": 0.20, "action": 1, "reward": 0.30, "log_prob": -0.6, "value": 1.5},
+        {"obs": np.ones(4, dtype=np.float32) * 2, "delta_obs": None, "prev_action": 1, "prev_reward": 0.30, "action": 0, "reward": 0.50, "log_prob": -0.4, "value": 2.5},  # t* = 2 (pico: cumsum = 1.00)
+        {"obs": np.ones(4, dtype=np.float32) * 3, "delta_obs": None, "prev_action": 0, "prev_reward": 0.50, "action": 1, "reward": -0.20, "log_prob": -0.7, "value": 2.0},
+        {"obs": np.ones(4, dtype=np.float32) * 4, "delta_obs": None, "prev_action": 1, "prev_reward": -0.20, "action": 0, "reward": -0.30, "log_prob": -0.8, "value": 1.2},
+        {"obs": np.ones(4, dtype=np.float32) * 5, "delta_obs": None, "prev_action": 0, "prev_reward": -0.30, "action": 1, "reward": -0.40, "log_prob": -0.9, "value": 0.5},
+    ]
+
+    trainer._process_completed_trajectory(traj_steps=traj_steps, is_win=False, cur_depth=4)
+
+    # 1. Verifica se a fatia positiva de pico foi adicionada ao SIL
+    assert len(trainer.sil_buffer) == 1
+    stored_slice = trainer.sil_buffer.trajectories[0]
+    # Comprimento deve ser exatamente t* + 1 = 3 passos
+    assert stored_slice.length == 3
+    assert not getattr(stored_slice, "is_full_win", True)
+
+    # 2. Verifica se o retorno de Bellman foi calculado isoladamente com bootstrapping de V(s_{t*+1}) = 2.0
+    # No passo t* = 2: G_2 = r_2 + gamma * V(s_3) = 0.50 + 0.99 * 2.0 = 2.48
+    # No passo t = 1: G_1 = r_1 + gamma * G_2 = 0.30 + 0.99 * 2.48 = 2.7552
+    # No passo t = 0: G_0 = r_0 + gamma * G_1 = 0.20 + 0.99 * 2.7552 = 2.9276
+    expected_G2 = 0.50 + 0.99 * 2.0
+    expected_G1 = 0.30 + 0.99 * expected_G2
+    expected_G0 = 0.20 + 0.99 * expected_G1
+
+    np.testing.assert_allclose(stored_slice.returns[2], expected_G2, rtol=1e-4)
+    np.testing.assert_allclose(stored_slice.returns[1], expected_G1, rtol=1e-4)
+    np.testing.assert_allclose(stored_slice.returns[0], expected_G0, rtol=1e-4)
+
+    # 3. Verifica se a cauda de degradação (passos 3 a 5, L=3) foi para o buffer de falhas do DPO
+    assert len(trainer.sil_buffer.failures) == 1
+    fail_slice = trainer.sil_buffer.failures[0]
+    assert fail_slice.length == 3
+
+
+def test_process_completed_trajectory_no_progress_rejection():
+    """Garante que episódios sem ganho líquido (apenas penalidades) não geram fatia positiva no SIL."""
+    import gymnasium as gym
+
+    env = gym.make("CartPole-v1")
+    wrapped_env = UniversalS1Wrapper(env, tri_compass=False)
+    agent = UniversalS1Agent(
+        obs_space=wrapped_env.observation_space,
+        action_space=wrapped_env.action_space,
+        trunk_type="lean",
+    )
+    trainer = RecurrentPPOTrainer(
+        agent=agent,
+        env=wrapped_env,
+        sil_enabled=True,
+        sil_dpo_enabled=False,
+    )
+
+    # Episódio que só deu recompensas negativas desde o início
+    traj_steps = [
+        {"obs": np.zeros(4, dtype=np.float32), "delta_obs": None, "prev_action": 0, "prev_reward": 0.0, "action": 0, "reward": -0.05, "log_prob": -0.5, "value": 0.5},
+        {"obs": np.ones(4, dtype=np.float32), "delta_obs": None, "prev_action": 0, "prev_reward": -0.05, "action": 1, "reward": -0.10, "log_prob": -0.6, "value": 0.3},
+        {"obs": np.ones(4, dtype=np.float32) * 2, "delta_obs": None, "prev_action": 1, "prev_reward": -0.10, "action": 0, "reward": -0.20, "log_prob": -0.4, "value": 0.1},
+    ]
+
+    trainer._process_completed_trajectory(traj_steps=traj_steps, is_win=False, cur_depth=3)
+
+    # Nenhuma fatia positiva adicionada
+    assert len(trainer.sil_buffer) == 0
+
+
