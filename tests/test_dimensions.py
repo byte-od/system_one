@@ -9,23 +9,37 @@ from system1_engine.core.trunk import LeanResidualTrunk, System1Trunk
 
 
 def test_vector_frontend_dimensions():
-    """Verify VectorFrontEnd output strictly conforms to [B, T, 337]."""
+    """Verify VectorFrontEnd output strictly conforms to [B, T, 465] in Tri-Compass mode and [B, T, 337] in classic mode."""
     obs_dim = 4
     act_space = gym.spaces.Discrete(2)
+
+    # 1. Tri-Compass mode (default)
     front_end = VectorFrontEnd(obs_dim=obs_dim, action_space=act_space)
+    assert front_end.out_dim == 465
 
     # Test arbitrary batch sizes and sequence lengths
     test_shapes = [(1, 1), (4, 16), (8, 32), (2, 5)]
 
     for b, t in test_shapes:
         obs = torch.randn(b, t, obs_dim)
-        delta_obs = torch.randn(b, t, obs_dim)
+        delta_obs = torch.randn(b, t, 3 * obs_dim)
         prev_act = torch.randint(0, 2, (b, t))
         prev_rew = torch.randn(b, t, 1)
 
         out = front_end(obs, delta_obs, prev_act, prev_rew)
-        assert out.shape == (b, t, 337), f"Expected {(b, t, 337)}, got {out.shape}"
+        assert out.shape == (b, t, 465), f"Expected {(b, t, 465)}, got {out.shape}"
         assert not torch.isnan(out).any()
+
+    # 2. Classic mode (tri_compass=False)
+    classic_fe = VectorFrontEnd(obs_dim=obs_dim, action_space=act_space, tri_compass=False)
+    assert classic_fe.out_dim == 337
+    out_classic = classic_fe(
+        torch.randn(1, 1, obs_dim),
+        torch.randn(1, 1, obs_dim),
+        torch.randint(0, 2, (1, 1)),
+        torch.randn(1, 1, 1),
+    )
+    assert out_classic.shape == (1, 1, 337)
 
 
 def test_visual_frontend_dimensions():
@@ -116,8 +130,8 @@ def test_parameter_counts_and_memory():
         action_space=gym.spaces.Discrete(2),
     )
     vec_params = sum(p.numel() for p in vec_agent.parameters())
-    # Target ~650k parameters (within 15% tolerance: 650k to 750k)
-    assert 600_000 <= vec_params <= 800_000, f"Vector parameters {vec_params} out of target ~650k"
+    # Target ~650k-850k parameters (vector Tri-Compass default)
+    assert 600_000 <= vec_params <= 900_000, f"Vector parameters {vec_params} out of target ~650k-850k"
 
     vis_agent = UniversalS1Agent(
         obs_space=gym.spaces.Box(low=0, high=255, shape=(6, 84, 84)),

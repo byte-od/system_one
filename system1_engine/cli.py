@@ -24,6 +24,7 @@ def build_environment(
     scramble_depth: Optional[int] = None,
     mixed_replay_rate: Optional[float] = None,
     args: Optional[Any] = None,
+    tri_compass: Optional[bool] = None,
     **kwargs: Any,
 ) -> UniversalS1Wrapper:
     """Instancia o ambiente apropriado (Gymnasium padrão ou Adaptador Nativo ViZDoom) no Modo Puro Universal."""
@@ -91,7 +92,12 @@ def build_environment(
     elif env_id == "FrozenLake-v1":
         from system1_engine.env.adapters.frozenlake import FrozenLakeCurriculumWrapper
         raw_env = FrozenLakeCurriculumWrapper(raw_env, curriculum=is_training)
-    return UniversalS1Wrapper(raw_env)
+    eff_tri = True
+    if tri_compass is not None:
+        eff_tri = bool(tri_compass)
+    elif args is not None and getattr(args, "tri_compass", None) is not None:
+        eff_tri = bool(args.tri_compass)
+    return UniversalS1Wrapper(raw_env, tri_compass=eff_tri)
 
 
 def resolve_compute_device(device_pref: str = "auto", is_training: bool = True) -> torch.device:
@@ -236,7 +242,7 @@ def train_mode(args: argparse.Namespace) -> None:
         raw_env = getattr(env, "unwrapped", env)
         if (
             checkpoint_to_load
-            and res.get("mode") in ("warm_start", "net2net_expansion")
+            and (res.get("mode") in ("warm_start", "net2net_expansion", "net2net_tri_compass") or str(res.get("mode", "")).startswith("net2net"))
             and hasattr(raw_env, "set_curriculum_depth")
             and getattr(raw_env, "curriculum", False)
         ):
@@ -378,6 +384,13 @@ def train_mode(args: argparse.Namespace) -> None:
 def run_mode(args: argparse.Namespace) -> None:
     device = resolve_compute_device(getattr(args, "device", "auto"), is_training=False)
     print(f"=== Running Agent Evaluation on {args.env} [Device: {device.type.upper()}] ===")
+    
+    eval_tri = True
+    if getattr(args, "tri_compass", None) is not None:
+        eval_tri = bool(args.tri_compass)
+    elif getattr(args, "load", None):
+        eval_tri = KnowledgeTransferManager.detect_tri_compass(args.load)
+
     env = build_environment(
         args.env,
         scenario=args.scenario,
@@ -385,6 +398,7 @@ def run_mode(args: argparse.Namespace) -> None:
         is_training=False,
         frame_skip=getattr(args, "frame_skip", None),
         scramble_depth=getattr(args, "scramble_depth", None),
+        tri_compass=eval_tri,
     )
 
     trunk_type = getattr(args, "trunk", "lean")
@@ -739,6 +753,12 @@ def main() -> None:
         type=float,
         default=0.15,
         help="Taxa de mixed replay no currículo do Cubo Mágico (padrão: 0.15 = 15%% replay / 85%% fronteira; 0.0 desativa completamente)",
+    )
+    parser.add_argument(
+        "--tri-compass",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Habilita Triangulação Desacoplada Tri-Compass 465D (padrão: True)",
     )
     parser.add_argument(
         "--dynamic-frontier",

@@ -200,7 +200,7 @@ def test_hud_process_runner_start_and_stop():
 
 
 def test_hud_e2e_evaluation_and_in_browser_rendering(tmp_path):
-    save_ckpt = str(tmp_path / "test_saved_agent.pt")
+    save_ckpt = str(tmp_path / "test_saved_agent_trained.pt")
     server = HUDServer(host="127.0.0.1", port=8996, open_browser=False)
     with server:
         config = {
@@ -541,6 +541,48 @@ def test_tracker_curriculum_depth_min_max_reset():
     assert snap4["curriculum_success_rate"] == 0.0
     assert snap4["curriculum_depth_best_success_rate"] is None
     assert snap4["curriculum_depth_min_success_rate"] is None
+
+    # Avanço para D10: uma taxa inicial espúria de 1.0 (1 amostra) não deve registrar 100% como best
+    tracker.record_env_step(
+        reward=1.0,
+        done=False,
+        info={"current_depth": 10, "curriculum_promotions": 9},
+    )
+    tracker.record_env_step(
+        reward=2.0,
+        done=True,
+        info={"current_depth": 10, "curriculum_promotions": 9, "curriculum_success_rate": 1.0},
+    )
+    snap5 = tracker.snapshot()
+    assert snap5["curriculum_depth"] == 10
+    # O pico de 1.0 é ignorado em D10 inicial
+    assert snap5["curriculum_depth_best_success_rate"] is None or snap5["curriculum_depth_best_success_rate"] < 0.95
+
+    # Taxa real madura subsequente (ex: 15%):
+    tracker.record_env_step(
+        reward=2.0,
+        done=True,
+        info={"current_depth": 10, "curriculum_promotions": 9, "curriculum_success_rate": 0.15},
+    )
+    snap6 = tracker.snapshot()
+    assert snap6["curriculum_depth_best_success_rate"] == 0.15
+
+
+def test_hud_server_telemetry_curriculum_spike_sanitization():
+    """Garante que update_telemetry sanitiza picos de 100% decorrentes de janela com 1 amostra em D5+."""
+    from system1_engine.hud.server import HUDServer
+    server = HUDServer(host="127.0.0.1", port=9005, open_browser=False)
+
+    server.update_telemetry({
+        "curriculum_depth": 10,
+        "curriculum_promotions": 9,
+        "curriculum_success_rate": 0.12,
+        "curriculum_depth_best_success_rate": 1.0,  # Spike vindo de amostragem unitária
+    })
+    snap = server.get_telemetry_snapshot()
+    assert snap["curriculum_depth"] == 10
+    # O valor 1.0 é sanitizado para a taxa real observada (0.12)
+    assert snap["curriculum_depth_best_success_rate"] == 0.12
 
 
 

@@ -7,6 +7,7 @@ and selects the best high-quality outcome.
 """
 
 from typing import List, Dict, Any, Optional, Tuple, Union
+import warnings
 import numpy as np
 import time
 from dataclasses import dataclass, field
@@ -41,219 +42,83 @@ class TrajectoryResult:
         }
 
 
-class QualityEnsembleEvaluator:
-    """Avaliador e seletor de trajetórias para garantia de qualidade em múltiplos cenários simultâneos.
+def compute_purity_score(
+    actions: Union[List[Any], np.ndarray],
+    is_atomic_cube: bool = False,
+    is_discrete: Optional[bool] = None,
+) -> float:
+    """Calcula a pureza da trajetória penalizando reversões imediatas e oscilações redundantes.
 
-    [DEPRECATED]: QualityEnsembleEvaluator requer clonagem de ambiente (env.clone()) e simulação
-    de trajetórias completas (estilo Sistema 2 / MCTS leve), violando a latência de reflexo puro (< 1ms)
-    e o princípio agnóstico a domínio.
-    Para reflexos de alta qualidade sob incerteza em tempo real, utilize ConfidenceGatedEnsemble (A.2),
-    que opera diretamente no vetor latente h em < 0.1 ms sem interagir com o ambiente.
-    Mantido para compatibilidade retroativa com suítes de teste existentes.
+    Suporta espaços de ação discretos (inteiros) e contínuos (vetores multidimensionais).
+    - Espaço Discreto: penaliza oscilações 2-passos (A -> B -> A), ciclos redundantes e
+      (se is_atomic_cube=True) pares reversos imediatos.
+    - Espaço Contínuo: penaliza reversões bruscas direcionais (cosine similarity negativa)
+      e alto jerk / jittering temporal de 2ª ordem.
     """
+    if len(actions) <= 1:
+        return 1.0
 
-    DEFAULT_CALIBRATIONS = [0.0, 0.15, "auto", 0.35]
-
-    @staticmethod
-    def compute_purity_score(
-        actions: Union[List[Any], np.ndarray],
-        is_atomic_cube: bool = False,
-        is_discrete: Optional[bool] = None,
-    ) -> float:
-        """Calcula a pureza da trajetória penalizando reversões imediatas e oscilações redundantes.
-
-        Suporta espaços de ação discretos (inteiros) e contínuos (vetores multidimensionais).
-        - Espaço Discreto: penaliza oscilações 2-passos (A -> B -> A), ciclos redundantes e
-          (se is_atomic_cube=True) pares reversos imediatos.
-        - Espaço Contínuo: penaliza reversões bruscas direcionais (cosine similarity negativa)
-          e alto jerk / jittering temporal de 2ª ordem.
-        """
-        if len(actions) <= 1:
-            return 1.0
-
-        if is_discrete is None:
-            first_act = actions[0]
-            if isinstance(first_act, (int, np.integer)):
-                is_discrete = True
-            elif isinstance(first_act, (list, tuple, np.ndarray)) and len(np.asarray(first_act).shape) > 0 and np.asarray(first_act).size > 1:
-                is_discrete = False
-            else:
-                try:
-                    arr = np.asarray(actions)
-                    is_discrete = bool(arr.ndim == 1 and np.issubdtype(arr.dtype, np.integer))
-                except Exception:
-                    is_discrete = True
-
-        if is_discrete:
-            penalties = 0.0
-            act_list = [int(np.asarray(a).item()) if isinstance(a, (np.ndarray, np.integer)) else int(a) for a in actions]
-            n_acts = len(act_list)
-            for i in range(1, n_acts):
-                a_prev = act_list[i - 1]
-                a_curr = act_list[i]
-                if is_atomic_cube:
-                    inv_prev = (a_prev + 1) if (a_prev % 2 == 0) else (a_prev - 1)
-                    if a_curr == inv_prev:
-                        penalties += 1.0
-                if i >= 2 and act_list[i] == act_list[i - 2]:
-                    # Oscilação A -> B -> A
-                    penalties += 0.5
-                if i >= 3 and act_list[i] == act_list[i - 3]:
-                    # Ciclo redundante de 3 passos
-                    penalties += 0.25
-            max_possible = max(1.0, float(n_acts - 1))
-            return float(np.clip(1.0 - (penalties / max_possible), 0.0, 1.0))
+    if is_discrete is None:
+        first_act = actions[0]
+        if isinstance(first_act, (int, np.integer)):
+            is_discrete = True
+        elif isinstance(first_act, (list, tuple, np.ndarray)) and len(np.asarray(first_act).shape) > 0 and np.asarray(first_act).size > 1:
+            is_discrete = False
         else:
-            # Espaço contínuo: consistência direcional e amortecimento de jerk
-            act_arrs = [np.asarray(a, dtype=np.float32).flatten() for a in actions]
-            n_acts = len(act_arrs)
-            penalties = 0.0
-            for i in range(1, n_acts):
-                v_prev = act_arrs[i - 1]
-                v_curr = act_arrs[i]
-                norm_prev = float(np.linalg.norm(v_prev))
-                norm_curr = float(np.linalg.norm(v_curr))
-                if norm_prev > 1e-6 and norm_curr > 1e-6:
-                    cos_sim = float(np.dot(v_prev, v_curr) / (norm_prev * norm_curr))
-                    # Penaliza reversão abrupta de torque ou velocidade
-                    if cos_sim < -0.2:
-                        penalties += 0.5 * abs(cos_sim)
-                if i >= 2:
-                    v_prev2 = act_arrs[i - 2]
-                    jerk = v_curr - 2.0 * v_prev + v_prev2
-                    jerk_mag = float(np.linalg.norm(jerk))
-                    ref_mag = max(1.0, norm_curr)
-                    if jerk_mag > 1.5 * ref_mag:
-                        penalties += min(0.5, 0.2 * (jerk_mag / ref_mag))
-            max_possible = max(1.0, float(n_acts - 1))
-            return float(np.clip(1.0 - (penalties / max_possible), 0.0, 1.0))
-    @classmethod
-    def evaluate_scenarios(
-        cls,
-        agent: Any,
-        env: Any,
-        max_steps: int = 40,
-        calibrations: Optional[List[Any]] = None,
-        is_atomic_cube: bool = True,
-    ) -> Tuple[TrajectoryResult, List[TrajectoryResult]]:
-        """Executa múltiplos cenários sobre o mesmo ponto de partida com diferentes calibrações e seleciona o melhor."""
-        if calibrations is None:
-            calibrations = cls.DEFAULT_CALIBRATIONS
+            try:
+                arr = np.asarray(actions)
+                is_discrete = bool(arr.ndim == 1 and np.issubdtype(arr.dtype, np.integer))
+            except Exception:
+                is_discrete = True
+
+    if is_discrete:
+        penalties = 0.0
+        act_list = [int(np.asarray(a).item()) if isinstance(a, (np.ndarray, np.integer)) else int(a) for a in actions]
+        n_acts = len(act_list)
+        for i in range(1, n_acts):
+            a_prev = act_list[i - 1]
+            a_curr = act_list[i]
+            if is_atomic_cube:
+                inv_prev = (a_prev + 1) if (a_prev % 2 == 0) else (a_prev - 1)
+                if a_curr == inv_prev:
+                    penalties += 1.0
+            if i >= 2 and act_list[i] == act_list[i - 2]:
+                # Oscilação A -> B -> A
+                penalties += 0.5
+            if i >= 3 and act_list[i] == act_list[i - 3]:
+                # Ciclo redundante de 3 passos
+                penalties += 0.25
+        max_possible = max(1.0, float(n_acts - 1))
+        return float(np.clip(1.0 - (penalties / max_possible), 0.0, 1.0))
+    else:
+        # Espaço contínuo: consistência direcional e amortecimento de jerk
+        act_arrs = [np.asarray(a, dtype=np.float32).flatten() for a in actions]
+        n_acts = len(act_arrs)
+        penalties = 0.0
+        for i in range(1, n_acts):
+            v_prev = act_arrs[i - 1]
+            v_curr = act_arrs[i]
+            norm_prev = float(np.linalg.norm(v_prev))
+            norm_curr = float(np.linalg.norm(v_curr))
+            if norm_prev > 1e-6 and norm_curr > 1e-6:
+                cos_sim = float(np.dot(v_prev, v_curr) / (norm_prev * norm_curr))
+                # Penaliza reversão abrupta de torque ou velocidade
+                if cos_sim < -0.2:
+                    penalties += 0.5 * abs(cos_sim)
+            if i >= 2:
+                v_prev2 = act_arrs[i - 2]
+                jerk = v_curr - 2.0 * v_prev + v_prev2
+                jerk_mag = float(np.linalg.norm(jerk))
+                ref_mag = max(1.0, norm_curr)
+                if jerk_mag > 1.5 * ref_mag:
+                    penalties += min(0.5, 0.2 * (jerk_mag / ref_mag))
+        max_possible = max(1.0, float(n_acts - 1))
+        return float(np.clip(1.0 - (penalties / max_possible), 0.0, 1.0))
 
 
-        results: List[TrajectoryResult] = []
-
-        # Determina como clonar o ambiente a partir do estado atual
-        can_clone = hasattr(env, "clone") and callable(getattr(env, "clone"))
-
-        for s_id, calib in enumerate(calibrations):
-            t0 = time.perf_counter()
-
-            # Cria instância independente do ambiente
-            if can_clone:
-                sim_env = env.clone()
-                obs_dict = {
-                    "obs": sim_env.core.get_one_hot() if hasattr(sim_env, "core") else sim_env.reset()[0],
-                    "prev_action": 0,
-                    "prev_reward": 0.0,
-                    "delta_obs": None,
-                }
-            elif hasattr(env, "core"):
-                # Fallback para ambientes de Cubo sem clone explícito
-                from system1_engine.env.adapters.rubiks import RubiksCubeEnv
-                sim_env = RubiksCubeEnv(
-                    render_mode=getattr(env, "render_mode", "rgb_array"),
-                    scramble_depth=getattr(env, "scramble_depth", 4),
-                    max_steps=max_steps,
-                )
-                sim_env.reset()
-                sim_env.core.state = env.core.state.copy()
-                sim_env._steps = 0
-                sim_env._prev_score = env.core.get_score()
-                obs_dict = {
-                    "obs": sim_env.core.get_one_hot(),
-                    "prev_action": 0,
-                    "prev_reward": 0.0,
-                    "delta_obs": None,
-                }
-            else:
-                raise ValueError("Ambiente não suporta clonagem para avaliação em múltiplos cenários.")
-
-            # Reseta estado neural e histórico para cada cenário
-            agent.reset_memory()
-
-            actions: List[int] = []
-            decisions: List[Any] = []
-            cumulative_reward = 0.0
-            latent_values: List[float] = []
-            solved = False
-
-            curr_obs = obs_dict
-
-            for step in range(max_steps):
-                decision = agent.act_fast(
-                    curr_obs,
-                    calibration=calib,
-                    return_decision=True,
-                    return_value=True,
-                    quality_filter=True,
-                )
-                act = int(decision.action)
-                actions.append(act)
-                decisions.append(decision)
-                if decision.latent_value is not None:
-                    latent_values.append(decision.latent_value)
-
-                next_obs, rew, terminated, truncated, info = sim_env.step(act)
-                cumulative_reward += float(rew)
-
-                is_solved = bool(info.get("is_solved", False) or terminated)
-                if is_solved:
-                    solved = True
-                    break
-                if truncated:
-                    break
-
-                curr_obs = {
-                    "obs": next_obs,
-                    "prev_action": act,
-                    "prev_reward": float(rew),
-                    "delta_obs": None,
-                }
-
-            elapsed_ms = (time.perf_counter() - t0) * 1000.0
-            purity = cls.compute_purity_score(actions, is_atomic_cube=is_atomic_cube)
-            mean_val = float(np.mean(latent_values)) if latent_values else 0.0
-            n_steps = len(actions)
-
-            # Função de pontuação de qualidade
-            if solved:
-                # Prioridade absoluta para resolução, premiando menos passos e alta pureza
-                quality_score = 10000.0 - (n_steps * 20.0) + (cumulative_reward * 5.0) + (purity * 100.0)
-            else:
-                # Caso não resolvido, premia progresso de recompensa, valor latente e pureza
-                quality_score = (cumulative_reward * 10.0) + (mean_val * 5.0) + (purity * 50.0) - (n_steps * 2.0)
-
-            traj = TrajectoryResult(
-                scenario_id=s_id,
-                calibration=calib,
-                solved=solved,
-                steps=n_steps,
-                cumulative_reward=cumulative_reward,
-                mean_latent_value=mean_val,
-                purity_score=purity,
-                actions=actions,
-                decisions=decisions,
-                quality_score=quality_score,
-                elapsed_ms=elapsed_ms,
-            )
-            results.append(traj)
-
-        # Ordena pelo quality_score decrescente
-        sorted_results = sorted(results, key=lambda x: x.quality_score, reverse=True)
-        best_result = sorted_results[0]
-
-        return best_result, sorted_results
+class QualityEnsembleEvaluator:
+    """[DEPRECATED]: Substituído pelo ConfidenceGatedEnsemble para tempo real sub-milissegundo."""
+    compute_purity_score = staticmethod(compute_purity_score)
 
 
 class ConfidenceGatedEnsemble:
@@ -265,6 +130,7 @@ class ConfidenceGatedEnsemble:
     """
 
     DEFAULT_CANDIDATE_CALIBRATIONS = [0.0, 0.15, 0.35, 0.70]
+    compute_purity_score = staticmethod(compute_purity_score)
 
     @classmethod
     def resolve_uncertain_action(

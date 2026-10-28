@@ -203,6 +203,7 @@ def build_hud_env(
     num_envs: Optional[int] = None,
     mixed_replay_rate: Optional[float] = None,
     config: Optional[Dict[str, Any]] = None,
+    tri_compass: Optional[bool] = None,
     **kwargs: Any,
 ) -> UniversalS1Wrapper:
     """Instancia o ambiente com suporte a renderização in-browser (rgb_array), janela ou headless no Modo Puro Universal."""
@@ -287,7 +288,12 @@ def build_hud_env(
         from system1_engine.env.adapters.frozenlake import FrozenLakeCurriculumWrapper
         raw_env = FrozenLakeCurriculumWrapper(raw_env, curriculum=is_training)
 
-    return UniversalS1Wrapper(raw_env)
+    eff_tri = True
+    if tri_compass is not None:
+        eff_tri = bool(tri_compass)
+    elif config is not None and "tri_compass" in config:
+        eff_tri = bool(config["tri_compass"])
+    return UniversalS1Wrapper(raw_env, tri_compass=eff_tri)
 
 
 def resolve_compute_device(
@@ -462,8 +468,8 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     max_failures_per_depth = int(config.get("max_failures_per_depth", 512))
     min_failures_per_depth = int(config.get("min_failures_per_depth", 16))
 
-    sil_dpo_enabled = bool(config.get("sil_dpo_enabled", True))
-    dpo_coef = float(config.get("dpo_coef", 0.05))
+    sil_dpo_enabled = bool(config.get("sil_dpo_enabled", False))
+    dpo_coef = float(config.get("dpo_coef", 0.0))
     dpo_beta = float(config.get("dpo_beta", 0.10))
     dpo_batch_size = int(config.get("dpo_batch_size", 8))
     progressive_buffer_capacity = bool(config.get("progressive_buffer_capacity", True))
@@ -475,12 +481,6 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     else:
         print("⚡ Self-Imitation Learning (SIL Replay): DESATIVADO")
 
-    sterility_memory_enabled = bool(config.get("sterility_memory_enabled", False))
-    if sterility_memory_enabled:
-        print("🧠 Memória de Esterilidade Latente: ATIVA")
-    else:
-        print("⚡ Memória de Esterilidade Latente: DESATIVADA (Pura inferência de alta velocidade)")
-
     value_rerank = bool(config.get("value_rerank", True))
     raw_env_obj = getattr(env, "unwrapped", env)
     actual_num_envs = getattr(raw_env_obj, "num_envs", num_envs if hasattr(raw_env_obj, "envs") else 1)
@@ -491,7 +491,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     )
     teacher_sil_envs = int(config.get("teacher_sil_envs", teacher_sil_envs_default))
     teacher_min_depth = int(config.get("teacher_min_depth", 5))
-    teacher_confidence_threshold = float(config.get("teacher_confidence_threshold", 0.85))
+    teacher_confidence_threshold = float(config.get("teacher_confidence_threshold", 0.30))
     teacher_top_k = int(config.get("teacher_top_k", 4))
 
     if teacher_sil_envs > 0 and sil_enabled:
@@ -531,7 +531,6 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         progressive_buffer_capacity=progressive_buffer_capacity,
         max_failures_per_depth=max_failures_per_depth,
         min_failures_per_depth=min_failures_per_depth,
-        sterility_memory_enabled=sterility_memory_enabled,
         dynamic_frontier=bool(config.get("dynamic_frontier", True)),
         proximal_decay=float(config.get("proximal_decay", 0.8)),
         teacher_sil_envs=teacher_sil_envs,
@@ -543,7 +542,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     raw_env = getattr(env, "unwrapped", env)
     if (
         checkpoint_to_load
-        and res.get("mode") in ("warm_start", "net2net_expansion")
+        and (res.get("mode") in ("warm_start", "net2net_expansion", "net2net_tri_compass") or str(res.get("mode", "")).startswith("net2net"))
         and hasattr(raw_env, "set_curriculum_depth")
         and getattr(raw_env, "curriculum", False)
     ):
@@ -786,6 +785,12 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
     if env_id.lower().replace("_", "-") in ("rubikscube-v0", "rubikscubemacro-v0", "rubiks", "rubik") and scramble_depth:
         print(f"🎲 Cubo Mágico: Profundidade de Embaralhamento na Avaliação: {scramble_depth} passos")
 
+    eval_tri = True
+    if "tri_compass" in config:
+        eval_tri = bool(config["tri_compass"])
+    elif load_path:
+        eval_tri = KnowledgeTransferManager.detect_tri_compass(load_path)
+
     env = build_hud_env(
         env_id,
         scenario=config.get("scenario"),
@@ -794,6 +799,7 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
         frame_skip=int(config.get("frame_skip", 4)),
         scramble_depth=scramble_depth,
         config=config,
+        tri_compass=eval_tri,
     )
     trunk_type = config.get("trunk", "classic")
     if load_path:

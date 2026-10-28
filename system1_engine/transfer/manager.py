@@ -25,7 +25,7 @@ class KnowledgeTransferManager:
         if hasattr(agent, "action_chunk_size"):
             extra.setdefault("action_chunk_size", getattr(agent, "action_chunk_size", 1))
         if hasattr(agent, "tri_compass"):
-            extra.setdefault("tri_compass", bool(getattr(agent, "tri_compass", False)))
+            extra.setdefault("tri_compass", bool(getattr(agent, "tri_compass", True)))
         payload = {
             "state_dict": state_dict_cpu,
             "extra_info": extra,
@@ -737,18 +737,25 @@ class KnowledgeTransferManager:
     def detect_tri_compass(checkpoint_path: str) -> bool:
         """Inspects checkpoint state_dict to detect if it uses decoupled triangulation (tri_compass=True)."""
         if not os.path.exists(checkpoint_path):
-            return False
+            return True
         try:
             checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            extra = checkpoint.get("extra_info", {}) if isinstance(checkpoint, dict) else {}
+            if "tri_compass" in extra:
+                return bool(extra["tri_compass"])
             sd = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
             if isinstance(sd, dict):
                 if any(k.startswith("front_end.local_delta_encoder.") for k in sd.keys()):
                     return True
-                if "trunk.fast_gru.weight_ih_l0" in sd and sd["trunk.fast_gru.weight_ih_l0"].shape[-1] >= 465:
-                    return True
+                if "trunk.fast_gru.weight_ih_l0" in sd:
+                    in_dim = sd["trunk.fast_gru.weight_ih_l0"].shape[-1]
+                    if in_dim >= 465:
+                        return True
+                    if in_dim == 337:
+                        return False
         except Exception:
             pass
-        return False
+        return True
 
     @staticmethod
     def validate_evaluation_compatibility(

@@ -6,7 +6,7 @@ import gymnasium as gym
 import torch
 
 from system1_engine.core.agent import UniversalS1Agent, ReflexDecision
-from system1_engine.core.ensemble import QualityEnsembleEvaluator, TrajectoryResult
+from system1_engine.core.ensemble import ConfidenceGatedEnsemble, compute_purity_score
 from system1_engine.env.adapters.rubiks import RubiksCubeEnv
 from system1_engine.training.ppo import RecurrentPPOTrainer
 from system1_engine.env.wrapper import UniversalS1Wrapper
@@ -42,31 +42,32 @@ def test_action_quality_filter_prevents_immediate_inverse():
     assert second_act != inv_act, f"Action Quality Filter falhou: escolheu inverso {second_act} de {first_act}"
 
 
-def test_multi_scenario_quality_ensemble_solves_or_ranks():
-    """Valida que o QualityEnsembleEvaluator executa múltiplos cenários sob calibrações distintas e seleciona o melhor."""
+def test_confidence_gated_ensemble_multicalibration_resolution():
+    """Valida que o ConfidenceGatedEnsemble avalia e desempata ações sob incerteza em tempo sub-milissegundo."""
     env = RubiksCubeEnv(scramble_depth=1)
-    env.reset(seed=123)
+    obs, _ = env.reset(seed=123)
 
     agent = UniversalS1Agent(obs_space=env.observation_space, action_space=env.action_space)
     agent.eval()
 
-    best_traj, all_trajs = agent.solve_with_quality_ensemble(
-        env=env,
-        max_steps=15,
-        calibrations=[0.0, 0.15, "auto", 0.35],
+    obs_dict = {
+        "obs": obs,
+        "prev_action": 0,
+        "prev_reward": 0.0,
+        "delta_obs": None,
+    }
+
+    # Força incerteza para testar desempate térmico por ensemble no espaço latente
+    decision = agent.act_fast(
+        obs_dict,
+        confidence_threshold=0.99,
+        ensemble_fallback=True,
+        return_decision=True,
     )
-
-    assert len(all_trajs) == 4
-    assert isinstance(best_traj, TrajectoryResult)
-    # Deve estar ordenado por quality_score
-    for i in range(len(all_trajs) - 1):
-        assert all_trajs[i].quality_score >= all_trajs[i + 1].quality_score
-
-    # Todos os resultados devem ter métricas preenchidas
-    for t in all_trajs:
-        assert 0.0 <= t.purity_score <= 1.0
-        assert t.steps > 0
-        assert len(t.actions) == t.steps
+    assert decision.is_uncertain is True
+    assert decision.ensemble_fallback_triggered is True
+    assert decision.latency_ms < 1.0
+    assert 0 <= decision.action < 12
 
 
 def test_ppo_vectorized_exploration_scale_does_not_collapse():
@@ -149,7 +150,7 @@ def test_continuous_purity_score_penalizes_jitter_and_reversals():
         np.array([0.90, 0.10], dtype=np.float32),
         np.array([0.85, 0.15], dtype=np.float32),
     ]
-    purity_smooth = QualityEnsembleEvaluator.compute_purity_score(smooth_traj, is_discrete=False)
+    purity_smooth = compute_purity_score(smooth_traj, is_discrete=False)
     assert purity_smooth >= 0.95, f"Pureza suave muito baixa: {purity_smooth}"
 
     # 2. Trajetória com reversões bruscas de direção (cosine similarity negativa)
@@ -159,7 +160,7 @@ def test_continuous_purity_score_penalizes_jitter_and_reversals():
         np.array([1.0, 0.0], dtype=np.float32),
         np.array([-1.0, 0.0], dtype=np.float32),
     ]
-    purity_reversing = QualityEnsembleEvaluator.compute_purity_score(reversing_traj, is_discrete=False)
+    purity_reversing = compute_purity_score(reversing_traj, is_discrete=False)
     assert purity_reversing < purity_smooth, f"Pureza não penalizou reversões: {purity_reversing}"
     assert purity_reversing <= 0.60, f"Pureza de reversão esperada <= 0.60, obteve {purity_reversing}"
 
@@ -168,12 +169,12 @@ def test_discrete_purity_score_generalized_for_any_environment():
     """Valida o cálculo de pureza discreta agnóstico ao domínio (com e sem regras de cubo)."""
     # Trajetória suave sem repetições
     pure_discrete = [0, 1, 2, 3, 4, 5]
-    purity_pure = QualityEnsembleEvaluator.compute_purity_score(pure_discrete, is_atomic_cube=False)
+    purity_pure = compute_purity_score(pure_discrete, is_atomic_cube=False)
     assert purity_pure == 1.0
 
     # Trajetória com oscilação ping-pong 2-passos (A -> B -> A -> B)
     oscillating_discrete = [0, 1, 0, 1, 0]
-    purity_osc = QualityEnsembleEvaluator.compute_purity_score(oscillating_discrete, is_atomic_cube=False)
+    purity_osc = compute_purity_score(oscillating_discrete, is_atomic_cube=False)
     assert purity_osc < 1.0
     assert purity_osc <= 0.65
 

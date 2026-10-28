@@ -1,4 +1,5 @@
 import time
+import warnings
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 import gymnasium as gym
@@ -77,7 +78,7 @@ class UniversalS1Agent(nn.Module):
                 delta_dim = int(np.prod(raw_obs_space.spaces["delta_obs"].shape))
                 tri_compass = (delta_dim >= 3 * obs_dim)
             else:
-                tri_compass = False
+                tri_compass = True
             self.tri_compass = bool(tri_compass)
         else:
             self.tri_compass = bool(tri_compass)
@@ -144,7 +145,6 @@ class UniversalS1Agent(nn.Module):
         self._stagnation_count: int = 0
         self._action_history: List[int] = []
         self._last_latent: Optional[torch.Tensor] = None
-        self.sterility_memory: Optional[Any] = None
         self.default_env: Optional[Any] = None
 
     @property
@@ -153,8 +153,13 @@ class UniversalS1Agent(nn.Module):
         return self._last_latent
 
     def set_sterility_memory(self, memory: Optional[Any]) -> None:
-        """Configura a memória de esterilidade latente para o agente."""
-        self.sterility_memory = memory
+        """[DEPRECATED]: No-op. O aprendizado contrastivo c-SIL substitui a memória de esterilidade."""
+        if memory is not None:
+            warnings.warn(
+                "UniversalS1Agent.set_sterility_memory is deprecated and has no effect; c-SIL handles failure aversion natively.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
     def set_env(self, env: Optional[Any]) -> None:
         """Associa um ambiente ao agente para habilitar re-ranqueamento local de valor (Value Re-ranking)."""
@@ -485,9 +490,6 @@ class UniversalS1Agent(nn.Module):
 
                 for step_i in range(k):
                     l_sq = logits_chunk[step_i]
-                    if self.sterility_memory is not None and step_i == 0:
-                        resistance = self.sterility_memory.query_resistance(h.squeeze(0).squeeze(0), level=resolved_level)
-                        l_sq = l_sq - resistance.view_as(l_sq)
                     probs_i = torch.softmax(l_sq, dim=-1)
                     best_act_i = int(torch.argmax(probs_i, dim=-1).item())
                     if n_acts > 1:
@@ -564,9 +566,6 @@ class UniversalS1Agent(nn.Module):
                 )
 
             logits_sq = self.policy_head.linear(h).squeeze(0).squeeze(0)
-            if self.sterility_memory is not None:
-                resistance = self.sterility_memory.query_resistance(h.squeeze(0).squeeze(0), level=resolved_level)
-                logits_sq = logits_sq - resistance.view_as(logits_sq)
             probs = torch.softmax(logits_sq, dim=-1)
             best_action = int(torch.argmax(probs, dim=-1).item())
             n_acts = probs.shape[0]
@@ -964,24 +963,3 @@ class UniversalS1Agent(nn.Module):
         )
         assert isinstance(decision, ReflexDecision)
         return decision
-
-    def solve_with_quality_ensemble(
-        self,
-        env: Any,
-        max_steps: int = 40,
-        calibrations: Optional[List[Any]] = None,
-        is_atomic_cube: bool = True,
-    ) -> Tuple[Any, List[Any]]:
-        """Executa múltiplos cenários sob diferentes calibrações e seleciona o melhor resultado.
-
-        [DEPRECATED]: Requer env.clone(). Para tempo real (<0.1ms), o agente utiliza
-        automaticamente ConfidenceGatedEnsemble quando detecta incerteza em act_fast().
-        """
-        from system1_engine.core.ensemble import QualityEnsembleEvaluator
-        return QualityEnsembleEvaluator.evaluate_scenarios(
-            agent=self,
-            env=env,
-            max_steps=max_steps,
-            calibrations=calibrations,
-            is_atomic_cube=is_atomic_cube,
-        )

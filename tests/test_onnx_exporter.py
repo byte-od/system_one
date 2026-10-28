@@ -107,7 +107,8 @@ def test_auto_sync_web_model_lean_trunk():
         import onnxruntime as ort
         sess = ort.InferenceSession(result, providers=["CPUExecutionProvider"])
         obs_in = np.zeros((1, 1, 4), dtype=np.float32)
-        delta_in = np.zeros((1, 1, 4), dtype=np.float32)
+        delta_dim = 12 if getattr(agent, "tri_compass", False) else 4
+        delta_in = np.zeros((1, 1, delta_dim), dtype=np.float32)
         act_in = np.zeros((1, 1), dtype=np.int64)
         rew_in = np.zeros((1, 1, 1), dtype=np.float32)
         hx_in = np.zeros((1, 1, 512), dtype=np.float32)

@@ -1337,6 +1337,7 @@ class System1AgentWeb {
     this.hxDim = hxDim;
     this.hx = new Float32Array(this.hxDim);
     this.prevObs = null;
+    this.initObs = null;
     this.prevAction = 0;
     this.prevReward = 0.0;
     this.dynamicCalibration = 0.0;
@@ -1348,6 +1349,7 @@ class System1AgentWeb {
   resetMemory() {
     this.hx.fill(0.0);
     this.prevObs = null;
+    this.initObs = null;
     this.prevAction = 0;
     this.prevReward = 0.0;
     this.dynamicCalibration = 0.0;
@@ -1358,9 +1360,26 @@ class System1AgentWeb {
 
   async actWithConfidence(obsArr, prevReward = 0.0, options = {}) {
     const obsDim = obsArr.length;
-    let deltaArr = new Float32Array(obsDim);
+    let deltaDim = obsDim;
+    if (this.session && this.session.inputMetadata && this.session.inputMetadata.delta_obs) {
+      const dDims = this.session.inputMetadata.delta_obs.dimensions;
+      if (dDims && dDims.length >= 3 && Number(dDims[2]) >= 3 * obsDim) {
+        deltaDim = 3 * obsDim;
+      }
+    } else if (this.meta && (this.meta.tri_compass || this.triCompass)) {
+      deltaDim = 3 * obsDim;
+    }
+
+    if (!this.initObs) {
+      this.initObs = new Float32Array(obsArr);
+    }
+
+    let deltaArr = new Float32Array(deltaDim);
     if (this.prevObs) {
       for (let i = 0; i < obsDim; i++) deltaArr[i] = obsArr[i] - this.prevObs[i];
+    }
+    if (deltaDim >= 3 * obsDim && this.initObs) {
+      for (let i = 0; i < obsDim; i++) deltaArr[obsDim + i] = obsArr[i] - this.initObs[i];
     }
     this.prevObs = new Float32Array(obsArr);
     this.prevReward = typeof prevReward === 'number' ? prevReward : 0.0;
@@ -1368,7 +1387,7 @@ class System1AgentWeb {
     const t0 = performance.now();
 
     const tObs = new ort.Tensor('float32', obsArr, [1, 1, obsDim]);
-    const tDelta = new ort.Tensor('float32', deltaArr, [1, 1, obsDim]);
+    const tDelta = new ort.Tensor('float32', deltaArr, [1, 1, deltaDim]);
     const tAct = new ort.Tensor('int64', BigInt64Array.from([BigInt(this.prevAction)]), [1, 1]);
     const tRew = new ort.Tensor('float32', new Float32Array([this.prevReward]), [1, 1, 1]);
     const tHx = new ort.Tensor('float32', this.hx, [1, 1, this.hxDim]);

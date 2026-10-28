@@ -42,7 +42,7 @@ def test_wrapper_reset_robustness():
 
 
 def test_wrapper_delta_computation():
-    """Verify delta_obs is mathematically s_t - s_{t-1}."""
+    """Verify delta_obs decomposes into local, origin, and goal channels by default."""
     env = UniversalS1Wrapper(gym.make("CartPole-v1"))
     obs0_dict, _ = env.reset()
     s0 = obs0_dict["obs"]
@@ -52,9 +52,17 @@ def test_wrapper_delta_computation():
     s1 = obs1_dict["obs"]
     expected_delta = s1 - s0
 
-    np.testing.assert_allclose(obs1_dict["delta_obs"], expected_delta, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(obs1_dict["local_delta"], expected_delta, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(obs1_dict["origin_delta"], expected_delta, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(obs1_dict["delta_obs"][:4], expected_delta, rtol=1e-5, atol=1e-5)
     assert obs1_dict["prev_action"] == 1
     assert obs1_dict["prev_reward"] == float(r0)
+
+    # Also verify classic 1-channel delta mode when tri_compass=False
+    classic_env = UniversalS1Wrapper(gym.make("CartPole-v1"), tri_compass=False)
+    c_obs0, _ = classic_env.reset()
+    c_obs1, c_r0, _, _, _ = classic_env.step(1)
+    np.testing.assert_allclose(c_obs1["delta_obs"], c_obs1["obs"] - c_obs0["obs"], rtol=1e-5, atol=1e-5)
 
 
 def test_wrapper_continuous_action():
@@ -108,7 +116,7 @@ def test_wrapper_discrete_and_structured_observation_spaces():
     fl_env = UniversalS1Wrapper(gym.make("FrozenLake-v1"))
     assert not fl_env.is_visual
     assert fl_env.observation_space["obs"].shape == (16,)
-    assert fl_env.observation_space["delta_obs"].shape == (16,)
+    assert fl_env.observation_space["delta_obs"].shape == (48,)
 
     obs0, _ = fl_env.reset()
     assert obs0["obs"].shape == (16,)
@@ -119,13 +127,20 @@ def test_wrapper_discrete_and_structured_observation_spaces():
     assert obs1["obs"].shape == (16,)
     # delta_obs is current_obs - prev_obs
     expected_delta = obs1["obs"] - obs0["obs"]
-    np.testing.assert_allclose(obs1["delta_obs"], expected_delta)
+    np.testing.assert_allclose(obs1["local_delta"], expected_delta)
+    np.testing.assert_allclose(obs1["delta_obs"][:16], expected_delta)
     fl_env.close()
+
+    # Classic mode (tri_compass=False)
+    fl_classic = UniversalS1Wrapper(gym.make("FrozenLake-v1"), tri_compass=False)
+    assert fl_classic.observation_space["delta_obs"].shape == (16,)
+    fl_classic.close()
 
     # 2. Tuple observation space (Blackjack-v1: 32 + 11 + 2 = 45)
     bj_env = UniversalS1Wrapper(gym.make("Blackjack-v1"))
     assert not bj_env.is_visual
     assert bj_env.observation_space["obs"].shape == (45,)
+    assert bj_env.observation_space["delta_obs"].shape == (135,)
 
     bj_obs0, _ = bj_env.reset()
     assert bj_obs0["obs"].shape == (45,)
@@ -165,14 +180,14 @@ def test_wrapper_vectorized_environment():
 
     obs0, info = env.reset()
     assert obs0["obs"].shape == (4, 324)
-    assert obs0["delta_obs"].shape == (4, 324)
+    assert obs0["delta_obs"].shape == (4, 972)
     assert obs0["prev_action"].shape == (4,)
     assert obs0["prev_reward"].shape == (4,)
 
     actions = np.array([0, 1, 2, 3], dtype=np.int64)
     obs1, rews, terms, truncs, info = env.step(actions)
     assert obs1["obs"].shape == (4, 324)
-    assert obs1["delta_obs"].shape == (4, 324)
+    assert obs1["delta_obs"].shape == (4, 972)
     assert rews.shape == (4,)
     assert terms.shape == (4,)
     assert truncs.shape == (4,)
@@ -181,7 +196,7 @@ def test_wrapper_vectorized_environment():
 
 def test_wrapper_compass_mode():
     """Verify Bússola compass mode blends local velocity and global origin displacement."""
-    env = UniversalS1Wrapper(gym.make("CartPole-v1"))
+    env = UniversalS1Wrapper(gym.make("CartPole-v1"), tri_compass=False)
     env.compass_mode = True
     env.compass_alpha = 0.5
 

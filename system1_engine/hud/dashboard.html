@@ -366,6 +366,16 @@
       display: flex;
       flex-direction: column;
     }
+    .vessel-scale-ticks::after {
+      content: '';
+      position: absolute;
+      top: 12%;
+      bottom: 12%;
+      right: 0;
+      width: 1px;
+      background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.22) 10%, rgba(255, 255, 255, 0.22) 90%, transparent);
+      pointer-events: none;
+    }
     .vessel-tick {
       position: absolute;
       right: 0;
@@ -635,6 +645,8 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
+      padding-right: clamp(28px, 30cqi, 48px);
+      box-sizing: border-box;
     }
 
     /* ========================================================= */
@@ -895,6 +907,7 @@
       width: 100% !important;
       height: 100% !important;
       padding: 0 !important;
+      padding-right: clamp(18px, 20cqi, 32px) !important;
       box-sizing: border-box !important;
       gap: 0 !important;
     }
@@ -1138,41 +1151,35 @@
                 <span class="vessel-tag-icon">⚡</span>
                 <span class="text-[10px] font-bold text-cyan-200 uppercase tracking-wider mini-hide">Throughput</span>
               </div>
-              <span class="vessel-top-badge bg-cyan-950/80 text-cyan-300 border border-cyan-800">
+              <span class="vessel-top-badge bg-cyan-950/80 text-cyan-300 border border-cyan-800 flex items-center gap-1 font-mono text-[9.5px] px-1.5 py-0.5" title="Progresso do Treino Total">
                 <span id="train-metric-pct">0.0%</span>
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mini-hide" title="Motor ativo"></span>
               </span>
             </div>
-            <div class="vessel-metric-row flex items-baseline justify-center sm:justify-start my-0.5 w-full">
-              <div class="hidden">
-                <span id="train-metric-steps">0</span>
-                <span id="train-metric-total-steps">/ 10M</span>
-              </div>
-              <div class="flex items-baseline gap-1 mx-auto sm:mx-0">
+            <div class="vessel-metric-row flex flex-col justify-center my-auto w-full">
+              <div class="flex items-baseline gap-1">
                 <span id="train-metric-fps" class="text-base sm:text-xl font-black font-mono text-emerald-300">0.0</span>
                 <span class="text-[10px] text-gray-400 font-mono mini-hide">FPS</span>
               </div>
+              <div class="text-[9px] font-mono text-gray-400 mt-0.5 truncate">
+                Passos: <strong id="train-metric-steps-cur-text" class="text-cyan-300 font-semibold">0</strong> <span class="text-gray-500">•</span> <strong id="train-metric-pct-label" class="text-cyan-300 font-bold">0.0%</strong>
+              </div>
             </div>
-            <div class="relative w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-800 my-0.5 mini-hide" title="Progresso Total">
-              <div id="train-metric-progress-bar" class="bg-gradient-to-r from-cyan-600 to-emerald-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
-              <div id="train-metric-steps-avg-marker" class="hidden"></div>
-            </div>
+            <!-- Elementos preservados em container oculto para telemetria JS -->
             <div class="hidden">
+              <span id="train-metric-steps">0</span>
+              <span id="train-metric-total-steps">/ 10M</span>
+              <div id="train-metric-progress-bar"></div>
+              <div id="train-metric-steps-avg-marker"></div>
               <div id="train-metric-fps-bar"></div>
               <div id="train-metric-fps-avg-marker"></div>
               <span id="train-metric-fps-cur-val">0.0</span>
               <span id="train-metric-steps-min-text">0</span>
               <span id="train-metric-steps-max-text">40k</span>
-            </div>
-            <div class="flex flex-col gap-0.5 mt-0.5 font-mono text-[8.5px] mini-hide w-full">
-              <div class="flex items-center justify-between text-gray-300">
-                <span>Passos: <strong id="train-metric-steps-cur-text" class="text-cyan-300 font-semibold">0</strong> (<strong id="train-metric-steps-avg-text" class="text-cyan-400 font-semibold">0</strong>/ep)</span>
-                <span>FPS Méd: <strong id="train-metric-fps-avg-val" class="text-emerald-400 font-semibold">0.0</strong></span>
-              </div>
-              <div class="flex items-center justify-between text-[8px] text-gray-500 pt-0.5 border-t border-gray-800/40">
-                <span>FPS Mín: <strong id="train-metric-fps-min-val" class="text-gray-400 font-normal">0.0</strong></span>
-                <span>FPS Máx: <strong id="train-metric-fps-max-val" class="text-gray-400 font-normal">0.0</strong></span>
-              </div>
+              <strong id="train-metric-steps-avg-text">0</strong>
+              <strong id="train-metric-fps-avg-val">0.0</strong>
+              <strong id="train-metric-fps-min-val">0.0</strong>
+              <strong id="train-metric-fps-max-val">0.0</strong>
             </div>
           </div>
           <!-- Efeito de Vidro Quebrado (Explosão / Colapso) -->
@@ -1240,27 +1247,29 @@
                 <span class="vessel-tag-icon">🎓</span>
                 <span class="text-[10px] font-bold text-amber-200 uppercase tracking-wider mini-hide">Currículo</span>
               </div>
-              <span id="train-metric-depth" class="vessel-top-badge bg-amber-950/80 text-amber-300 border border-amber-800">D1</span>
+              <div class="flex items-center gap-1">
+                <select id="curriculum-level-filter" class="vessel-top-badge bg-amber-950/90 hover:bg-amber-900 text-amber-300 border border-amber-800 text-[9.5px] py-0.5 px-1.5 rounded cursor-pointer outline-none font-mono transition-colors" onchange="onCurriculumLevelFilterChange(this.value)" title="Filtro de Nível Curricular (padrão: Nível Atual)">
+                  <option value="auto">D1 (Atual)</option>
+                </select>
+                <span id="train-metric-depth" class="hidden">D1</span>
+              </div>
             </div>
-            <div class="vessel-metric-row flex items-baseline justify-center sm:justify-start my-0.5 w-full">
-              <div class="flex items-baseline gap-1 mx-auto sm:mx-0">
+            <div class="vessel-metric-row flex flex-col justify-center my-auto w-full">
+              <div class="flex items-baseline gap-1">
                 <span id="train-metric-winrate" class="text-base sm:text-xl font-black font-mono text-amber-300">0.0%</span>
-                <span class="text-[10px] text-gray-500 font-mono mini-hide">Win Rate</span>
+              </div>
+              <div id="train-metric-winrate-sub" class="text-[9px] font-mono text-gray-400 mt-0.5 truncate">
+                Win Rate
               </div>
             </div>
-            <div class="relative w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-800 my-0.5 mini-hide" title="Barra: Win Rate Atual vs Média">
-              <div id="train-metric-winrate-bar" class="bg-gradient-to-r from-amber-600 to-yellow-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
-              <div id="train-metric-winrate-avg-marker" class="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)] z-10 transition-all duration-300" style="left: 0%" title="Média Win Rate"></div>
-            </div>
-            <div class="flex flex-col gap-0.5 mt-0.5 font-mono text-[8.5px] mini-hide w-full">
-              <div class="flex items-center justify-between text-gray-300">
-                <span>Atual: <strong id="train-metric-winrate-cur-val" class="text-amber-300 font-semibold">0.0%</strong></span>
-                <span>Média: <strong id="train-metric-winrate-avg-val" class="text-amber-400 font-semibold">0.0%</strong></span>
-              </div>
-              <div class="flex items-center justify-between text-[8px] text-gray-500 pt-0.5 border-t border-gray-800/40">
-                <span>Mín: <strong id="train-metric-winrate-min-val" class="text-gray-400 font-normal">0.0%</strong></span>
-                <span>Máx: <strong id="train-metric-winrate-max-val" class="text-gray-400 font-normal">0.0%</strong></span>
-              </div>
+            <!-- Elementos preservados em container oculto para telemetria JS -->
+            <div class="hidden">
+              <div id="train-metric-winrate-bar"></div>
+              <div id="train-metric-winrate-avg-marker"></div>
+              <strong id="train-metric-winrate-cur-val">0.0%</strong>
+              <strong id="train-metric-winrate-avg-val">0.0%</strong>
+              <strong id="train-metric-winrate-min-val">0.0%</strong>
+              <strong id="train-metric-winrate-max-val">0.0%</strong>
             </div>
           </div>
           <!-- Efeito de Vidro Quebrado (Explosão / Colapso) -->
@@ -1328,30 +1337,31 @@
                 <span class="vessel-tag-icon">🎯</span>
                 <span class="text-[10px] font-bold text-emerald-200 uppercase tracking-wider mini-hide">Retorno</span>
               </div>
-              <span class="vessel-top-badge bg-emerald-950/80 text-emerald-300 border border-emerald-800" title="Alvo de Retorno">
-                <span>🏁</span> <span id="train-metric-target-ret">12</span>
-                <span id="train-metric-episodes" class="hidden">0 eps</span>
-              </span>
+              <div class="flex items-center gap-1">
+                <span id="train-metric-level-badge-3" class="vessel-top-badge bg-emerald-950/80 text-emerald-300 border border-emerald-800 font-mono text-[9.5px] px-1.5 py-0.5" title="Nível Curricular do Ganho">D1</span>
+                <span class="vessel-top-badge bg-emerald-950/80 text-emerald-300 border border-emerald-800" title="Alvo de Retorno">
+                  <span>🏁</span> <span id="train-metric-target-ret">12</span>
+                </span>
+              </div>
             </div>
-            <div class="vessel-metric-row flex items-baseline justify-center sm:justify-start my-0.5 w-full">
-              <div class="flex items-baseline gap-1 mx-auto sm:mx-0">
+            <div class="vessel-metric-row flex flex-col justify-center my-auto w-full">
+              <div class="flex items-baseline gap-1">
                 <span id="train-metric-return" class="text-base sm:text-xl font-black font-mono text-emerald-300">0.00</span>
                 <span class="text-[10px] text-gray-400 font-mono mini-hide">&mu;20</span>
               </div>
-            </div>
-            <div class="relative w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-800 my-0.5 mini-hide" title="Barra: Retorno Atual vs Média">
-              <div id="train-metric-return-bar" class="bg-gradient-to-r from-emerald-600 to-green-300 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
-              <div id="train-metric-return-avg-marker" class="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)] z-10 transition-all duration-300" style="left: 0%" title="Média Retorno"></div>
-            </div>
-            <div class="flex flex-col gap-0.5 mt-0.5 font-mono text-[8.5px] mini-hide w-full">
-              <div class="flex items-center justify-between text-gray-300">
-                <span>Atual: <strong id="train-metric-return-cur-val" class="text-emerald-300 font-semibold">0.00</strong></span>
-                <span>Média: <strong id="train-metric-return-avg-val" class="text-emerald-400 font-semibold">0.00</strong></span>
+              <div id="train-metric-return-sub" class="text-[9px] font-mono text-gray-400 mt-0.5 truncate">
+                Recompensa Média
               </div>
-              <div class="flex items-center justify-between text-[8px] text-gray-500 pt-0.5 border-t border-gray-800/40">
-                <span>Mín: <strong id="train-metric-return-min-val" class="text-gray-400 font-normal">0.00</strong></span>
-                <span>Máx: <strong id="train-metric-return-max-val" class="text-gray-400 font-normal">0.00</strong></span>
-              </div>
+            </div>
+            <!-- Elementos preservados em container oculto para telemetria JS -->
+            <div class="hidden">
+              <span id="train-metric-episodes">0 eps</span>
+              <div id="train-metric-return-bar"></div>
+              <div id="train-metric-return-avg-marker"></div>
+              <strong id="train-metric-return-cur-val">0.00</strong>
+              <strong id="train-metric-return-avg-val">0.00</strong>
+              <strong id="train-metric-return-min-val">0.00</strong>
+              <strong id="train-metric-return-max-val">0.00</strong>
             </div>
           </div>
           <!-- Efeito de Vidro Quebrado (Explosão / Colapso) -->
@@ -1421,25 +1431,23 @@
               </div>
               <span class="vessel-top-badge bg-purple-950/80 text-purple-300 border border-purple-800">PPO</span>
             </div>
-            <div class="vessel-metric-row flex items-baseline justify-center sm:justify-start my-0.5 w-full">
-              <div class="flex items-baseline gap-1 mx-auto sm:mx-0">
+            <div class="vessel-metric-row flex flex-col justify-center my-auto w-full">
+              <div class="flex items-baseline gap-1">
                 <span id="train-metric-loss" class="text-base sm:text-xl font-black font-mono text-purple-300">0.00</span>
                 <span class="text-[10px] text-gray-400 font-mono mini-hide">&mu;Loss</span>
               </div>
-            </div>
-            <div class="relative w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-800 my-0.5 mini-hide" title="Barra: Perda Atual vs Média">
-              <div id="train-metric-loss-bar" class="bg-gradient-to-r from-purple-600 to-pink-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
-              <div id="train-metric-loss-avg-marker" class="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)] z-10 transition-all duration-300" style="left: 0%" title="Média Loss"></div>
-            </div>
-            <div class="flex flex-col gap-0.5 mt-0.5 font-mono text-[8.5px] mini-hide w-full">
-              <div class="flex items-center justify-between text-gray-300">
-                <span>Atual: <strong id="train-metric-loss-cur-val" class="text-purple-300 font-semibold">0.00</strong></span>
-                <span>Média: <strong id="train-metric-loss-avg-val" class="text-purple-400 font-semibold">0.00</strong></span>
+              <div class="text-[9px] font-mono text-gray-400 mt-0.5 truncate">
+                Perda PPO
               </div>
-              <div class="flex items-center justify-between text-[8px] text-gray-500 pt-0.5 border-t border-gray-800/40">
-                <span>Mín: <strong id="train-metric-loss-min-val" class="text-gray-400 font-normal">0.00</strong></span>
-                <span>Máx: <strong id="train-metric-loss-max-val" class="text-gray-400 font-normal">0.00</strong></span>
-              </div>
+            </div>
+            <!-- Elementos preservados em container oculto para telemetria JS -->
+            <div class="hidden">
+              <div id="train-metric-loss-bar"></div>
+              <div id="train-metric-loss-avg-marker"></div>
+              <strong id="train-metric-loss-cur-val">0.00</strong>
+              <strong id="train-metric-loss-avg-val">0.00</strong>
+              <strong id="train-metric-loss-min-val">0.00</strong>
+              <strong id="train-metric-loss-max-val">0.00</strong>
             </div>
           </div>
           <!-- Efeito de Vidro Quebrado (Explosão / Colapso) -->
@@ -1509,35 +1517,31 @@
               </div>
               <span id="train-metric-calib-badge" class="vessel-top-badge bg-rose-950/80 text-rose-300 border border-rose-800">Auto</span>
             </div>
-            <div class="vessel-metric-row flex items-baseline justify-center sm:justify-start my-0.5 w-full">
-              <div class="flex items-baseline gap-1 mx-auto sm:mx-0">
-                <span id="train-metric-conf" class="text-base sm:text-xl font-black font-mono text-rose-300">--%</span>
-                <span class="text-[9px] text-gray-400 font-mono mini-hide">Conf</span>
+            <div class="vessel-metric-row flex flex-col justify-center my-auto w-full">
+              <div class="flex items-baseline gap-1.5 flex-wrap">
+                <div class="flex items-baseline gap-0.5">
+                  <span id="train-metric-conf" class="text-base sm:text-xl font-black font-mono text-rose-300">--%</span>
+                  <span class="text-[8.5px] text-gray-400 font-mono mini-hide">Conf</span>
+                </div>
+                <div class="flex items-baseline gap-0.5 mini-hide">
+                  <span id="train-metric-calib" class="text-xs sm:text-sm font-bold font-mono text-pink-300">0.00</span>
+                  <span class="text-[8.5px] text-gray-400 font-mono">Cal</span>
+                </div>
               </div>
-              <div class="flex items-baseline gap-1 mini-hide">
-                <span id="train-metric-calib" class="text-base sm:text-xl font-black font-mono text-pink-300">0.00</span>
-                <span class="text-[9px] text-gray-400 font-mono mini-hide">Calib</span>
+              <div class="text-[9px] font-mono text-gray-400 mt-0.5 truncate">
+                Confiança / Calibração
               </div>
             </div>
-            <div class="relative w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-800 my-0.5 mini-hide" title="Barra: Confiança Atual vs Média">
-              <div id="train-metric-conf-bar" class="bg-gradient-to-r from-rose-600 to-pink-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
-              <div id="train-metric-conf-avg-marker" class="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)] z-10 transition-all duration-300" style="left: 0%" title="Média Confiança"></div>
-            </div>
+            <!-- Elementos preservados em container oculto para telemetria JS -->
             <div class="hidden">
+              <div id="train-metric-conf-bar"></div>
+              <div id="train-metric-conf-avg-marker"></div>
+              <strong id="train-metric-conf-avg-val">--%</strong>
+              <strong id="train-metric-calib-avg-val">0.00</strong>
+              <strong id="train-metric-conf-cur-val">--%</strong>
+              <strong id="train-metric-calib-cur-val">0.00</strong>
               <div id="train-metric-calib-bar"></div>
               <div id="train-metric-calib-avg-marker"></div>
-            </div>
-            <div class="flex flex-col gap-0.5 mt-0.5 font-mono text-[8.5px] mini-hide w-full">
-              <div class="flex items-center justify-between text-gray-300">
-                <span>Conf Méd: <strong id="train-metric-conf-avg-val" class="text-rose-400 font-semibold">--%</strong></span>
-                <span>Calib Méd: <strong id="train-metric-calib-avg-val" class="text-pink-400 font-semibold">0.00</strong></span>
-              </div>
-              <div class="flex items-center justify-between text-[8px] text-gray-400 pt-0.5 border-t border-gray-800/40">
-                <span>Conf: <strong id="train-metric-conf-cur-val" class="text-rose-300 font-normal">--%</strong></span>
-                <span>Calib: <strong id="train-metric-calib-cur-val" class="text-pink-300 font-normal">0.00</strong></span>
-              </div>
-            </div>
-            <div class="hidden">
               <span id="train-metric-sil">0</span>
               <div id="train-metric-sil-bar"></div>
               <div id="train-metric-sil-avg-marker"></div>
@@ -1614,25 +1618,23 @@
               </div>
               <span id="train-metric-dpo-badge" class="vessel-top-badge bg-indigo-950/80 text-indigo-300 border border-indigo-800">c-SIL</span>
             </div>
-            <div class="vessel-metric-row flex items-baseline justify-center sm:justify-start my-0.5 w-full">
-              <div class="flex items-baseline gap-1 mx-auto sm:mx-0">
+            <div class="vessel-metric-row flex flex-col justify-center my-auto w-full">
+              <div class="flex items-baseline gap-1">
                 <span id="train-metric-dpo-loss" class="text-base sm:text-xl font-black font-mono text-indigo-300">0.00</span>
                 <span class="text-[10px] text-gray-400 font-mono mini-hide">&mu;DPO</span>
               </div>
-            </div>
-            <div class="relative w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-800 my-0.5 mini-hide" title="Barra: Perda DPO Atual vs Média">
-              <div id="train-metric-dpo-bar" class="bg-gradient-to-r from-indigo-600 to-cyan-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
-              <div id="train-metric-dpo-avg-marker" class="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)] z-10 transition-all duration-300" style="left: 0%" title="Média DPO Loss"></div>
-            </div>
-            <div class="flex flex-col gap-0.5 mt-0.5 font-mono text-[8.5px] mini-hide w-full">
-              <div class="flex items-center justify-between text-gray-300">
-                <span>Atual: <strong id="train-metric-dpo-cur-val" class="text-indigo-300 font-semibold">0.00</strong></span>
-                <span>Média: <strong id="train-metric-dpo-avg-val" class="text-indigo-400 font-semibold">0.00</strong></span>
+              <div class="text-[9px] font-mono text-gray-400 mt-0.5 truncate">
+                Perda Contrastiva
               </div>
-              <div class="flex items-center justify-between text-[8px] text-gray-500 pt-0.5 border-t border-gray-800/40">
-                <span>Mín: <strong id="train-metric-dpo-min-val" class="text-gray-400 font-normal">0.00</strong></span>
-                <span>Máx: <strong id="train-metric-dpo-max-val" class="text-gray-400 font-normal">0.00</strong></span>
-              </div>
+            </div>
+            <!-- Elementos preservados em container oculto para telemetria JS -->
+            <div class="hidden">
+              <div id="train-metric-dpo-bar"></div>
+              <div id="train-metric-dpo-avg-marker"></div>
+              <strong id="train-metric-dpo-cur-val">0.00</strong>
+              <strong id="train-metric-dpo-avg-val">0.00</strong>
+              <strong id="train-metric-dpo-min-val">0.00</strong>
+              <strong id="train-metric-dpo-max-val">0.00</strong>
             </div>
           </div>
           <!-- Efeito de Vidro Quebrado (Explosão / Colapso) -->
@@ -2428,7 +2430,7 @@
               <div class="flex justify-between items-center text-[10px] text-gray-400 font-semibold px-0.5">
                 <span class="flex items-center gap-1"><span class="text-violet-400">⚖️</span> Contrastive Online DPO-SIL</span>
                 <label class="flex items-center gap-1.5 cursor-pointer select-none">
-                  <input type="checkbox" id="cfg-dpo" checked class="accent-violet-500 rounded cursor-pointer" />
+                  <input type="checkbox" id="cfg-dpo" class="accent-violet-500 rounded cursor-pointer" />
                   <span class="text-[10px] text-violet-300 font-semibold">Ativo</span>
                 </label>
               </div>
@@ -2437,7 +2439,7 @@
                   <div class="flex items-center gap-1 mb-0.5">
                     <span class="text-[10px] text-gray-400 block">Coeficiente DPO</span>
                   </div>
-                  <input type="number" id="cfg-dpo-coef" value="0.05" step="0.01" min="0.01" max="0.5" class="hud-input text-center" />
+                  <input type="number" id="cfg-dpo-coef" value="0.00" step="0.01" min="0.00" max="0.5" class="hud-input text-center" />
                 </div>
                 <div>
                   <div class="flex items-center gap-1 mb-0.5">
@@ -2807,8 +2809,283 @@
       }, 1000);
     }
 
-    // Sincroniza feed no carregamento inicial
+    // =========================================================
+    // GESTÃO DE MÉTRICAS DO TREINO TOTAL (PERSISTÊNCIA & MIN/MAX)
+    // Os valores refletem o treino total e persistem através de refresh (Cmd+R / F5)
+    // =========================================================
+    const _defaultTotalMetrics = {
+      maxFps: null,
+      minFps: null,
+      maxLoss: null,
+      minLoss: null,
+      maxConf: null,
+      minConf: null,
+      maxDpo: null,
+      minDpo: null,
+      lastLevel: null,
+      byLevel: {}
+    };
+
+    let _activeStorageKey = 'system1_total_train_metrics_active';
+    let _totalTrainMetrics = loadTotalTrainMetrics(_activeStorageKey);
+    let _selectedCurriculumLevel = 'auto';
+
+    function getStorageKeyForRun(env, saveModel) {
+      const e = (env || 'RubiksCube-v0').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const m = (saveModel || 'active').replace(/[^a-zA-Z0-9_-]/g, '_');
+      return `system1_total_train_metrics_${e}_${m}`;
+    }
+
+    function loadTotalTrainMetrics(storageKey) {
+      try {
+        let raw = null;
+        if (storageKey) raw = localStorage.getItem(storageKey);
+        if (!raw) raw = localStorage.getItem('system1_total_train_metrics_active');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const res = { ..._defaultTotalMetrics, ...parsed };
+          if (!res.byLevel || typeof res.byLevel !== 'object') res.byLevel = {};
+          return res;
+        }
+      } catch (e) {
+        console.warn('Falha ao carregar métricas persistidas do treino:', e);
+      }
+      return { ..._defaultTotalMetrics, byLevel: {} };
+    }
+
+    let _lastTotalSaveTs = 0;
+    function saveTotalTrainMetrics(storageKey, metrics, force = false) {
+      const now = Date.now();
+      if (!force && now - _lastTotalSaveTs < 1200) return;
+      _lastTotalSaveTs = now;
+      try {
+        const serialized = JSON.stringify(metrics);
+        if (storageKey) localStorage.setItem(storageKey, serialized);
+        localStorage.setItem('system1_total_train_metrics_active', serialized);
+      } catch (e) {
+        console.warn('Falha ao persistir métricas do treino:', e);
+      }
+    }
+
+    function getLevelMetrics(levelKey) {
+      if (!_totalTrainMetrics) _totalTrainMetrics = { ..._defaultTotalMetrics };
+      if (!_totalTrainMetrics.byLevel) _totalTrainMetrics.byLevel = {};
+      const key = levelKey || getEffectiveCurriculumLevel();
+      if (!_totalTrainMetrics.byLevel[key]) {
+        _totalTrainMetrics.byLevel[key] = {
+          minWinRate: null,
+          maxWinRate: null,
+          curWinRate: null,
+          minReturn: null,
+          maxReturn: null,
+          curReturn: null,
+          targetReturn: null
+        };
+      }
+      const lm = _totalTrainMetrics.byLevel[key];
+      // Sanitização de anomalias: em níveis combinatórios (D5+), MAX em 100% decorre de janela com 1 amostra inicial
+      const depthNum = parseInt((key || 'D1').replace(/\D/g, ''), 10) || 1;
+      if (depthNum >= 5) {
+        if (lm.curWinRate !== null && lm.curWinRate >= 95.0) {
+          lm.curWinRate = null;
+        }
+        if (lm.maxWinRate !== null && lm.maxWinRate >= 95.0) {
+          lm.maxWinRate = (lm.curWinRate !== null && lm.curWinRate < 95.0) ? lm.curWinRate : null;
+        }
+      }
+      return lm;
+    }
+
+    function getEffectiveCurriculumLevel() {
+      if (_selectedCurriculumLevel && _selectedCurriculumLevel !== 'auto') {
+        return _selectedCurriculumLevel;
+      }
+      return _trainMetricsState.activeCurriculumLevel || _totalTrainMetrics.lastLevel || 'D10';
+    }
+
+    function onCurriculumLevelFilterChange(val) {
+      _selectedCurriculumLevel = val;
+      renderImmediateRulerMetrics();
+      updateFilteredLevelDisplay();
+    }
+
+    function syncCurriculumFilterOptions(currentDepth) {
+      const select = document.getElementById('curriculum-level-filter');
+      if (!select) return;
+      const d = Math.max(1, parseInt(currentDepth, 10) || 1);
+      const currVal = _selectedCurriculumLevel;
+      
+      const neededOptions = ['auto'];
+      for (let i = d; i >= 1; i--) {
+        neededOptions.push(`D${i}`);
+      }
+
+      const existingOptions = Array.from(select.options).map(o => o.value);
+      const needsRebuild = existingOptions.length !== neededOptions.length || !existingOptions.every((v, idx) => v === neededOptions[idx]);
+
+      if (needsRebuild) {
+        select.innerHTML = '';
+        const optAuto = document.createElement('option');
+        optAuto.value = 'auto';
+        optAuto.innerText = `D${d} (Atual)`;
+        select.appendChild(optAuto);
+
+        for (let i = d; i >= 1; i--) {
+          const opt = document.createElement('option');
+          opt.value = `D${i}`;
+          opt.innerText = (i === d) ? `D${i} (Ativo)` : `D${i}`;
+          select.appendChild(opt);
+        }
+        if (neededOptions.includes(currVal)) {
+          select.value = currVal;
+        } else {
+          select.value = 'auto';
+        }
+      } else {
+        if (select.options[0]) {
+          select.options[0].innerText = `D${d} (Atual)`;
+        }
+      }
+    }
+
+    function updateFilteredLevelDisplay() {
+      const effLevel = getEffectiveCurriculumLevel();
+      const effLm = getLevelMetrics(effLevel);
+      const isCurrent = (_selectedCurriculumLevel === 'auto' || _selectedCurriculumLevel === (_trainMetricsState.activeCurriculumLevel || 'D10'));
+
+      const b3 = document.getElementById('train-metric-level-badge-3');
+      if (b3) {
+        b3.innerText = effLevel;
+        b3.title = isCurrent ? `Nível Atual (${effLevel})` : `Nível Filtrado (${effLevel})`;
+      }
+
+      const sub2 = document.getElementById('train-metric-winrate-sub');
+      if (sub2) sub2.innerText = `Win Rate (${effLevel})`;
+      const sub3 = document.getElementById('train-metric-return-sub');
+      if (sub3) sub3.innerText = `Ganho Médio (${effLevel})`;
+
+      if (!isCurrent) {
+        const wrEl = document.getElementById('train-metric-winrate');
+        if (wrEl) {
+          const wr = (effLm.curWinRate !== null) ? effLm.curWinRate : (effLm.maxWinRate !== null ? effLm.maxWinRate : 0);
+          wrEl.innerText = `${wr.toFixed(1)}%`;
+        }
+
+        const retEl = document.getElementById('train-metric-return');
+        if (retEl) {
+          const ret = (effLm.curReturn !== null) ? effLm.curReturn : (effLm.maxReturn !== null ? effLm.maxReturn : 0);
+          retEl.innerText = `${ret >= 0 ? '+' : ''}${ret.toFixed(2)}`;
+        }
+
+        const vLiq2 = document.getElementById('vessel-liquid-2');
+        if (vLiq2) {
+          const wr = (effLm.curWinRate !== null) ? effLm.curWinRate : (effLm.maxWinRate || 0);
+          vLiq2.style.height = `${Math.max(6, Math.min(100, wr))}%`;
+        }
+
+        const vLiq3 = document.getElementById('vessel-liquid-3');
+        if (vLiq3) {
+          const ret = (effLm.curReturn !== null) ? effLm.curReturn : (effLm.maxReturn || 0);
+          const cap = Math.max(12, effLm.targetReturn || 12, effLm.maxReturn || 12);
+          vLiq3.style.height = `${Math.max(6, Math.min(100, (Math.max(0, ret) / cap) * 100))}%`;
+        }
+      }
+    }
+
+    function renderImmediateRulerMetrics() {
+      try {
+        const m = _totalTrainMetrics;
+        const effLevel = getEffectiveCurriculumLevel();
+        const lm = getLevelMetrics(effLevel);
+
+        // Card 1: Throughput (FPS) - Treino Total
+        if (m.maxFps !== null) {
+          const el = document.getElementById('vessel-val-max-1');
+          if (el) el.innerText = m.maxFps >= 1000 ? (m.maxFps / 1000).toFixed(1) + 'k' : m.maxFps.toFixed(0);
+        }
+        if (m.minFps !== null) {
+          const el = document.getElementById('vessel-val-min-1');
+          if (el) el.innerText = m.minFps >= 1000 ? (m.minFps / 1000).toFixed(1) + 'k' : m.minFps.toFixed(0);
+        }
+
+        // Card 2: Currículo / Win Rate - Filtrado por Nível
+        const effDepthNum = parseInt((effLevel || 'D1').replace(/\D/g, ''), 10) || 1;
+        let safeMaxWr = lm.maxWinRate;
+        if (effDepthNum >= 5 && safeMaxWr !== null && safeMaxWr >= 95.0) {
+          safeMaxWr = (lm.curWinRate !== null && lm.curWinRate < 95.0) ? lm.curWinRate : null;
+          lm.maxWinRate = safeMaxWr;
+        }
+
+        if (safeMaxWr !== null) {
+          const el = document.getElementById('vessel-val-max-2');
+          if (el) el.innerText = `${safeMaxWr.toFixed(1)}%`;
+        }
+        if (lm.minWinRate !== null) {
+          const el = document.getElementById('vessel-val-min-2');
+          if (el) el.innerText = `${lm.minWinRate.toFixed(1)}%`;
+        }
+        const tMax2 = document.getElementById('vessel-tick-max-2');
+        if (tMax2 && safeMaxWr !== null) tMax2.title = `Máx (${effLevel}): ${safeMaxWr.toFixed(1)}%`;
+        const tMin2 = document.getElementById('vessel-tick-min-2');
+        if (tMin2 && lm.minWinRate !== null) tMin2.title = `Mín (${effLevel}): ${lm.minWinRate.toFixed(1)}%`;
+
+        // Card 3: Ganho / Retorno - Filtrado por Nível
+        if (lm.maxReturn !== null) {
+          const el = document.getElementById('vessel-val-max-3');
+          if (el) el.innerText = `${lm.maxReturn >= 0 ? '+' : ''}${lm.maxReturn.toFixed(1)}`;
+        }
+        if (lm.minReturn !== null) {
+          const el = document.getElementById('vessel-val-min-3');
+          if (el) el.innerText = `${lm.minReturn >= 0 ? '+' : ''}${lm.minReturn.toFixed(1)}`;
+        }
+        const tMax3 = document.getElementById('vessel-tick-max-3');
+        if (tMax3 && lm.maxReturn !== null) tMax3.title = `Máx (${effLevel}): ${lm.maxReturn >= 0 ? '+' : ''}${lm.maxReturn.toFixed(2)}`;
+        const tMin3 = document.getElementById('vessel-tick-min-3');
+        if (tMin3 && lm.minReturn !== null) tMin3.title = `Mín (${effLevel}): ${lm.minReturn >= 0 ? '+' : ''}${lm.minReturn.toFixed(2)}`;
+
+        // Card 4: Loss (PPO) - Treino Total
+        if (m.maxLoss !== null) {
+          const el = document.getElementById('vessel-val-max-4');
+          if (el) el.innerText = m.maxLoss.toFixed(2);
+        }
+        if (m.minLoss !== null) {
+          const el = document.getElementById('vessel-val-min-4');
+          if (el) el.innerText = m.minLoss.toFixed(2);
+        }
+
+        // Card 5: Confiança & Calibração - Treino Total
+        if (m.maxConf !== null) {
+          const el = document.getElementById('vessel-val-max-5');
+          if (el) el.innerText = `${m.maxConf.toFixed(1)}%`;
+        }
+        if (m.minConf !== null) {
+          const el = document.getElementById('vessel-val-min-5');
+          if (el) el.innerText = `${m.minConf.toFixed(1)}%`;
+        }
+
+        // Card 6: DPO - Treino Total
+        if (m.maxDpo !== null) {
+          const el = document.getElementById('vessel-val-max-6');
+          if (el) el.innerText = m.maxDpo.toFixed(2);
+        }
+        if (m.minDpo !== null) {
+          const el = document.getElementById('vessel-val-min-6');
+          if (el) el.innerText = m.minDpo.toFixed(2);
+        }
+
+        // Badges e rótulos de nível
+        const b3 = document.getElementById('train-metric-level-badge-3');
+        if (b3) b3.innerText = effLevel;
+        const sub2 = document.getElementById('train-metric-winrate-sub');
+        if (sub2) sub2.innerText = `Win Rate (${effLevel})`;
+        const sub3 = document.getElementById('train-metric-return-sub');
+        if (sub3) sub3.innerText = `Ganho Médio (${effLevel})`;
+      } catch (err) {}
+    }
+
+    // Sincroniza feed e régua no carregamento inicial
     window.addEventListener('DOMContentLoaded', () => {
+      renderImmediateRulerMetrics();
       refreshVideoFeed(true);
     });
 
@@ -3778,6 +4055,24 @@
         elemLabel.innerText = 'Passos';
       }
 
+      if (mode === 'train') {
+        const triBox = document.getElementById('cfg-tri-compass');
+        if (triBox) {
+          triBox.checked = true;
+          onTriCompassToggle(true);
+        }
+      } else if (mode === 'run') {
+        const loadVal = document.getElementById('cfg-load')?.value;
+        const item = availableCheckpointsDetailed.find(c => c.path === loadVal);
+        if (item && item.tri_compass !== undefined) {
+          const triBox = document.getElementById('cfg-tri-compass');
+          if (triBox) {
+            triBox.checked = Boolean(item.tri_compass);
+            onTriCompassToggle(triBox.checked);
+          }
+        }
+      }
+
       suggestCheckpointName();
       validateCheckpointCompatibility();
     }
@@ -4105,8 +4400,13 @@
         if (item.tri_compass !== undefined) {
           const triBox = document.getElementById('cfg-tri-compass');
           if (triBox) {
-            triBox.checked = Boolean(item.tri_compass);
-            onTriCompassToggle(triBox.checked);
+            if (activeMode === 'run') {
+              triBox.checked = Boolean(item.tri_compass);
+              onTriCompassToggle(triBox.checked);
+            } else {
+              triBox.checked = true;
+              onTriCompassToggle(true);
+            }
           }
         }
         if (item.trunk_type) {
@@ -4558,6 +4858,8 @@
       if (trainSteps) trainSteps.innerText = '0';
       const trainPct = document.getElementById('train-metric-pct');
       if (trainPct) trainPct.innerText = '0.0%';
+      const trainPctLbl = document.getElementById('train-metric-pct-label');
+      if (trainPctLbl) trainPctLbl.innerText = '0.0%';
       const trainBar = document.getElementById('train-metric-progress-bar');
       if (trainBar) trainBar.style.width = '0%';
       const trainStepsMarker = document.getElementById('train-metric-steps-avg-marker');
@@ -4702,17 +5004,8 @@
       const trainDpoMaxVal = document.getElementById('train-metric-dpo-max-val');
       if (trainDpoMaxVal) trainDpoMaxVal.innerText = '0.00';
 
-      // Reset das marcações sutis de Mín/Máx nos recipientes de fluido (1 a 6)
-      for (let i = 1; i <= 6; i++) {
-        const valMax = document.getElementById(`vessel-val-max-${i}`);
-        if (valMax) valMax.innerText = (i === 2 || i === 5) ? '0%' : ((i === 4 || i === 6) ? '0.00' : '0.0');
-        const valMin = document.getElementById(`vessel-val-min-${i}`);
-        if (valMin) valMin.innerText = (i === 2 || i === 5) ? '0%' : ((i === 4 || i === 6) ? '0.00' : '0.0');
-        const tMax = document.getElementById(`vessel-tick-max-${i}`);
-        if (tMax) tMax.title = 'Máx atingido: 0';
-        const tMin = document.getElementById(`vessel-tick-min-${i}`);
-        if (tMin) tMin.title = 'Mín atingido: 0';
-      }
+      // Preserva e re-renderiza as marcações de Mín/Máx do Treino Total nos recipientes de fluido
+      renderImmediateRulerMetrics();
 
       // Reset dos cards dedicados do Foco Avaliação
       const evalCurScore = document.getElementById('eval-current-score');
@@ -5308,6 +5601,8 @@
           // 1. Passos PPO
           const trainPct = document.getElementById('train-metric-pct');
           if (trainPct) trainPct.innerText = isMini ? `${Math.round(pct)}%` : `${pct.toFixed(1)}%`;
+          const trainPctLbl = document.getElementById('train-metric-pct-label');
+          if (trainPctLbl) trainPctLbl.innerText = isMini ? `${Math.round(pct)}%` : `${pct.toFixed(1)}%`;
 
           const trainSteps = document.getElementById('train-metric-steps');
           if (trainSteps) trainSteps.innerText = isMini ? formatCompactNumber(curSteps) : curSteps.toLocaleString();
@@ -5343,8 +5638,46 @@
           }
 
           // =========================================================
+          // Sincronização e Persistência do Treino Total (All-Time)
+          // =========================================================
+          const runEnv = (runCfg && runCfg.env) || (telemetry && telemetry.env) || document.getElementById('cfg-env')?.value || 'RubiksCube-v0';
+          const runSave = (runCfg && runCfg.save) || document.getElementById('cfg-save')?.value?.trim() || 'active';
+          const currentStorageKey = getStorageKeyForRun(runEnv, runSave);
+          if (currentStorageKey !== _activeStorageKey) {
+            _activeStorageKey = currentStorageKey;
+            _totalTrainMetrics = loadTotalTrainMetrics(_activeStorageKey);
+          }
+
+          // Sincroniza o dropdown do filtro por nível
+          const rawDepthForFilter = (telemetry.curriculum_depth !== undefined && telemetry.curriculum_depth !== null) ? Number(telemetry.curriculum_depth) : 1;
+          syncCurriculumFilterOptions(rawDepthForFilter);
+
+          // Seed com métricas históricas de níveis já conquistados no patamar de treino (isolados por nível!)
+          if (telemetry.curriculum_promotions !== undefined && Number(telemetry.curriculum_promotions) > 0) {
+            const numPromos = Number(telemetry.curriculum_promotions);
+            const currentD = (telemetry.curriculum_depth !== undefined && telemetry.curriculum_depth !== null)
+              ? Number(telemetry.curriculum_depth) : (numPromos + 1);
+            const maxPast = currentD - 1; // Apenas patamares anteriores ao atual
+            for (let i = 1; i <= Math.min(numPromos, maxPast); i++) {
+              const k = `D${i}`;
+              if (!_totalTrainMetrics.byLevel) _totalTrainMetrics.byLevel = {};
+              if (!_totalTrainMetrics.byLevel[k]) {
+                const targetWr = (i <= 4) ? 85.0 : (i <= 6) ? 75.0 : (i <= 8) ? 65.0 : (i <= 10) ? 50.0 : 35.0;
+                _totalTrainMetrics.byLevel[k] = {
+                  minWinRate: 0.0,
+                  maxWinRate: targetWr,
+                  curWinRate: targetWr,
+                  minReturn: 0.0,
+                  maxReturn: (i === 1 && telemetry.best_return) ? Number(telemetry.best_return) : (10.0 + (10 - i)),
+                  curReturn: 10.0,
+                  targetReturn: 10.0 + (i * 0.5)
+                };
+              }
+            }
+          }
+
+          // =========================================================
           // Rastreamento por Nível Curricular (D1, D3, D6 ...)
-          // "Novo nível, novas marcações. Exibindo somente o nível atual"
           // =========================================================
           const rawDepth = (telemetry.curriculum_depth !== undefined && telemetry.curriculum_depth !== null)
             ? telemetry.curriculum_depth
@@ -5369,40 +5702,26 @@
               _trainMetricsState.levelMetrics[currentLevelKey] = createFreshLevelMetrics();
             }
           } else if (isNewCurriculumLevel) {
-            // Salva as métricas do patamar anterior
+            // Salva as métricas do patamar anterior em cache
             _trainMetricsState.levelMetrics[_trainMetricsState.activeCurriculumLevel] = {
-              minFps: _trainMetricsState.minObservedFps,
-              maxFps: _trainMetricsState.maxObservedFps,
-              minWinRate: _trainMetricsState.minObservedWinRate,
-              maxWinRate: _trainMetricsState.maxObservedWinRate,
-              minReturn: _trainMetricsState.minObservedReturn,
-              maxReturn: _trainMetricsState.maxObservedReturn,
-              minLoss: _trainMetricsState.minObservedLoss,
-              maxLoss: _trainMetricsState.maxObservedLoss,
-              minConf: _trainMetricsState.trainMinConf,
-              maxConf: _trainMetricsState.trainMaxConf,
-              minDpo: _trainMetricsState.minObservedDpo,
-              maxDpo: _trainMetricsState.maxObservedDpo
+              minFps: _totalTrainMetrics.minFps,
+              maxFps: _totalTrainMetrics.maxFps,
+              minWinRate: _totalTrainMetrics.minWinRate,
+              maxWinRate: _totalTrainMetrics.maxWinRate,
+              minReturn: _totalTrainMetrics.minReturn,
+              maxReturn: _totalTrainMetrics.maxReturn,
+              minLoss: _totalTrainMetrics.minLoss,
+              maxLoss: _totalTrainMetrics.maxLoss,
+              minConf: _totalTrainMetrics.minConf,
+              maxConf: _totalTrainMetrics.maxConf,
+              minDpo: _totalTrainMetrics.minDpo,
+              maxDpo: _totalTrainMetrics.maxDpo
             };
 
-            // Novo patamar/dimensão curricular: reset estrito de todos os contadores para a dimensão atual
+            // Novo patamar/dimensão curricular (as métricas do Treino Total permanecem acumuladas e persistentes!)
             _trainMetricsState.activeCurriculumLevel = currentLevelKey;
             _trainMetricsState.activeCurriculumDepth = rawDepth;
             _trainMetricsState.activeCurriculumPromotions = rawPromos;
-
-            // Limpa registros do patamar ativo para iniciar do zero na dimensão atual
-            _trainMetricsState.minObservedFps = null;
-            _trainMetricsState.maxObservedFps = null;
-            _trainMetricsState.minObservedWinRate = null;
-            _trainMetricsState.maxObservedWinRate = null;
-            _trainMetricsState.minObservedReturn = null;
-            _trainMetricsState.maxObservedReturn = null;
-            _trainMetricsState.minObservedLoss = null;
-            _trainMetricsState.maxObservedLoss = null;
-            _trainMetricsState.trainMinConf = null;
-            _trainMetricsState.trainMaxConf = null;
-            _trainMetricsState.minObservedDpo = null;
-            _trainMetricsState.maxObservedDpo = null;
 
             // Históricos para médias móveis do novo nível
             _trainMetricsState.fpsHistory = [];
@@ -5429,8 +5748,12 @@
               _trainMetricsState.maxObservedFps = curFps;
             }
           }
+          if (curFps > 10.0) {
+            if (_totalTrainMetrics.maxFps === null || curFps > _totalTrainMetrics.maxFps) _totalTrainMetrics.maxFps = curFps;
+            if (_totalTrainMetrics.minFps === null || curFps < _totalTrainMetrics.minFps) _totalTrainMetrics.minFps = curFps;
+          }
           const avgFps = _trainMetricsState.fpsHistory.length ? (_trainMetricsState.fpsHistory.reduce((a, b) => a + b, 0) / _trainMetricsState.fpsHistory.length) : curFps;
-          const maxFpsRef = Math.max(_trainMetricsState.maxObservedFps || 0, curFps, avgFps, 100);
+          const maxFpsRef = Math.max(_totalTrainMetrics.maxFps || 0, curFps, avgFps, 100);
           const fpsCurPct = Math.min(100, Math.max(0, (curFps / maxFpsRef) * 100));
           const fpsAvgPct = Math.min(100, Math.max(0, (avgFps / maxFpsRef) * 100));
 
@@ -5445,15 +5768,15 @@
           if (trainFpsAvgVal) trainFpsAvgVal.innerText = avgFps >= 1000 ? (avgFps / 1000).toFixed(1) + 'k' : avgFps.toFixed(0);
           const trainFpsMinVal = document.getElementById('train-metric-fps-min-val');
           if (trainFpsMinVal) {
-            const minFps = _trainMetricsState.minObservedFps !== null ? _trainMetricsState.minObservedFps : curFps;
+            const minFps = _totalTrainMetrics.minFps !== null ? _totalTrainMetrics.minFps : curFps;
             trainFpsMinVal.innerText = minFps >= 1000 ? (minFps / 1000).toFixed(1) + 'k' : minFps.toFixed(0);
-            trainFpsMinVal.title = `Mínimo (${currentLevelKey})`;
+            trainFpsMinVal.title = `Mínimo (Treino Total)`;
           }
           const trainFpsMaxVal = document.getElementById('train-metric-fps-max-val');
           if (trainFpsMaxVal) {
-            const maxFps = _trainMetricsState.maxObservedFps !== null ? _trainMetricsState.maxObservedFps : curFps;
+            const maxFps = _totalTrainMetrics.maxFps !== null ? _totalTrainMetrics.maxFps : curFps;
             trainFpsMaxVal.innerText = maxFps >= 1000 ? (maxFps / 1000).toFixed(1) + 'k' : maxFps.toFixed(0);
-            trainFpsMaxVal.title = `Máximo (${currentLevelKey})`;
+            trainFpsMaxVal.title = `Máximo (Treino Total)`;
           }
 
           // 3. Currículo S1 & Win Rate
@@ -5484,24 +5807,36 @@
           _trainMetricsState.winRateHistory.push(curWinRate);
           if (_trainMetricsState.winRateHistory.length > 60) _trainMetricsState.winRateHistory.shift();
 
-          // Mínimo observado no patamar atual
-          if (_trainMetricsState.minObservedWinRate === null || curWinRate < _trainMetricsState.minObservedWinRate) {
-            _trainMetricsState.minObservedWinRate = curWinRate;
+          // Mínimo e Máximo observados no nível atual (isolamento por nível)
+          const curLevelLm = getLevelMetrics(currentLevelKey);
+          curLevelLm.curWinRate = curWinRate;
+          const currentDepthNum = parseInt((currentLevelKey || 'D1').replace(/\D/g, ''), 10) || 1;
+
+          if (curWinRate > 0) {
+            if (curLevelLm.minWinRate === null || curWinRate < curLevelLm.minWinRate) curLevelLm.minWinRate = curWinRate;
+            if (curLevelLm.maxWinRate === null || curWinRate > curLevelLm.maxWinRate) {
+              if (currentDepthNum < 5 || curWinRate < 95.0) {
+                curLevelLm.maxWinRate = curWinRate;
+              }
+            }
+          } else {
+            if (curLevelLm.minWinRate === null) curLevelLm.minWinRate = 0.0;
+            if (curLevelLm.maxWinRate === null) curLevelLm.maxWinRate = 0.0;
           }
 
           // Máximo observado no patamar atual:
-          // Se o backend enviar curriculum_depth_best_success_rate, aceitamos apenas se for coerente com o nível ativo
-          // (evitando que o falso 100% gerado por 1 único episódio resolvido no início mascare o teto real da dimensão)
           let candMaxWr = curWinRate;
           if (telemetry.curriculum_depth_best_success_rate !== undefined && telemetry.curriculum_depth_best_success_rate !== null) {
             const backendMaxWr = Number(telemetry.curriculum_depth_best_success_rate) * 100;
-            if (backendMaxWr < 99.9 || curWinRate >= 80.0) {
+            if (currentDepthNum < 5 || backendMaxWr < 90.0 || curWinRate >= 80.0) {
               candMaxWr = Math.max(candMaxWr, backendMaxWr);
             }
           }
 
-          if (_trainMetricsState.maxObservedWinRate === null || candMaxWr > _trainMetricsState.maxObservedWinRate) {
-            _trainMetricsState.maxObservedWinRate = candMaxWr;
+          if (candMaxWr > (curLevelLm.maxWinRate || 0)) {
+            if (currentDepthNum < 5 || candMaxWr < 95.0 || curWinRate >= 80.0) {
+              curLevelLm.maxWinRate = candMaxWr;
+            }
           }
 
           const avgWinRate = _trainMetricsState.winRateHistory.length ? (_trainMetricsState.winRateHistory.reduce((a, b) => a + b, 0) / _trainMetricsState.winRateHistory.length) : curWinRate;
@@ -5517,13 +5852,13 @@
           if (trainWinRateAvgVal) trainWinRateAvgVal.innerText = `${avgWinRate.toFixed(1)}%`;
           const trainWinRateMinVal = document.getElementById('train-metric-winrate-min-val');
           if (trainWinRateMinVal) {
-            const minWr = _trainMetricsState.minObservedWinRate !== null ? _trainMetricsState.minObservedWinRate : curWinRate;
+            const minWr = curLevelLm.minWinRate !== null ? curLevelLm.minWinRate : curWinRate;
             trainWinRateMinVal.innerText = `${minWr.toFixed(1)}%`;
             trainWinRateMinVal.title = `Mínimo (${currentLevelKey})`;
           }
           const trainWinRateMaxVal = document.getElementById('train-metric-winrate-max-val');
           if (trainWinRateMaxVal) {
-            const maxWr = _trainMetricsState.maxObservedWinRate !== null ? _trainMetricsState.maxObservedWinRate : curWinRate;
+            const maxWr = curLevelLm.maxWinRate !== null ? curLevelLm.maxWinRate : curWinRate;
             trainWinRateMaxVal.innerText = `${maxWr.toFixed(1)}%`;
             trainWinRateMaxVal.title = `Máximo (${currentLevelKey})`;
           }
@@ -5535,21 +5870,24 @@
             trainPeak.innerText = `D${currD} (${curP})`;
           }
 
-          // 4. Recompensa / Retorno
+          // 4. Recompensa / Retorno (Ganho filtrado por nível)
           const meanRet = Number(telemetry.mean_return_20 || 0);
           const curEpisodeRet = (telemetry.current_episode_return !== undefined && telemetry.current_episode_return !== null)
             ? Number(telemetry.current_episode_return)
             : meanRet;
-          if (_trainMetricsState.minObservedReturn === null || curEpisodeRet < _trainMetricsState.minObservedReturn) {
-            _trainMetricsState.minObservedReturn = curEpisodeRet;
+
+          curLevelLm.curReturn = curEpisodeRet;
+          curLevelLm.avgReturn = meanRet;
+          if (curLevelLm.minReturn === null || curEpisodeRet < curLevelLm.minReturn) {
+            curLevelLm.minReturn = curEpisodeRet;
           }
-          // Para o máximo do patamar atual: usa curriculum_depth_best_return se ativo
-          const depthBestRet = (hasCurriculum && telemetry.curriculum_depth_best_return !== undefined && telemetry.curriculum_depth_best_return !== null)
+          // Para o máximo do patamar atual: usa curriculum_depth_best_return se compatível com o patamar
+          const depthBestRet = (hasCurriculum && telemetry.curriculum_depth_best_return !== undefined && telemetry.curriculum_depth_best_return !== null && Number(telemetry.curriculum_depth_best_return) <= 12.0)
             ? Number(telemetry.curriculum_depth_best_return)
             : curEpisodeRet;
-          const candPeak = Math.max(depthBestRet, curEpisodeRet);
-          if (_trainMetricsState.maxObservedReturn === null || candPeak > _trainMetricsState.maxObservedReturn) {
-            _trainMetricsState.maxObservedReturn = candPeak;
+          const candPeak = Math.max(depthBestRet, curEpisodeRet, meanRet);
+          if (curLevelLm.maxReturn === null || candPeak > curLevelLm.maxReturn) {
+            curLevelLm.maxReturn = candPeak;
           }
 
           // Alvo de retorno (target return) como meta do card e do recipiente 3
@@ -5581,7 +5919,7 @@
           const trainRet = document.getElementById('train-metric-return');
           if (trainRet) trainRet.innerText = isMini ? `${meanRet >= 0 ? '+' : ''}${meanRet.toFixed(1)}` : meanRet.toFixed(2);
 
-          const retGoalCap = Math.max(targetRet, _trainMetricsState.maxObservedReturn || targetRet);
+          const retGoalCap = Math.max(targetRet, _totalTrainMetrics.maxReturn || targetRet);
           const retCurPct = Math.min(100, Math.max(0, (curEpisodeRet / targetRet) * 100));
           const retAvgPct = Math.min(100, Math.max(0, (meanRet / targetRet) * 100));
 
@@ -5596,13 +5934,13 @@
           if (trainRetAvgVal) trainRetAvgVal.innerText = meanRet.toFixed(2);
           const trainRetMinVal = document.getElementById('train-metric-return-min-val');
           if (trainRetMinVal) {
-            const minRet = _trainMetricsState.minObservedReturn !== null ? _trainMetricsState.minObservedReturn : curEpisodeRet;
+            const minRet = curLevelLm.minReturn !== null ? curLevelLm.minReturn : curEpisodeRet;
             trainRetMinVal.innerText = minRet.toFixed(2);
             trainRetMinVal.title = `Mínimo (${currentLevelKey})`;
           }
           const trainRetMaxVal = document.getElementById('train-metric-return-max-val');
           if (trainRetMaxVal) {
-            const maxRet = _trainMetricsState.maxObservedReturn !== null ? _trainMetricsState.maxObservedReturn : curEpisodeRet;
+            const maxRet = curLevelLm.maxReturn !== null ? curLevelLm.maxReturn : curEpisodeRet;
             trainRetMaxVal.innerText = maxRet.toFixed(2);
             trainRetMaxVal.title = `Máximo (${currentLevelKey})`;
           }
@@ -5625,8 +5963,16 @@
               _trainMetricsState.maxObservedLoss = curLossNum;
             }
           }
+          if (curLossNum > 0 && curLossNum < 50.0) {
+            if (_totalTrainMetrics.maxLoss === null || curLossNum > _totalTrainMetrics.maxLoss) {
+              _totalTrainMetrics.maxLoss = curLossNum;
+            }
+            if (_totalTrainMetrics.minLoss === null || curLossNum < _totalTrainMetrics.minLoss) {
+              _totalTrainMetrics.minLoss = curLossNum;
+            }
+          }
           const avgLossNum = _trainMetricsState.lossHistory.length ? (_trainMetricsState.lossHistory.reduce((a, b) => a + b, 0) / _trainMetricsState.lossHistory.length) : curLossNum;
-          const maxLossRef = Math.max(_trainMetricsState.maxObservedLoss || 0, curLossNum, avgLossNum, 0.05);
+          const maxLossRef = Math.max(_totalTrainMetrics.maxLoss || 0, curLossNum, avgLossNum, 0.05);
 
           const lossCurPct = Math.min(100, Math.max(0, (curLossNum / maxLossRef) * 100));
           const lossAvgPct = Math.min(100, Math.max(0, (avgLossNum / maxLossRef) * 100));
@@ -5650,15 +5996,15 @@
           if (trainLossAvgVal) trainLossAvgVal.innerText = avgLossNum.toFixed(3);
           const trainLossMinVal = document.getElementById('train-metric-loss-min-val');
           if (trainLossMinVal) {
-            const minLoss = _trainMetricsState.minObservedLoss !== null ? _trainMetricsState.minObservedLoss : curLossNum;
+            const minLoss = _totalTrainMetrics.minLoss !== null ? _totalTrainMetrics.minLoss : curLossNum;
             trainLossMinVal.innerText = minLoss.toFixed(3);
-            trainLossMinVal.title = `Mínimo (${currentLevelKey})`;
+            trainLossMinVal.title = `Mínimo (Treino Total)`;
           }
           const trainLossMaxVal = document.getElementById('train-metric-loss-max-val');
           if (trainLossMaxVal) {
-            const maxLoss = _trainMetricsState.maxObservedLoss !== null ? _trainMetricsState.maxObservedLoss : curLossNum;
+            const maxLoss = _totalTrainMetrics.maxLoss !== null ? _totalTrainMetrics.maxLoss : curLossNum;
             trainLossMaxVal.innerText = maxLoss.toFixed(3);
-            trainLossMaxVal.title = `Máximo (${currentLevelKey})`;
+            trainLossMaxVal.title = `Máximo (Treino Total)`;
           }
 
           const trainEnt = document.getElementById('train-metric-entropy');
@@ -5675,6 +6021,12 @@
           if (trainConfPct > 0) {
             _trainMetricsState.trainConfHistory.push(trainConfPct);
             if (_trainMetricsState.trainConfHistory.length > 60) _trainMetricsState.trainConfHistory.shift();
+            if (_totalTrainMetrics.maxConf === null || trainConfPct > _totalTrainMetrics.maxConf) {
+              _totalTrainMetrics.maxConf = trainConfPct;
+            }
+            if (_totalTrainMetrics.minConf === null || trainConfPct < _totalTrainMetrics.minConf) {
+              _totalTrainMetrics.minConf = trainConfPct;
+            }
           }
           const trainAvgConfPct = _trainMetricsState.trainConfHistory.length
             ? (_trainMetricsState.trainConfHistory.reduce((a, b) => a + b, 0) / _trainMetricsState.trainConfHistory.length)
@@ -5743,6 +6095,14 @@
             if (_trainMetricsState.maxObservedDpo === null || curDpoNum > _trainMetricsState.maxObservedDpo) {
               _trainMetricsState.maxObservedDpo = curDpoNum;
             }
+            if (curDpoNum < 50.0) {
+              if (_totalTrainMetrics.minDpo === null || curDpoNum < _totalTrainMetrics.minDpo) {
+                _totalTrainMetrics.minDpo = curDpoNum;
+              }
+              if (_totalTrainMetrics.maxDpo === null || curDpoNum > _totalTrainMetrics.maxDpo) {
+                _totalTrainMetrics.maxDpo = curDpoNum;
+              }
+            }
           }
           const avgDpoNum = _trainMetricsState.dpoHistory.length 
             ? (_trainMetricsState.dpoHistory.reduce((a, b) => a + b, 0) / _trainMetricsState.dpoHistory.length) 
@@ -5787,15 +6147,37 @@
             vLiquid1.style.height = `${lvl1}%`;
           }
 
+          const effLevel = getEffectiveCurriculumLevel();
+          const effLm = getLevelMetrics(effLevel);
+          const isCurrentEff = (effLevel === currentLevelKey);
+
+          // Atualização dos Badges e Subtítulos de nível
+          const b3 = document.getElementById('train-metric-level-badge-3');
+          if (b3) {
+            b3.innerText = effLevel;
+            b3.title = isCurrentEff ? `Nível Atual (${effLevel})` : `Nível Filtrado (${effLevel})`;
+          }
+          const sub2 = document.getElementById('train-metric-winrate-sub');
+          if (sub2) sub2.innerText = `Win Rate (${effLevel})`;
+          const sub3 = document.getElementById('train-metric-return-sub');
+          if (sub3) sub3.innerText = `Ganho Médio (${effLevel})`;
+
+          const displayWr = isCurrentEff ? curWinRate : (effLm.curWinRate !== null ? effLm.curWinRate : (effLm.maxWinRate || 0));
+          const displayRet = isCurrentEff ? meanRet : (effLm.curReturn !== null ? effLm.curReturn : (effLm.maxReturn || 0));
+
+          if (trainWinRate) trainWinRate.innerText = isMini ? `${Math.round(displayWr)}%` : `${displayWr.toFixed(1)}%`;
+          if (trainRet) trainRet.innerText = isMini ? `${displayRet >= 0 ? '+' : ''}${displayRet.toFixed(1)}` : displayRet.toFixed(2);
+
           const vLiquid2 = document.getElementById('vessel-liquid-2');
           if (vLiquid2) {
-            const lvl2 = Math.max(6, Math.min(100, curWinRate));
+            const lvl2 = Math.max(6, Math.min(100, displayWr));
             vLiquid2.style.height = `${lvl2}%`;
           }
 
           const vLiquid3 = document.getElementById('vessel-liquid-3');
           if (vLiquid3) {
-            const lvl3 = Math.max(6, Math.min(100, retCurPct));
+            const cap3 = Math.max(targetRet, effLm.maxReturn || targetRet);
+            const lvl3 = Math.max(6, Math.min(100, (Math.max(0, displayRet) / cap3) * 100));
             vLiquid3.style.height = `${lvl3}%`;
           }
 
@@ -5825,91 +6207,96 @@
           // Card 1: Throughput (FPS)
           const valMax1 = document.getElementById('vessel-val-max-1');
           if (valMax1) {
-            const maxFps = _trainMetricsState.maxObservedFps !== null ? _trainMetricsState.maxObservedFps : curFps;
+            const maxFps = _totalTrainMetrics.maxFps !== null ? _totalTrainMetrics.maxFps : (_trainMetricsState.maxObservedFps !== null ? _trainMetricsState.maxObservedFps : curFps);
             valMax1.innerText = maxFps >= 1000 ? (maxFps / 1000).toFixed(1) + 'k' : maxFps.toFixed(0);
           }
           const valMin1 = document.getElementById('vessel-val-min-1');
           if (valMin1) {
-            const minFps = _trainMetricsState.minObservedFps !== null ? _trainMetricsState.minObservedFps : curFps;
+            const minFps = _totalTrainMetrics.minFps !== null ? _totalTrainMetrics.minFps : (_trainMetricsState.minObservedFps !== null ? _trainMetricsState.minObservedFps : curFps);
             valMin1.innerText = minFps >= 1000 ? (minFps / 1000).toFixed(1) + 'k' : minFps.toFixed(0);
           }
           const tMax1 = document.getElementById('vessel-tick-max-1');
           if (tMax1) {
-            const maxFps = _trainMetricsState.maxObservedFps !== null ? _trainMetricsState.maxObservedFps : curFps;
+            const maxFps = _totalTrainMetrics.maxFps !== null ? _totalTrainMetrics.maxFps : (_trainMetricsState.maxObservedFps !== null ? _trainMetricsState.maxObservedFps : curFps);
             const maxFpsFmt = maxFps >= 1000 ? (maxFps / 1000).toFixed(1) + 'k' : maxFps.toFixed(0);
-            tMax1.title = `Máx atingido (${currentLevelKey}): ${maxFpsFmt} FPS`;
+            tMax1.title = `Máx Treino Total: ${maxFpsFmt} FPS`;
           }
           const tMin1 = document.getElementById('vessel-tick-min-1');
           if (tMin1) {
-            const minFps = _trainMetricsState.minObservedFps !== null ? _trainMetricsState.minObservedFps : curFps;
+            const minFps = _totalTrainMetrics.minFps !== null ? _totalTrainMetrics.minFps : (_trainMetricsState.minObservedFps !== null ? _trainMetricsState.minObservedFps : curFps);
             const minFpsFmt = minFps >= 1000 ? (minFps / 1000).toFixed(1) + 'k' : minFps.toFixed(0);
-            tMin1.title = `Mín atingido (${currentLevelKey}): ${minFpsFmt} FPS`;
+            tMin1.title = `Mín Treino Total: ${minFpsFmt} FPS`;
           }
 
-          // Card 2: Win Rate (%)
+          // Card 2: Win Rate (%) - Régua Filtrada por Nível
+          const effDepthNum = parseInt((effLevel || 'D1').replace(/\D/g, ''), 10) || 1;
+          let safeMaxWr = effLm.maxWinRate !== null ? effLm.maxWinRate : displayWr;
+          if (effDepthNum >= 5 && safeMaxWr >= 95.0 && displayWr < 80.0) {
+            safeMaxWr = displayWr;
+            effLm.maxWinRate = displayWr;
+          }
+
           const valMax2 = document.getElementById('vessel-val-max-2');
           if (valMax2) {
-            const maxWr = _trainMetricsState.maxObservedWinRate !== null ? _trainMetricsState.maxObservedWinRate : curWinRate;
-            valMax2.innerText = isMini ? `${Math.round(maxWr)}%` : `${maxWr.toFixed(1)}%`;
+            valMax2.innerText = isMini ? `${Math.round(safeMaxWr)}%` : `${safeMaxWr.toFixed(1)}%`;
           }
           const valMin2 = document.getElementById('vessel-val-min-2');
           if (valMin2) {
-            const minWr = _trainMetricsState.minObservedWinRate !== null ? _trainMetricsState.minObservedWinRate : curWinRate;
+            const minWr = effLm.minWinRate !== null ? effLm.minWinRate : 0;
             valMin2.innerText = isMini ? `${Math.round(minWr)}%` : `${minWr.toFixed(1)}%`;
           }
           const tMax2 = document.getElementById('vessel-tick-max-2');
           if (tMax2) {
-            const maxWr = _trainMetricsState.maxObservedWinRate !== null ? _trainMetricsState.maxObservedWinRate : curWinRate;
-            tMax2.title = `Máx atingido (${currentLevelKey}): ${maxWr.toFixed(1)}%`;
+            tMax2.title = `Máx (${effLevel}): ${safeMaxWr.toFixed(1)}%`;
           }
           const tMin2 = document.getElementById('vessel-tick-min-2');
           if (tMin2) {
-            const minWr = _trainMetricsState.minObservedWinRate !== null ? _trainMetricsState.minObservedWinRate : curWinRate;
-            tMin2.title = `Mín atingido (${currentLevelKey}): ${minWr.toFixed(1)}%`;
+            const minWr = effLm.minWinRate !== null ? effLm.minWinRate : 0;
+            tMin2.title = `Mín (${effLevel}): ${minWr.toFixed(1)}%`;
           }
 
-          // Card 3: Retorno
+          // Card 3: Retorno - Régua Filtrada por Nível
           const valMax3 = document.getElementById('vessel-val-max-3');
           if (valMax3) {
-            const maxRet = _trainMetricsState.maxObservedReturn !== null ? _trainMetricsState.maxObservedReturn : curEpisodeRet;
+            const maxRet = effLm.maxReturn !== null ? effLm.maxReturn : displayRet;
             valMax3.innerText = isMini ? `${maxRet >= 0 ? '+' : ''}${maxRet.toFixed(1)}` : `${maxRet >= 0 ? '+' : ''}${maxRet.toFixed(2)}`;
           }
           const valMin3 = document.getElementById('vessel-val-min-3');
           if (valMin3) {
-            const minRet = _trainMetricsState.minObservedReturn !== null ? _trainMetricsState.minObservedReturn : curEpisodeRet;
+            const minRet = effLm.minReturn !== null ? effLm.minReturn : displayRet;
             valMin3.innerText = isMini ? `${minRet >= 0 ? '+' : ''}${minRet.toFixed(1)}` : `${minRet >= 0 ? '+' : ''}${minRet.toFixed(2)}`;
           }
           const tMax3 = document.getElementById('vessel-tick-max-3');
           if (tMax3) {
-            const maxRet = _trainMetricsState.maxObservedReturn !== null ? _trainMetricsState.maxObservedReturn : curEpisodeRet;
-            tMax3.title = `Máx atingido (${currentLevelKey}): ${maxRet.toFixed(2)}`;
+            const maxRet = effLm.maxReturn !== null ? effLm.maxReturn : displayRet;
+            tMax3.title = `Máx (${effLevel}): ${maxRet.toFixed(2)}`;
           }
           const tMin3 = document.getElementById('vessel-tick-min-3');
           if (tMin3) {
-            const minRet = _trainMetricsState.minObservedReturn !== null ? _trainMetricsState.minObservedReturn : curEpisodeRet;
-            tMin3.title = `Mín atingido (${currentLevelKey}): ${minRet.toFixed(2)}`;
+            const minRet = effLm.minReturn !== null ? effLm.minReturn : displayRet;
+            tMin3.title = `Mín (${effLevel}): ${minRet.toFixed(2)}`;
           }
 
           // Card 4: Loss (Perdas PPO)
           const valMax4 = document.getElementById('vessel-val-max-4');
           if (valMax4) {
-            const maxL = _trainMetricsState.maxObservedLoss !== null ? _trainMetricsState.maxObservedLoss : curLossNum;
+            const maxL = _totalTrainMetrics.maxLoss !== null ? _totalTrainMetrics.maxLoss : (_trainMetricsState.maxObservedLoss !== null ? _trainMetricsState.maxObservedLoss : curLossNum);
             valMax4.innerText = isMini ? maxL.toFixed(2) : maxL.toFixed(3);
           }
           const valMin4 = document.getElementById('vessel-val-min-4');
           if (valMin4) {
-            const minL = _trainMetricsState.minObservedLoss !== null ? _trainMetricsState.minObservedLoss : curLossNum;
+            const minL = _totalTrainMetrics.minLoss !== null ? _totalTrainMetrics.minLoss : (_trainMetricsState.minObservedLoss !== null ? _trainMetricsState.minObservedLoss : curLossNum);
             valMin4.innerText = isMini ? minL.toFixed(2) : minL.toFixed(3);
           }
           const tMax4 = document.getElementById('vessel-tick-max-4');
           if (tMax4) {
-            const maxL = _trainMetricsState.maxObservedLoss !== null ? _trainMetricsState.maxObservedLoss : curLossNum;
-            tMax4.title = `Máx atingido (${currentLevelKey}): ${maxL.toFixed(3)}`;
+            const maxL = _totalTrainMetrics.maxLoss !== null ? _totalTrainMetrics.maxLoss : (_trainMetricsState.maxObservedLoss !== null ? _trainMetricsState.maxObservedLoss : curLossNum);
+            tMax4.title = `Máx Treino Total: ${maxL.toFixed(3)}`;
           }
           const tMin4 = document.getElementById('vessel-tick-min-4');
           if (tMin4) {
-            const minL = _trainMetricsState.minObservedLoss !== null ? _trainMetricsState.minObservedLoss : curLossNum;
-            tMin4.title = `Mín atingido (${currentLevelKey}): ${minL.toFixed(3)}`;
+            const minL = _totalTrainMetrics.minLoss !== null ? _totalTrainMetrics.minLoss : (_trainMetricsState.minObservedLoss !== null ? _trainMetricsState.minObservedLoss : curLossNum);
+            tMin4.title = `Mín Treino Total: ${minL.toFixed(3)}`;
           }
 
           // Card 5: Confiança & Calibração
@@ -5923,46 +6310,49 @@
           }
           const valMax5 = document.getElementById('vessel-val-max-5');
           if (valMax5) {
-            const maxConf = _trainMetricsState.trainMaxConf !== null ? _trainMetricsState.trainMaxConf : (trainConfPct || 0);
+            const maxConf = _totalTrainMetrics.maxConf !== null ? _totalTrainMetrics.maxConf : (_trainMetricsState.trainMaxConf !== null ? _trainMetricsState.trainMaxConf : (trainConfPct || 0));
             valMax5.innerText = isMini ? `${Math.round(maxConf)}%` : `${maxConf.toFixed(1)}%`;
           }
           const valMin5 = document.getElementById('vessel-val-min-5');
           if (valMin5) {
-            const minConf = _trainMetricsState.trainMinConf !== null ? _trainMetricsState.trainMinConf : (trainConfPct || 0);
+            const minConf = _totalTrainMetrics.minConf !== null ? _totalTrainMetrics.minConf : (_trainMetricsState.trainMinConf !== null ? _trainMetricsState.trainMinConf : (trainConfPct || 0));
             valMin5.innerText = isMini ? `${Math.round(minConf)}%` : `${minConf.toFixed(1)}%`;
           }
           const tMax5 = document.getElementById('vessel-tick-max-5');
           if (tMax5) {
-            const maxConf = _trainMetricsState.trainMaxConf !== null ? _trainMetricsState.trainMaxConf : (trainConfPct || 0);
-            tMax5.title = `Máx atingido (${currentLevelKey}): ${maxConf.toFixed(1)}%`;
+            const maxConf = _totalTrainMetrics.maxConf !== null ? _totalTrainMetrics.maxConf : (_trainMetricsState.trainMaxConf !== null ? _trainMetricsState.trainMaxConf : (trainConfPct || 0));
+            tMax5.title = `Máx Treino Total: ${maxConf.toFixed(1)}%`;
           }
           const tMin5 = document.getElementById('vessel-tick-min-5');
           if (tMin5) {
-            const minConf = _trainMetricsState.trainMinConf !== null ? _trainMetricsState.trainMinConf : (trainConfPct || 0);
-            tMin5.title = `Mín atingido (${currentLevelKey}): ${minConf.toFixed(1)}%`;
+            const minConf = _totalTrainMetrics.minConf !== null ? _totalTrainMetrics.minConf : (_trainMetricsState.trainMinConf !== null ? _trainMetricsState.trainMinConf : (trainConfPct || 0));
+            tMin5.title = `Mín Treino Total: ${minConf.toFixed(1)}%`;
           }
 
           // Card 6: Perda DPO Contrastiva
           const valMax6 = document.getElementById('vessel-val-max-6');
           if (valMax6) {
-            const maxDpo = _trainMetricsState.maxObservedDpo !== null ? _trainMetricsState.maxObservedDpo : (hasDpo ? curDpoNum : 0);
+            const maxDpo = _totalTrainMetrics.maxDpo !== null ? _totalTrainMetrics.maxDpo : (_trainMetricsState.maxObservedDpo !== null ? _trainMetricsState.maxObservedDpo : (hasDpo ? curDpoNum : 0));
             valMax6.innerText = isMini ? maxDpo.toFixed(2) : maxDpo.toFixed(3);
           }
           const valMin6 = document.getElementById('vessel-val-min-6');
           if (valMin6) {
-            const minDpo = _trainMetricsState.minObservedDpo !== null ? _trainMetricsState.minObservedDpo : (hasDpo ? curDpoNum : 0);
+            const minDpo = _totalTrainMetrics.minDpo !== null ? _totalTrainMetrics.minDpo : (_trainMetricsState.minObservedDpo !== null ? _trainMetricsState.minObservedDpo : (hasDpo ? curDpoNum : 0));
             valMin6.innerText = isMini ? minDpo.toFixed(2) : minDpo.toFixed(3);
           }
           const tMax6 = document.getElementById('vessel-tick-max-6');
           if (tMax6) {
-            const maxDpo = _trainMetricsState.maxObservedDpo !== null ? _trainMetricsState.maxObservedDpo : (hasDpo ? curDpoNum : 0);
-            tMax6.title = `Máx atingido (${currentLevelKey}): ${maxDpo.toFixed(3)}`;
+            const maxDpo = _totalTrainMetrics.maxDpo !== null ? _totalTrainMetrics.maxDpo : (_trainMetricsState.maxObservedDpo !== null ? _trainMetricsState.maxObservedDpo : (hasDpo ? curDpoNum : 0));
+            tMax6.title = `Máx Treino Total: ${maxDpo.toFixed(3)}`;
           }
           const tMin6 = document.getElementById('vessel-tick-min-6');
           if (tMin6) {
-            const minDpo = _trainMetricsState.minObservedDpo !== null ? _trainMetricsState.minObservedDpo : (hasDpo ? curDpoNum : 0);
-            tMin6.title = `Mín atingido (${currentLevelKey}): ${minDpo.toFixed(3)}`;
+            const minDpo = _totalTrainMetrics.minDpo !== null ? _totalTrainMetrics.minDpo : (_trainMetricsState.minObservedDpo !== null ? _trainMetricsState.minObservedDpo : (hasDpo ? curDpoNum : 0));
+            tMin6.title = `Mín Treino Total: ${minDpo.toFixed(3)}`;
           }
+
+          // Persiste métricas cumulativas do Treino Total com throttling seguro
+          saveTotalTrainMetrics(_activeStorageKey, _totalTrainMetrics);
 
           // Compatibilidade com placeholders legados de Memória SIL
           const curSilNum = Number(telemetry.sil_trajectories || 0);
@@ -6378,6 +6768,14 @@
     function onTriCompassToggle(checked) {
       const statusEl = document.getElementById('hud-tri-compass-status');
       if (statusEl) statusEl.innerText = checked ? 'Tri-465D' : '337D';
+      const badgeEl = document.getElementById('hud-tri-compass-badge');
+      if (badgeEl) {
+        if (checked) {
+          badgeEl.className = 'flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/70 text-cyan-300 font-mono text-[11px] font-bold shadow-sm';
+        } else {
+          badgeEl.className = 'flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-gray-900 border border-gray-700 text-gray-400 font-mono text-[11px] font-medium shadow-sm';
+        }
+      }
       updateArchSummaryBadge();
     }
 
@@ -6458,8 +6856,8 @@
         sil_enabled: document.getElementById('cfg-sil') ? document.getElementById('cfg-sil').checked : true,
         sil_coef: document.getElementById('cfg-sil-coef') ? (parseFloat(document.getElementById('cfg-sil-coef').value) || 0.08) : 0.08,
         sil_batch_size: document.getElementById('cfg-sil-batch-size') ? (parseInt(document.getElementById('cfg-sil-batch-size').value, 10) || 8) : 8,
-        sil_dpo_enabled: document.getElementById('cfg-dpo') ? document.getElementById('cfg-dpo').checked : true,
-        dpo_coef: document.getElementById('cfg-dpo-coef') ? (parseFloat(document.getElementById('cfg-dpo-coef').value) || 0.05) : 0.05,
+        sil_dpo_enabled: document.getElementById('cfg-dpo') ? document.getElementById('cfg-dpo').checked : false,
+        dpo_coef: document.getElementById('cfg-dpo-coef') ? (parseFloat(document.getElementById('cfg-dpo-coef').value) || 0.0) : 0.0,
         dpo_beta: document.getElementById('cfg-dpo-beta') ? (parseFloat(document.getElementById('cfg-dpo-beta').value) || 0.10) : 0.10,
         action_chunk_size: parseInt(document.getElementById('cfg-act-k')?.value, 10) || 1,
         adaptive_chunk: document.getElementById('cfg-adaptive-chunk') ? document.getElementById('cfg-adaptive-chunk').checked : false,

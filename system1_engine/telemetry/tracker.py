@@ -146,8 +146,16 @@ class LiveStatsTracker:
                     m.curriculum_success_rate = 0.0
                 else:
                     m.curriculum_success_rate = rate
-                    if m.curriculum_depth_best_success_rate is None or rate > m.curriculum_depth_best_success_rate:
-                        m.curriculum_depth_best_success_rate = rate
+                    # Para patamares combinatórios (D5+), descarta spike espúrio de taxa unitária (1/1 = 100%)
+                    ignore_spike = (
+                        m.curriculum_depth is not None
+                        and m.curriculum_depth >= 5
+                        and rate >= 0.95
+                        and (m.curriculum_depth_best_success_rate is None or m.curriculum_depth_best_success_rate < 0.50)
+                    )
+                    if not ignore_spike:
+                        if m.curriculum_depth_best_success_rate is None or rate > m.curriculum_depth_best_success_rate:
+                            m.curriculum_depth_best_success_rate = rate
                     if m.curriculum_depth_min_success_rate is None or rate < m.curriculum_depth_min_success_rate:
                         m.curriculum_depth_min_success_rate = rate
             if "curriculum_p_frontier" in info:

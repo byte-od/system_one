@@ -127,7 +127,7 @@ class VectorFrontEnd(nn.Module):
         obs_dim: int,
         action_space: gym.spaces.Space,
         reward_fixed: bool = False,
-        tri_compass: bool = False,
+        tri_compass: bool = True,
     ) -> None:
         super().__init__()
         self.obs_dim = obs_dim

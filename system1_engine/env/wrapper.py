@@ -46,11 +46,10 @@ class UniversalS1Wrapper(gym.Wrapper):
         env: gym.Env,
         is_visual: Optional[bool] = None,
         gamma: float = 0.99,
-        tri_compass: bool = False,
+        tri_compass: bool = True,
     ) -> None:
         super().__init__(env)
         self.gamma = float(gamma)
-        self.tri_compass = bool(tri_compass)
         self.elite_goal_obs: Optional[np.ndarray] = None
         self._best_terminal_reward: float = -float("inf")
 
@@ -66,6 +65,7 @@ class UniversalS1Wrapper(gym.Wrapper):
                 elif len(shp) == 2 and min(shp) >= 10:
                     is_visual = True
         self.is_visual = is_visual
+        self.tri_compass = bool(tri_compass) and not self.is_visual
 
         self.visual_channels = 3
         if self.is_visual and isinstance(env.observation_space, gym.spaces.Box):
@@ -698,7 +698,11 @@ class UniversalS1Wrapper(gym.Wrapper):
         else:
             current_obs = self._vectorize_obs(next_obs, self.env.observation_space)
             # Attractor auto-discovery
-            if reward_float > 0 and (terminated or (isinstance(info, dict) and info.get("is_success", False))):
+            is_success_flag = False
+            if isinstance(info, dict):
+                is_success_flag = bool(info.get("is_success", False) or info.get("success", False) or info.get("is_solved", False))
+
+            if (is_success_flag or reward_float >= 10.0) and terminated:
                 if reward_float >= self._best_terminal_reward:
                     self._best_terminal_reward = float(reward_float)
                     self.elite_goal_obs = np.array(current_obs, copy=True)

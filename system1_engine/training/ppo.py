@@ -17,7 +17,6 @@ from system1_engine.training.buffer import (
     SuccessReplayBuffer,
     SuccessfulTrajectory,
 )
-from system1_engine.training.sterility import LatentSterilityMemory
 
 
 class RecurrentPPOTrainer:
@@ -51,8 +50,8 @@ class RecurrentPPOTrainer:
         sil_max_per_depth: int = 2048,
         min_capacity_per_depth: int = 32,
         sil_min_samples: int = 8,
-        sil_dpo_enabled: bool = True,
-        dpo_coef: float = 0.05,
+        sil_dpo_enabled: bool = False,
+        dpo_coef: float = 0.0,
         dpo_beta: float = 0.10,
         dpo_batch_size: int = 8,
         progressive_buffer_capacity: bool = True,
@@ -71,7 +70,7 @@ class RecurrentPPOTrainer:
         proximal_decay: float = 0.8,
         teacher_sil_envs: int = 0,
         teacher_min_depth: int = 5,
-        teacher_confidence_threshold: float = 0.85,
+        teacher_confidence_threshold: float = 0.30,
         teacher_top_k: int = 4,
     ) -> None:
         self.agent = agent.to(device)
@@ -202,27 +201,9 @@ class RecurrentPPOTrainer:
             proximal_decay=self.proximal_decay,
         )
 
-        # Memória Latente Estéril Auto-Corretiva (Self-Healing Latent Tabu)
-        self.sterility_memory_enabled = bool(sterility_memory_enabled)
-        if self.sterility_memory_enabled and is_discrete:
-            if hasattr(self.env.action_space, "n"):
-                n_acts = int(self.env.action_space.n)
-            elif hasattr(self.agent.action_space, "n"):
-                n_acts = int(self.agent.action_space.n)
-            else:
-                n_acts = 12
-            self.sterility_memory: Optional[LatentSterilityMemory] = LatentSterilityMemory(
-                capacity=sterility_capacity,
-                latent_dim=self.trunk_hidden_dim,
-                num_actions=n_acts,
-                sim_threshold=sterility_sim_threshold,
-                penalty_scale=sterility_penalty_scale,
-                step_increment=sterility_step_increment,
-                device=torch.device("cpu"),
-            )
-            self.agent.set_sterility_memory(self.sterility_memory)
-        else:
-            self.sterility_memory = None
+        # Memória Latente Estéril Auto-Corretiva (Substituída nativamente por c-SIL)
+        self.sterility_memory = None
+        self.sterility_memory_enabled = False
 
         self._active_vec_trajectories: List[deque] = [deque(maxlen=200) for _ in range(self.num_envs)]
         self._active_single_trajectory: deque = deque(maxlen=200)
@@ -850,6 +831,7 @@ class RecurrentPPOTrainer:
         stored_ep_start = np.empty((S, E), dtype=bool)
         stored_val = np.empty((S, E), dtype=np.float32)
         stored_logp = np.empty((S, E), dtype=np.float32)
+        stored_scale = np.ones((S, E), dtype=np.float32)
 
         recorded_chunk_hx: List[List[torch.Tensor]] = [[None for _ in range(E)] for _ in range(K)]
 
@@ -887,12 +869,6 @@ class RecurrentPPOTrainer:
                     logits = dist.logits
                     num_acts = logits.shape[-1]
                     penalized_logits = logits.clone()
-
-                    # Aplica resistência suave da Memória Latente Estéril Auto-Corretiva estratificada pelo nível
-                    if self.sterility_memory is not None and self.agent.last_latent is not None:
-                        cur_lvl = self._get_current_curriculum_depth()
-                        res = self.sterility_memory.query_resistance(self.agent.last_latent, level=cur_lvl)
-                        penalized_logits = penalized_logits - res.view_as(penalized_logits)
 
                     # Vectorized Action Quality Filter & Generic Reversible Move Pruning
                     raw_env = getattr(self.env, "unwrapped", self.env)
@@ -943,15 +919,27 @@ class RecurrentPPOTrainer:
                         if self.action_chunk_size > 1:
                             env_scales = env_scales.unsqueeze(2)
                         scaled_logits = torch.nan_to_num(penalized_logits / env_scales, nan=0.0, posinf=35.0, neginf=-35.0).clamp(min=-35.0, max=35.0)
+                        raw_scaled_logits = torch.nan_to_num(logits / env_scales, nan=0.0, posinf=35.0, neginf=-35.0).clamp(min=-35.0, max=35.0)
                     elif curr_scale != 1.0:
                         eff_scale = max(0.02, curr_scale)
+                        env_scales = torch.full((E, 1), eff_scale, device=self.device)
+                        if self.action_chunk_size > 1:
+                            env_scales = env_scales.unsqueeze(2)
                         scaled_logits = torch.nan_to_num(penalized_logits / eff_scale, nan=0.0, posinf=35.0, neginf=-35.0).clamp(min=-35.0, max=35.0)
+                        raw_scaled_logits = torch.nan_to_num(logits / eff_scale, nan=0.0, posinf=35.0, neginf=-35.0).clamp(min=-35.0, max=35.0)
                     else:
+                        env_scales = torch.ones((E, 1), device=self.device)
+                        if self.action_chunk_size > 1:
+                            env_scales = env_scales.unsqueeze(2)
                         scaled_logits = penalized_logits
+                        raw_scaled_logits = logits
 
                     dist_sample = torch.distributions.Categorical(logits=scaled_logits)
                     action = dist_sample.sample()
-                    log_prob = dist_sample.log_prob(action)
+
+                    # Avaliação de log_prob com a escala térmica exata sem penalidade de poda (elimina viés off-policy no PPO)
+                    dist_eval_rollout = torch.distributions.Categorical(logits=raw_scaled_logits)
+                    log_prob = dist_eval_rollout.log_prob(action)
                     if self.action_chunk_size > 1:
                         log_prob = log_prob.sum(dim=-1)
                     env_action = action.squeeze(1).cpu().numpy()
@@ -967,7 +955,7 @@ class RecurrentPPOTrainer:
                                 res = self._apply_teacher_lookahead(
                                     e=e,
                                     env_e=env_e,
-                                    dist_sample=dist_sample,
+                                    dist_sample=dist_eval_rollout,
                                     current_hx=current_hx,
                                 )
                                 if res is not None:
@@ -1008,8 +996,14 @@ class RecurrentPPOTrainer:
                         scaled_std = dist.scale * env_scales
                     elif curr_scale != 1.0:
                         eff_scale = max(0.20, curr_scale)
+                        env_scales = torch.full((E, 1), eff_scale, device=self.device)
+                        if self.action_chunk_size > 1:
+                            env_scales = env_scales.unsqueeze(2)
                         scaled_std = dist.scale * eff_scale
                     else:
+                        env_scales = torch.ones((E, 1), device=self.device)
+                        if self.action_chunk_size > 1:
+                            env_scales = env_scales.unsqueeze(2)
                         scaled_std = dist.scale
 
                     dist_sample = torch.distributions.Normal(loc=dist.mean, scale=scaled_std)
@@ -1051,8 +1045,6 @@ class RecurrentPPOTrainer:
                             calibration=curr_scale,
                         )
 
-                step_latents = self.agent.last_latent if self.sterility_memory is not None else None
-
                 # Environment step vetorizado (com chunk_mask adaptativo)
                 try:
                     next_obs_dict, rewards, terminateds, truncateds, env_infos = self.env.step(env_action, chunk_mask=chunk_mask)
@@ -1068,8 +1060,9 @@ class RecurrentPPOTrainer:
 
                 stored_val[step] = step_vals_np
                 stored_logp[step] = step_logp_np
+                stored_scale[step] = env_scales.view(E, -1)[:, 0].detach().cpu().numpy()
 
-                if self.sil_enabled or self.sterility_memory is not None:
+                if self.sil_enabled:
                     has_delta = "delta_obs" in current_obs_dict and current_obs_dict["delta_obs"] is not None
                     for e in range(E):
                         delta_v = (
@@ -1092,9 +1085,6 @@ class RecurrentPPOTrainer:
                             "reward": float(rewards[e]),
                             "log_prob": float(step_logp_np[e]),
                         }
-                        if self.sterility_memory is not None:
-                            entry["latent"] = step_latents[e].detach().cpu() if step_latents is not None else None
-                            entry["value"] = float(step_vals_np[e])
                         self._active_vec_trajectories[e].append(entry)
 
                 if self.tracker is not None:
@@ -1144,27 +1134,7 @@ class RecurrentPPOTrainer:
                                 running_r = traj_rews[t_idx] + self.effective_gamma * running_r
                                 traj_returns[t_idx] = running_r
 
-                            # Princípio Generalista: Decisão e Estado avaliados pelo Retorno (Simetria Positivo / Negativo)
-                            traj_lats = [s["latent"] for s in traj_steps if s.get("latent") is not None]
-                            traj_acts = [s["action"] for s in traj_steps if s.get("latent") is not None]
-                            traj_vals = [s.get("value", 0.0) for s in traj_steps if s.get("latent") is not None]
-
                             cur_d = int(d_info.get("scramble_depth", d_info.get("current_depth", self._get_current_curriculum_depth()))) if isinstance(d_info, dict) else self._get_current_curriculum_depth()
-
-                            if self.sterility_memory is not None and len(traj_lats) > 0:
-                                # A decisão tomada naquele estado é produtiva se o retorno superar a expectativa de valor (V) ou for positivo
-                                is_productive = [
-                                    bool(traj_returns[t] > traj_vals[t] or traj_returns[t] > 0.0)
-                                    for t in range(len(traj_acts))
-                                ]
-                                t_lats_tensor = torch.stack(traj_lats, dim=0)
-                                self.sterility_memory.record_batch(
-                                    latents=t_lats_tensor,
-                                    actions=traj_acts,
-                                    is_productive=is_productive,
-                                    level=cur_d,
-                                )
-
                             has_positive_return = is_win or any(r > 0.0 for r in traj_returns)
                             cur_d = int(d_info.get("scramble_depth", d_info.get("current_depth", 1))) if isinstance(d_info, dict) else 1
                             should_store_win = self.sil_enabled and has_positive_return
@@ -1282,6 +1252,7 @@ class RecurrentPPOTrainer:
         flat_logp = stored_logp.T.reshape(E * S)
         flat_adv = adv_es.reshape(E * S)
         flat_ret = ret_es.reshape(E * S)
+        flat_scale = stored_scale.T.reshape(E * S)
 
         # Montagem dos estados ocultos iniciais dos chunks em ordem de ambiente
         all_chunk_hx: List[torch.Tensor] = []
@@ -1307,6 +1278,7 @@ class RecurrentPPOTrainer:
             chunk_hx=all_chunk_hx,
             advantages=flat_adv,
             returns=flat_ret,
+            env_scales=flat_scale,
         )
 
         mean_return = (
@@ -1471,10 +1443,6 @@ class RecurrentPPOTrainer:
                 if self.agent.is_discrete:
                     logits = dist.logits
                     num_acts = logits.shape[-1]
-                    if self.sterility_memory is not None and self.agent.last_latent is not None:
-                        cur_lvl = self._get_current_curriculum_depth()
-                        res = self.sterility_memory.query_resistance(self.agent.last_latent, level=cur_lvl)
-                        logits = logits - res.view_as(logits)
                     if num_acts == 12:
                         penalized_logits = logits.clone()
                         if len(self._recent_actions) >= 1:
@@ -1572,8 +1540,6 @@ class RecurrentPPOTrainer:
                         calibration=curr_scale,
                     )
 
-                step_latent = self.agent.last_latent if self.sterility_memory is not None else None
-
                 # Environment step (com chunk_mask adaptativo)
                 try:
                     next_obs_dict, reward, terminated, truncated, env_info = self.env.step(env_action, chunk_mask=chunk_mask)
@@ -1584,7 +1550,7 @@ class RecurrentPPOTrainer:
                 if stored_step_infos is not None:
                     stored_step_infos.append(env_info)
 
-                if self.sil_enabled or self.sterility_memory is not None:
+                if self.sil_enabled:
                     delta_v = (
                         current_obs_dict["delta_obs"].copy()
                         if "delta_obs" in current_obs_dict and current_obs_dict["delta_obs"] is not None
@@ -1605,9 +1571,6 @@ class RecurrentPPOTrainer:
                         "reward": float(reward),
                         "log_prob": float(log_prob.squeeze(0).squeeze(0).item()),
                     }
-                    if self.sterility_memory is not None:
-                        entry_s["latent"] = step_latent.detach().cpu() if step_latent is not None else None
-                        entry_s["value"] = float(value.squeeze(0).squeeze(0).item())
                     self._active_single_trajectory.append(entry_s)
 
                 if self.tracker is not None:
@@ -1634,6 +1597,7 @@ class RecurrentPPOTrainer:
                     value=value.squeeze(0).squeeze(0),
                     log_prob=log_prob.squeeze(0).squeeze(0),
                     hx=current_hx,
+                    env_scale=curr_scale,
                 )
 
                 if done:
@@ -1653,26 +1617,7 @@ class RecurrentPPOTrainer:
                             running_r = traj_rews[t_idx] + self.effective_gamma * running_r
                             traj_returns[t_idx] = running_r
 
-                        # Princípio Generalista: Decisão e Estado avaliados pelo Retorno (Simetria Positivo / Negativo)
-                        traj_lats = [s["latent"] for s in traj_steps if s.get("latent") is not None]
-                        traj_acts = [s["action"] for s in traj_steps if s.get("latent") is not None]
-                        traj_vals = [s.get("value", 0.0) for s in traj_steps if s.get("latent") is not None]
-
                         cur_d = int(env_info.get("scramble_depth", env_info.get("current_depth", self._get_current_curriculum_depth()))) if isinstance(env_info, dict) else self._get_current_curriculum_depth()
-
-                        if self.sterility_memory is not None and len(traj_lats) > 0:
-                            is_productive = [
-                                bool(traj_returns[t] > traj_vals[t] or traj_returns[t] > 0.0)
-                                for t in range(len(traj_acts))
-                            ]
-                            t_lats_tensor = torch.stack(traj_lats, dim=0)
-                            self.sterility_memory.record_batch(
-                                latents=t_lats_tensor,
-                                actions=traj_acts,
-                                is_productive=is_productive,
-                                level=cur_d,
-                            )
-
                         has_positive_return = is_win or any(r > 0.0 for r in traj_returns)
                         cur_d = int(env_info.get("scramble_depth", env_info.get("current_depth", 1))) if isinstance(env_info, dict) else 1
                         should_store_win = self.sil_enabled and has_positive_return
@@ -1789,20 +1734,36 @@ class RecurrentPPOTrainer:
                 values_sq = values.squeeze(-1)  # [B, T]
 
                 if self.agent.is_discrete:
-                    if self.exploration_scale != 1.0:
+                    if getattr(batch, "env_scales", None) is not None:
+                        eff_scales = batch.env_scales.clamp(min=0.02, max=1.00)
+                        if self.action_chunk_size > 1:
+                            eff_scales = eff_scales.unsqueeze(-1).unsqueeze(-1)
+                        else:
+                            eff_scales = eff_scales.unsqueeze(-1)
+                        scaled_logits = torch.nan_to_num(dist.logits / eff_scales, nan=0.0, posinf=35.0, neginf=-35.0).clamp(min=-35.0, max=35.0)
+                        dist_eval = torch.distributions.Categorical(logits=scaled_logits)
+                    elif self.exploration_scale != 1.0:
                         eff_scale = max(0.08, float(self.exploration_scale))
-                        scaled_logits = torch.nan_to_num(dist.logits / eff_scale, nan=0.0, posinf=30.0, neginf=-30.0).clamp(min=-30.0, max=30.0)
+                        scaled_logits = torch.nan_to_num(dist.logits / eff_scale, nan=0.0, posinf=35.0, neginf=-35.0).clamp(min=-35.0, max=35.0)
                         dist_eval = torch.distributions.Categorical(logits=scaled_logits)
                     else:
                         dist_eval = dist
                     if self.action_chunk_size > 1:
                         new_log_probs = dist_eval.log_prob(batch.actions).sum(dim=-1)  # [B, T]
-                        entropy = dist_eval.entropy().mean(dim=-1)                      # [B, T]
+                        entropy = dist.entropy().mean(dim=-1)                          # [B, T]
                     else:
-                        new_log_probs = dist_eval.log_prob(batch.actions)  # [B, T]
-                        entropy = dist_eval.entropy()                       # [B, T]
+                        new_log_probs = dist_eval.log_prob(batch.actions)              # [B, T]
+                        entropy = dist.entropy()                                       # [B, T]
                 else:
-                    if self.exploration_scale != 1.0:
+                    if getattr(batch, "env_scales", None) is not None:
+                        eff_scales = batch.env_scales.clamp(min=0.02, max=1.00)
+                        if self.action_chunk_size > 1:
+                            eff_scales = eff_scales.unsqueeze(-1).unsqueeze(-1)
+                        else:
+                            eff_scales = eff_scales.unsqueeze(-1)
+                        scaled_std = dist.scale * eff_scales
+                        dist_eval = torch.distributions.Normal(loc=dist.mean, scale=scaled_std)
+                    elif self.exploration_scale != 1.0:
                         eff_scale = max(0.08, float(self.exploration_scale))
                         scaled_std = dist.scale * eff_scale
                         dist_eval = torch.distributions.Normal(loc=dist.mean, scale=scaled_std)
@@ -1810,10 +1771,10 @@ class RecurrentPPOTrainer:
                         dist_eval = dist
                     if self.action_chunk_size > 1:
                         new_log_probs = dist_eval.log_prob(batch.actions).sum(dim=(-2, -1))
-                        entropy = dist_eval.entropy().sum(dim=(-2, -1)) / self.action_chunk_size
+                        entropy = dist.entropy().sum(dim=(-2, -1)) / self.action_chunk_size
                     else:
                         new_log_probs = dist_eval.log_prob(batch.actions).sum(dim=-1)
-                        entropy = dist_eval.entropy().sum(dim=-1)
+                        entropy = dist.entropy().sum(dim=-1)
 
                 # Ratio robusto com clamping numérico para evitar explosões de razão de amostragem de importância
                 log_ratio = new_log_probs - batch.old_log_probs
@@ -2010,8 +1971,8 @@ class RecurrentPPOTrainer:
         if self.scheduler is not None:
             self.scheduler.step()
 
-        ster_prototypes = len(self.sterility_memory) if self.sterility_memory is not None else 0
-        ster_rehab = self.sterility_memory.total_rehabilitated if self.sterility_memory is not None else 0
+        ster_prototypes = 0
+        ster_rehab = 0
 
         return {
             "policy_loss": total_policy_loss / max(1, n_updates),

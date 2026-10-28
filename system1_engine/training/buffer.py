@@ -18,6 +18,7 @@ class RecurrentBatch:
     old_values: torch.Tensor
     dones: torch.Tensor
     hx: torch.Tensor
+    env_scales: Optional[torch.Tensor] = None
 
 
 class RecurrentRolloutBuffer:
@@ -66,6 +67,7 @@ class RecurrentRolloutBuffer:
         self.dones: List[bool] = []           # True if step ended episode
         self.values: List[float] = []
         self.log_probs: List[float] = []
+        self.env_scales: List[float] = []
 
         # Hidden states recorded at chunk boundaries [num_chunks, 1, 1, 256]
         self.chunk_hx: List[torch.Tensor] = []
@@ -81,6 +83,7 @@ class RecurrentRolloutBuffer:
         value: Union[float, torch.Tensor],
         log_prob: Union[float, torch.Tensor],
         hx: Optional[torch.Tensor] = None,
+        env_scale: float = 1.0,
     ) -> None:
         """Adds a transition to the rollout buffer."""
         # Record initial hidden state at chunk boundaries
@@ -120,6 +123,7 @@ class RecurrentRolloutBuffer:
         lp = log_prob.item() if isinstance(log_prob, torch.Tensor) else float(log_prob)
         self.values.append(val)
         self.log_probs.append(lp)
+        self.env_scales.append(float(env_scale))
 
         self.step_idx += 1
 
@@ -168,6 +172,7 @@ class RecurrentRolloutBuffer:
         chunk_hx: List[torch.Tensor],
         advantages: np.ndarray,
         returns: np.ndarray,
+        env_scales: Optional[np.ndarray] = None,
     ) -> None:
         """Armazena transições coletadas diretamente em batch de ambientes vetorizados."""
         self.obs = obs
@@ -183,6 +188,7 @@ class RecurrentRolloutBuffer:
         self.chunk_hx = chunk_hx
         self.advantages = advantages
         self.returns = returns
+        self.env_scales = env_scales if env_scales is not None else np.ones(self.buffer_size, dtype=np.float32)
         self.step_idx = self.buffer_size
 
     def get_chunks_generator(
@@ -209,6 +215,7 @@ class RecurrentRolloutBuffer:
             b_vals = []
             b_dones = []
             b_hx = []
+            b_scales = []
 
             for c_idx in batch_chunk_idxs:
                 step_start = c_idx * t_len
@@ -229,6 +236,8 @@ class RecurrentRolloutBuffer:
 
                 # Initial hidden state for this chunk: shape [1, 1, 256]
                 b_hx.append(self.chunk_hx[c_idx])
+                if hasattr(self, "env_scales") and len(self.env_scales) > 0:
+                    b_scales.append(self.env_scales[step_start:step_end])
 
             # Convert to PyTorch tensors on device
             tensor_obs = torch.tensor(np.array(b_obs), dtype=torch.float32, device=self.device)
@@ -274,6 +283,11 @@ class RecurrentRolloutBuffer:
 
             # Stack hx along batch dimension: [1, B, 256]
             tensor_hx = torch.cat(b_hx, dim=1).to(self.device)
+            tensor_scales = (
+                torch.tensor(np.array(b_scales), dtype=torch.float32, device=self.device)
+                if len(b_scales) == b_size
+                else None
+            )
 
             yield RecurrentBatch(
                 obs=tensor_obs,
@@ -287,6 +301,7 @@ class RecurrentRolloutBuffer:
                 old_values=tensor_vals,
                 dones=tensor_dones,
                 hx=tensor_hx,
+                env_scales=tensor_scales,
             )
 
 

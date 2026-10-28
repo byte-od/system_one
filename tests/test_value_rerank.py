@@ -59,7 +59,7 @@ def test_wrapper_simulate_step():
     assert "obs" in sim_dict
     assert "delta_obs" in sim_dict
     assert sim_dict["obs"].shape == (324,)
-    assert sim_dict["delta_obs"].shape == (324,)
+    assert sim_dict["delta_obs"].shape == (972 if wrapped.tri_compass else 324,)
 
     # Estado persistente do wrapper não pode sofrer mutação
     assert np.array_equal(wrapped.init_obs, init_obs_copy)

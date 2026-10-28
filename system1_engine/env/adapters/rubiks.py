@@ -683,10 +683,14 @@ class RubiksCubeEnv(gym.Env):
 
     @property
     def curriculum_success_rate(self) -> float:
-        if len(self.frontier_successes) > 0:
-            return float(np.mean(self.frontier_successes))
-        if len(self.recent_successes) > 0:
-            return float(np.mean(self.recent_successes))
+        f = self.frontier_successes
+        if len(f) > 0:
+            effective_window = max(len(f), 16) if (self.current_depth >= 5) else len(f)
+            return float(sum(f) / effective_window)
+        r = self.recent_successes
+        if len(r) > 0:
+            effective_window = max(len(r), 16) if (self.current_depth >= 5) else len(r)
+            return float(sum(r) / effective_window)
         return 0.0
 
     def set_view_mode(self, mode: str) -> None:
@@ -818,11 +822,7 @@ class RubiksCubeEnv(gym.Env):
             "curriculum_p_frontier": getattr(self, "_last_p_frontier", 1.0),
             "dynamic_frontier": getattr(self, "dynamic_frontier", True),
             "target_success_rate": self.get_target_success_rate(),
-            "curriculum_success_rate": (
-                float(np.mean(self.frontier_successes)) if len(self.frontier_successes) > 0 else (
-                    float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
-                )
-            ),
+            "curriculum_success_rate": self.curriculum_success_rate,
         }
         return obs, info
 
@@ -886,11 +886,7 @@ class RubiksCubeEnv(gym.Env):
             "curriculum": self.curriculum,
             "curriculum_promotions": self.curriculum_promotions,
             "target_success_rate": self.get_target_success_rate(),
-            "curriculum_success_rate": (
-                float(np.mean(self.frontier_successes)) if len(self.frontier_successes) > 0 else (
-                    float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
-                )
-            ),
+            "curriculum_success_rate": self.curriculum_success_rate,
         }
         return obs, reward, terminated, truncated, info
 
@@ -1031,10 +1027,14 @@ class RubiksCubeMacroEnv(gym.Env):
 
     @property
     def curriculum_success_rate(self) -> float:
-        if len(self.frontier_successes) > 0:
-            return float(np.mean(self.frontier_successes))
-        if len(self.recent_successes) > 0:
-            return float(np.mean(self.recent_successes))
+        f = self.frontier_successes
+        if len(f) > 0:
+            effective_window = max(len(f), 16) if (self.current_depth >= 5) else len(f)
+            return float(sum(f) / effective_window)
+        r = self.recent_successes
+        if len(r) > 0:
+            effective_window = max(len(r), 16) if (self.current_depth >= 5) else len(r)
+            return float(sum(r) / effective_window)
         return 0.0
 
     def set_view_mode(self, mode: str) -> None:
@@ -1164,11 +1164,7 @@ class RubiksCubeMacroEnv(gym.Env):
             "curriculum_p_frontier": getattr(self, "_last_p_frontier", 1.0),
             "dynamic_frontier": getattr(self, "dynamic_frontier", True),
             "target_success_rate": self.get_target_success_rate(),
-            "curriculum_success_rate": (
-                float(np.mean(self.frontier_successes)) if len(self.frontier_successes) > 0 else (
-                    float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
-                )
-            ),
+            "curriculum_success_rate": self.curriculum_success_rate,
         }
         return obs, info
 
@@ -1227,11 +1223,7 @@ class RubiksCubeMacroEnv(gym.Env):
             "curriculum": self.curriculum,
             "curriculum_promotions": self.curriculum_promotions,
             "target_success_rate": self.get_target_success_rate(),
-            "curriculum_success_rate": (
-                float(np.mean(self.frontier_successes)) if len(self.frontier_successes) > 0 else (
-                    float(np.mean(self.recent_successes)) if len(self.recent_successes) > 0 else 0.0
-                )
-            ),
+            "curriculum_success_rate": self.curriculum_success_rate,
         }
         return obs, reward, terminated, truncated, info
 

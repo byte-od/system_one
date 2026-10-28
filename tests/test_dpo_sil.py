@@ -348,10 +348,11 @@ def test_recurrent_ppo_trainer_with_dpo_enabled():
     trainer.collect_rollouts(current_obs_dict=init_obs, current_hx=None, episode_start=True)
     # Adiciona sinteticamente 1 par para garantir execução do passo DPO
     obs_dim = wrapped_env.observation_space["obs"].shape[0]
+    delta_dim = wrapped_env.observation_space["delta_obs"].shape[0]
     trainer.sil_buffer.add(
         SuccessfulTrajectory(
             obs=np.zeros((6, obs_dim), dtype=np.float32),
-            delta_obs=np.zeros((6, obs_dim), dtype=np.float32),
+            delta_obs=np.zeros((6, delta_dim), dtype=np.float32),
             prev_actions=np.zeros(6, dtype=np.int64),
             prev_rewards=np.zeros(6, dtype=np.float32),
             actions=np.zeros(6, dtype=np.int64),
@@ -364,7 +365,7 @@ def test_recurrent_ppo_trainer_with_dpo_enabled():
     trainer.sil_buffer.add_failure(
         SuccessfulTrajectory(
             obs=np.zeros((6, obs_dim), dtype=np.float32),
-            delta_obs=np.zeros((6, obs_dim), dtype=np.float32),
+            delta_obs=np.zeros((6, delta_dim), dtype=np.float32),
             prev_actions=np.zeros(6, dtype=np.int64),
             prev_rewards=np.zeros(6, dtype=np.float32),
             actions=np.zeros(6, dtype=np.int64),

@@ -49,6 +49,7 @@ class HUDServer:
         self.runner = HUDProcessRunner()
         self.frame_buffer = VideoFrameBuffer()
         self._lock = threading.Lock()
+        self._current_depth_best_rate: float = 0.0
         self.latest_telemetry: Dict[str, Any] = {
             "fps": 0.0,
             "total_steps": 0,
@@ -278,6 +279,22 @@ class HUDServer:
                 self.latest_telemetry["curriculum_depth_best_success_rate"] = None
                 self.latest_telemetry["curriculum_depth_min_success_rate"] = None
                 self.latest_telemetry["curriculum_success_rate"] = 0.0
+                self._current_depth_best_rate = 0.0
+
+            # Sanitização contra anomalia estatística de 1 amostra inicial (1/1 = 100% em D5+)
+            curr_d = new_d if new_d is not None else prev_d
+            curr_rate = data.get("curriculum_success_rate")
+            if curr_d is not None and curr_d >= 5:
+                if not hasattr(self, "_current_depth_best_rate") or self._current_depth_best_rate is None:
+                    self._current_depth_best_rate = 0.0
+                if curr_rate is not None and curr_rate < 0.90:
+                    self._current_depth_best_rate = max(self._current_depth_best_rate, float(curr_rate))
+
+                incoming_best = data.get("curriculum_depth_best_success_rate")
+                if incoming_best is not None and incoming_best >= 0.95 and (curr_rate is None or curr_rate < 0.80):
+                    data["curriculum_depth_best_success_rate"] = (
+                        self._current_depth_best_rate if self._current_depth_best_rate > 0 else (curr_rate if curr_rate is not None else 0.0)
+                    )
 
             self.latest_telemetry.update(data)
 
