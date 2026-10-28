@@ -204,11 +204,12 @@ def test_sil_integration_in_ppo_training():
     )
 
     # Injeta artificialmente 2 trajetórias de sucesso para testar train_epoch
+    delta_dim = wrapper_env.observation_space["delta_obs"].shape[0]
     for i in range(2):
         trainer.sil_buffer.add(
             SuccessfulTrajectory(
                 obs=np.random.randn(5, 324).astype(np.float32),
-                delta_obs=np.random.randn(5, 324).astype(np.float32),
+                delta_obs=np.random.randn(5, delta_dim).astype(np.float32),
                 prev_actions=np.zeros(5, dtype=np.int64),
                 prev_rewards=np.zeros(5, dtype=np.float32),
                 actions=np.random.randint(0, 12, size=5),

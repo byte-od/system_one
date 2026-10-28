@@ -1,5 +1,6 @@
 from collections import defaultdict, deque
 from dataclasses import dataclass
+import heapq
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 import numpy as np
 import torch
@@ -305,7 +306,7 @@ class RecurrentRolloutBuffer:
             )
 
 
-@dataclass
+@dataclass(eq=False)
 class SuccessfulTrajectory:
     """Trajetória completa de um episódio vitorioso/resolvido ou negativo (falha)."""
     obs: np.ndarray                  # [T, obs_dim]
@@ -318,12 +319,47 @@ class SuccessfulTrajectory:
     length: int                      # Duração T em passos
     log_probs: Optional[np.ndarray] = None  # [T] log_probs da política de rollout (pi_old / pi_ref)
     is_full_win: bool = True         # True se vitória terminal completa, False se fatia de pico (peak slice)
+    _entry_id: int = 0               # ID sequencial para desempate estável no min-heap (FIFO)
 
     def __len__(self) -> int:
         return self.length
 
+    @property
+    def quality_key(self) -> Tuple[bool, float, int]:
+        ret = float(self.returns[0]) if (self.returns is not None and len(self.returns) > 0) else 0.0
+        return (bool(getattr(self, "is_full_win", True)), ret, -int(self.length))
 
-@dataclass
+    def _cmp_tuple(self) -> Tuple[bool, float, int, int]:
+        ret = float(self.returns[0]) if (self.returns is not None and len(self.returns) > 0) else 0.0
+        return (bool(getattr(self, "is_full_win", True)), ret, -int(self.length), int(self._entry_id))
+
+    def __lt__(self, other: Any) -> bool:
+        if not isinstance(other, SuccessfulTrajectory):
+            return NotImplemented
+        return self._cmp_tuple() < other._cmp_tuple()
+
+    def __le__(self, other: Any) -> bool:
+        if not isinstance(other, SuccessfulTrajectory):
+            return NotImplemented
+        return self._cmp_tuple() <= other._cmp_tuple()
+
+    def __gt__(self, other: Any) -> bool:
+        if not isinstance(other, SuccessfulTrajectory):
+            return NotImplemented
+        return self._cmp_tuple() > other._cmp_tuple()
+
+    def __ge__(self, other: Any) -> bool:
+        if not isinstance(other, SuccessfulTrajectory):
+            return NotImplemented
+        return self._cmp_tuple() >= other._cmp_tuple()
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, SuccessfulTrajectory):
+            return NotImplemented
+        return self is other or (self._cmp_tuple() == other._cmp_tuple())
+
+
+@dataclass(eq=False)
 class FrontierTransition(SuccessfulTrajectory):
     """Transição atômica ou micro-manobra decisiva de fronteira (Bellman 1-step / n-step breakthrough)."""
     td_error: float = 0.0
@@ -432,6 +468,7 @@ class SuccessReplayBuffer:
         self.total_added: int = 0
         self.total_pruned: int = 0
         self.total_failures_added: int = 0
+        self._entry_counter: int = 0
 
     @property
     def trajectories(self) -> List[SuccessfulTrajectory]:
@@ -462,6 +499,7 @@ class SuccessReplayBuffer:
         self.total_added = 0
         self.total_pruned = 0
         self.total_failures_added = 0
+        self._entry_counter = 0
 
     def get_depth_distribution(self) -> Dict[int, int]:
         """Retorna a contagem de trajetórias armazenadas por profundidade."""
@@ -604,37 +642,22 @@ class SuccessReplayBuffer:
                 comp_obs = np.clip(trajectory.obs, 0, 255).astype(np.uint8)
             trajectory.obs = comp_obs
 
-        t_ret = float(trajectory.returns[0]) if len(trajectory.returns) > 0 else 0.0
-        t_len = int(trajectory.length)
-        is_full = bool(getattr(trajectory, "is_full_win", True))
-        new_quality = (is_full, t_ret, -t_len)
-
-        # 3. Quota local por estrato com substituição prioritária por qualidade:
+        # 3. Quota local por estrato com substituição prioritária por qualidade via Min-Heap O(log N):
         # Vitórias totais têm prioridade máxima sobre vitórias parciais (fatias de pico).
+        self._entry_counter += 1
+        trajectory._entry_id = self._entry_counter
+
         quota = self.get_capacity_for_depth(depth)
         if len(d_buf) >= quota:
-            worst_idx = min(
-                range(len(d_buf)),
-                key=lambda i: (
-                    bool(getattr(d_buf[i], "is_full_win", True)),
-                    float(d_buf[i].returns[0]) if len(d_buf[i].returns) > 0 else 0.0,
-                    -int(d_buf[i].length),
-                ),
-            )
-            worst_traj = d_buf[worst_idx]
-            worst_quality = (
-                bool(getattr(worst_traj, "is_full_win", True)),
-                float(worst_traj.returns[0]) if len(worst_traj.returns) > 0 else 0.0,
-                -int(worst_traj.length),
-            )
-            if new_quality >= worst_quality:
-                d_buf[worst_idx] = trajectory
+            worst_traj = d_buf[0]
+            if trajectory > worst_traj:
+                heapq.heapreplace(d_buf, trajectory)
                 self.total_added += 1
             else:
                 self.total_pruned += 1
                 return
         else:
-            d_buf.append(trajectory)
+            heapq.heappush(d_buf, trajectory)
             self.total_added += 1
 
         # 4. Limite global com Proteção de Âncoras Fundacionais:
@@ -654,14 +677,7 @@ class SuccessReplayBuffer:
                 eligible_depths = non_empty_depths
 
             target_d = eligible_depths[0]
-            worst_idx = min(
-                range(len(self._depth_buffers[target_d])),
-                key=lambda i: (
-                    float(self._depth_buffers[target_d][i].returns[0]) if len(self._depth_buffers[target_d][i].returns) > 0 else 0.0,
-                    -int(self._depth_buffers[target_d][i].length),
-                ),
-            )
-            self._depth_buffers[target_d].pop(worst_idx)
+            heapq.heappop(self._depth_buffers[target_d])
             if len(self._depth_buffers[target_d]) == 0:
                 del self._depth_buffers[target_d]
 
@@ -677,9 +693,12 @@ class SuccessReplayBuffer:
         b_obs = np.zeros((k, max_len, *self.obs_shape), dtype=np.float32)
         has_delta = any(t.delta_obs is not None for t in sampled_trajs)
         if has_delta:
-            sample_delta = next(t.delta_obs for t in sampled_trajs if t.delta_obs is not None)
-            delta_shape = sample_delta.shape[1:] if sample_delta.ndim > 1 else self.obs_shape
-            b_delta = np.zeros((k, max_len, *delta_shape), dtype=np.float32)
+            max_delta_dim = max(
+                (t.delta_obs.shape[-1] if t.delta_obs.ndim > 1 else t.delta_obs.shape[0])
+                for t in sampled_trajs
+                if t.delta_obs is not None
+            )
+            b_delta = np.zeros((k, max_len, max_delta_dim), dtype=np.float32)
         else:
             b_delta = None
 
@@ -703,7 +722,8 @@ class SuccessReplayBuffer:
             else:
                 b_obs[i, :L] = t.obs
             if has_delta and t.delta_obs is not None:
-                b_delta[i, :L] = t.delta_obs
+                d_dim = min(b_delta.shape[-1], t.delta_obs.shape[-1])
+                b_delta[i, :L, :d_dim] = t.delta_obs[:, :d_dim]
             b_prev_act[i, :L] = t.prev_actions
             b_prev_rew[i, :L, 0] = t.prev_rewards
             b_act[i, :L] = t.actions
@@ -761,48 +781,79 @@ class SuccessReplayBuffer:
             return None
 
         if target_depth is None:
-            all_trajs = self.trajectories
-            sampled_indices = np.random.choice(len(all_trajs), size=k, replace=(k > len(all_trajs)))
-            sampled_trajs = [all_trajs[i] for i in sampled_indices]
+            eligible_depths = [d for d in self._depth_buffers.keys() if len(self._depth_buffers[d]) > 0]
+            depth_counts = np.array([len(self._depth_buffers[d]) for d in eligible_depths], dtype=np.float64)
+            depth_probs = depth_counts / depth_counts.sum()
+            chosen_depths = np.random.choice(eligible_depths, size=k, replace=True, p=depth_probs)
+            sampled_trajs = [
+                self._depth_buffers[d][np.random.randint(0, len(self._depth_buffers[d]))]
+                for d in chosen_depths
+            ]
         else:
             frontier_min_depth = max(1, target_depth - 1)
-            frontier = [t for t in self.trajectories if t.depth >= frontier_min_depth]
-            anchors = [t for t in self.trajectories if t.depth < frontier_min_depth]
+            frontier_depths = [d for d in self._depth_buffers.keys() if d >= frontier_min_depth and len(self._depth_buffers[d]) > 0]
+            anchor_depths = [d for d in self._depth_buffers.keys() if d < frontier_min_depth and len(self._depth_buffers[d]) > 0]
 
-            if len(frontier) > 0 and len(anchors) > 0:
+            sampled_trajs: List[SuccessfulTrajectory] = []
+
+            if len(frontier_depths) > 0 and len(anchor_depths) > 0:
                 # Prioritização de Fronteira: 75% fronteira ativa / 25% âncoras fundacionais
                 n_frontier = max(1, int(round(k * self.frontier_ratio)))
                 if n_frontier >= k and k > 1:
                     n_frontier = k - 1
                 n_anchor = k - n_frontier
 
+                # Amostragem de fronteira
                 if getattr(self, "dynamic_frontier", True):
-                    f_depths = np.array([t.depth for t in frontier], dtype=np.float64)
-                    f_weights = np.exp(-self.proximal_decay * np.abs(target_depth - f_depths))
-                    # Geodesic boost: trajetórias mais curtas ganham prioridade de amostragem
-                    f_lens = np.array([max(1, len(t)) for t in frontier], dtype=np.float64)
-                    f_weights = f_weights / np.sqrt(f_lens)
+                    f_depth_arr = np.array(frontier_depths, dtype=np.float64)
+                    f_counts = np.array([len(self._depth_buffers[d]) for d in frontier_depths], dtype=np.float64)
+                    f_weights = f_counts * np.exp(-self.proximal_decay * np.abs(target_depth - f_depth_arr))
                     f_weights /= f_weights.sum()
-                    f_indices = np.random.choice(len(frontier), size=n_frontier, replace=(n_frontier > len(frontier)), p=f_weights)
+                    f_chosen_depths = np.random.choice(frontier_depths, size=n_frontier, replace=True, p=f_weights)
                 else:
-                    f_indices = np.random.choice(len(frontier), size=n_frontier, replace=(n_frontier > len(frontier)))
+                    f_counts = np.array([len(self._depth_buffers[d]) for d in frontier_depths], dtype=np.float64)
+                    f_weights = f_counts / f_counts.sum()
+                    f_chosen_depths = np.random.choice(frontier_depths, size=n_frontier, replace=True, p=f_weights)
 
-                a_indices = np.random.choice(len(anchors), size=n_anchor, replace=(n_anchor > len(anchors)))
-                sampled_trajs = [frontier[i] for i in f_indices] + [anchors[j] for j in a_indices]
-            elif len(frontier) > 0:
+                sampled_trajs.extend(
+                    self._depth_buffers[d][np.random.randint(0, len(self._depth_buffers[d]))]
+                    for d in f_chosen_depths
+                )
+
+                # Amostragem de âncoras
+                if n_anchor > 0:
+                    a_counts = np.array([len(self._depth_buffers[d]) for d in anchor_depths], dtype=np.float64)
+                    a_weights = a_counts / a_counts.sum()
+                    a_chosen_depths = np.random.choice(anchor_depths, size=n_anchor, replace=True, p=a_weights)
+                    sampled_trajs.extend(
+                        self._depth_buffers[d][np.random.randint(0, len(self._depth_buffers[d]))]
+                        for d in a_chosen_depths
+                    )
+
+            elif len(frontier_depths) > 0:
                 if getattr(self, "dynamic_frontier", True):
-                    f_depths = np.array([t.depth for t in frontier], dtype=np.float64)
-                    f_weights = np.exp(-self.proximal_decay * np.abs(target_depth - f_depths))
-                    f_lens = np.array([max(1, len(t)) for t in frontier], dtype=np.float64)
-                    f_weights = f_weights / np.sqrt(f_lens)
+                    f_depth_arr = np.array(frontier_depths, dtype=np.float64)
+                    f_counts = np.array([len(self._depth_buffers[d]) for d in frontier_depths], dtype=np.float64)
+                    f_weights = f_counts * np.exp(-self.proximal_decay * np.abs(target_depth - f_depth_arr))
                     f_weights /= f_weights.sum()
-                    f_indices = np.random.choice(len(frontier), size=k, replace=(k > len(frontier)), p=f_weights)
+                    chosen_depths = np.random.choice(frontier_depths, size=k, replace=True, p=f_weights)
                 else:
-                    f_indices = np.random.choice(len(frontier), size=k, replace=(k > len(frontier)))
-                sampled_trajs = [frontier[i] for i in f_indices]
+                    f_counts = np.array([len(self._depth_buffers[d]) for d in frontier_depths], dtype=np.float64)
+                    f_weights = f_counts / f_counts.sum()
+                    chosen_depths = np.random.choice(frontier_depths, size=k, replace=True, p=f_weights)
+
+                sampled_trajs.extend(
+                    self._depth_buffers[d][np.random.randint(0, len(self._depth_buffers[d]))]
+                    for d in chosen_depths
+                )
             else:
-                a_indices = np.random.choice(len(anchors), size=k, replace=(k > len(anchors)))
-                sampled_trajs = [anchors[j] for j in a_indices]
+                a_counts = np.array([len(self._depth_buffers[d]) for d in anchor_depths], dtype=np.float64)
+                a_weights = a_counts / a_counts.sum()
+                chosen_depths = np.random.choice(anchor_depths, size=k, replace=True, p=a_weights)
+                sampled_trajs.extend(
+                    self._depth_buffers[d][np.random.randint(0, len(self._depth_buffers[d]))]
+                    for d in chosen_depths
+                )
 
         return self._collate_trajectories(sampled_trajs)
 
