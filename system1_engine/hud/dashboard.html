@@ -2373,11 +2373,12 @@
                   </div>
                   <div class="flex gap-0.5">
                     <button type="button" onclick="setEntropy('0.005')" id="btn-ent-005" class="badge-btn">0.005</button>
-                    <button type="button" onclick="setEntropy('0.010')" id="btn-ent-010" class="badge-btn text-cyan-300 font-bold border-cyan-700 bg-cyan-950">0.010</button>
+                    <button type="button" onclick="setEntropy('0.007')" id="btn-ent-007" class="badge-btn text-cyan-300 font-bold border-cyan-700 bg-cyan-950">0.007</button>
+                    <button type="button" onclick="setEntropy('0.010')" id="btn-ent-010" class="badge-btn">0.010</button>
                     <button type="button" onclick="setEntropy('0.015')" id="btn-ent-015" class="badge-btn">0.015</button>
                   </div>
                 </div>
-                <input type="number" id="cfg-entropy" value="0.010" step="0.001" min="0" max="0.1" oninput="updateEntropyButtons(this.value)" class="hud-input text-center font-mono font-bold text-amber-200" />
+                <input type="number" id="cfg-entropy" value="0.007" step="0.001" min="0" max="0.1" oninput="updateEntropyButtons(this.value)" class="hud-input text-center font-mono font-bold text-amber-200" />
               </div>
               <div>
                 <div class="flex justify-between items-center mb-0.5">
@@ -4664,7 +4665,7 @@
     }
     function updateEntropyButtons(val) {
       const num = parseFloat(val);
-      ['005', '010', '015'].forEach(suffix => {
+      ['005', '007', '010', '015'].forEach(suffix => {
         const btn = document.getElementById('btn-ent-' + suffix);
         const target = parseFloat(suffix) / 1000.0;
         if (btn) {
@@ -6840,7 +6841,7 @@
         })(),
         target_return: parseFloat(document.getElementById('cfg-target-return').value) || (actualEnv === 'RubiksCube-v0' ? 12.0 : 475.0),
         lr: parseFloat(document.getElementById('cfg-lr').value) || 0.0001,
-        entropy_coef: parseFloat(document.getElementById('cfg-entropy').value) || 0.01,
+        entropy_coef: parseFloat(document.getElementById('cfg-entropy').value) || 0.007,
         rollout_steps: parseInt(document.getElementById('cfg-rollout-steps').value) || 2048,
         chunk_length: parseInt(document.getElementById('cfg-chunk-length').value) || 32,
         chunk_batch_size: parseInt(document.getElementById('cfg-chunk-batch').value) || 16,
