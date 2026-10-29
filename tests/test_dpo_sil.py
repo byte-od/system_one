@@ -602,10 +602,8 @@ def test_process_completed_trajectory_peak_slicing_isolated_bellman():
     np.testing.assert_allclose(stored_slice.returns[1], expected_G1, rtol=1e-4)
     np.testing.assert_allclose(stored_slice.returns[0], expected_G0, rtol=1e-4)
 
-    # 3. Verifica se a cauda de degradação (passos 3 a 5, L=3) foi para o buffer de falhas do DPO
-    assert len(trainer.sil_buffer.failures) == 1
-    fail_slice = trainer.sil_buffer.failures[0]
-    assert fail_slice.length == 3
+    # 3. Verifica que a cauda de degradação pós-pico é descartada (armazenam-se apenas vitórias e fatias de sucesso)
+    assert len(trainer.sil_buffer.failures) == 0
 
 
 def test_process_completed_trajectory_no_progress_rejection():

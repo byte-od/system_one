@@ -462,8 +462,18 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     sil_enabled = bool(config.get("sil_enabled", True))
     sil_coef = float(config.get("sil_coef", 0.08))
     sil_batch_size = int(config.get("sil_batch_size", 8))
-    sil_max_trajectories = int(config.get("sil_max_trajectories", 10240))
-    sil_max_per_depth = int(config.get("sil_max_per_depth", 2048))
+    raw_max_traj = config.get("sil_max_trajectories", None)
+    sil_max_trajectories = (
+        int(raw_max_traj)
+        if (raw_max_traj is not None and int(raw_max_traj) > 0)
+        else None
+    )
+    raw_max_depth = config.get("sil_max_per_depth", None)
+    sil_max_per_depth = (
+        int(raw_max_depth)
+        if (raw_max_depth is not None and int(raw_max_depth) > 0)
+        else None
+    )
     min_capacity_per_depth = int(config.get("sil_min_capacity_per_depth", 32))
     max_failures_per_depth = int(config.get("max_failures_per_depth", 512))
     min_failures_per_depth = int(config.get("min_failures_per_depth", 16))
@@ -475,9 +485,11 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     progressive_buffer_capacity = bool(config.get("progressive_buffer_capacity", True))
 
     if sil_enabled:
-        print(f"🧠 Self-Imitation Learning (SIL Replay): ATIVO (coef={sil_coef:.2f}, batch={sil_batch_size}, max_trajs={sil_max_trajectories}, max_per_depth={sil_max_per_depth}, progressive={progressive_buffer_capacity})")
+        cap_lbl = str(sil_max_trajectories) if sil_max_trajectories is not None else "ilimitado (lossless)"
+        depth_cap_lbl = str(sil_max_per_depth) if sil_max_per_depth is not None else "ilimitado (lossless)"
+        print(f"🧠 Self-Imitation Learning (SIL Replay): ATIVO (coef={sil_coef:.2f}, batch={sil_batch_size}, max_trajs={cap_lbl}, max_per_depth={depth_cap_lbl})")
         if sil_dpo_enabled:
-            print(f"⚖️ Contrastive Online DPO-SIL (c-SIL): ATIVO (coef={dpo_coef:.2f}, beta={dpo_beta:.2f}, batch_pairs={dpo_batch_size})")
+            print(f"⚖️ Contrastive Online DPO-SIL (c-SIL On-Policy Contrast): ATIVO (coef={dpo_coef:.2f}, beta={dpo_beta:.2f}, batch_pairs={dpo_batch_size})")
     else:
         print("⚡ Self-Imitation Learning (SIL Replay): DESATIVADO")
 

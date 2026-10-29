@@ -48,8 +48,8 @@ class RecurrentPPOTrainer:
         sil_enabled: bool = True,
         sil_coef: float = 0.08,
         sil_batch_size: int = 8,
-        sil_max_trajectories: int = 10240,
-        sil_max_per_depth: int = 2048,
+        sil_max_trajectories: Optional[int] = None,
+        sil_max_per_depth: Optional[int] = None,
         min_capacity_per_depth: int = 32,
         sil_min_samples: int = 8,
         sil_dpo_enabled: bool = False,
@@ -118,8 +118,16 @@ class RecurrentPPOTrainer:
         self.sil_coef = float(sil_coef)
         self.sil_batch_size = max(2, int(sil_batch_size))
         self.sil_min_samples = max(2, int(sil_min_samples))
-        self.sil_max_trajectories = max(2, int(sil_max_trajectories))
-        self.sil_max_per_depth = max(1, int(sil_max_per_depth))
+        self.sil_max_trajectories: Optional[int] = (
+            int(sil_max_trajectories)
+            if (sil_max_trajectories is not None and int(sil_max_trajectories) > 0)
+            else None
+        )
+        self.sil_max_per_depth: Optional[int] = (
+            int(sil_max_per_depth)
+            if (sil_max_per_depth is not None and int(sil_max_per_depth) > 0)
+            else None
+        )
         self.min_capacity_per_depth = max(1, int(min_capacity_per_depth))
         self.sil_dpo_enabled = bool(sil_dpo_enabled)
         self.dpo_coef = float(dpo_coef)
@@ -375,6 +383,7 @@ class RecurrentPPOTrainer:
 
         self.agent.eval()
         self.last_warmup_solve_rates: Dict[int, float] = {}
+        len_before = len(self.sil_buffer)
         added_total = 0
 
         try:
@@ -624,7 +633,7 @@ class RecurrentPPOTrainer:
                 self.tracker.metrics.curriculum_depth = int(raw_env.current_depth)
                 self.tracker.metrics.curriculum_promotions = int(getattr(raw_env, "curriculum_promotions", 0))
 
-        return added_total
+        return max(0, len(self.sil_buffer) - len_before)
 
     def _prepare_rollout_input(self, obs_dict: Dict[str, Any]) -> Dict[str, Any]:
         """Copia os dados do dicionário de observação diretamente para os tensores pré-alocados."""
@@ -1399,16 +1408,17 @@ class RecurrentPPOTrainer:
         is_win: bool,
         cur_depth: int,
     ) -> None:
-        """Processa e armazena trajetórias concluídas no buffer SIL/DPO com Peak Slicing e Bellman Isolado.
+        """Processa e armazena estritamente vitórias e fatias de sucesso no buffer SIL com Peak Slicing e Bellman Isolado.
 
-        Aplica a síntese universal híbrida:
+        Aplica a síntese universal híbrida sem teto e com compactação 100% lossless:
         1. Em vitórias completas (is_win=True), preserva o episódio integral com is_full_win=True.
         2. Em episódios incompletos/truncados (is_win=False), aplica Peak Slicing no passo de maior
-           progresso cumulativo (t*), descartando a cauda de degradação.
+           progresso cumulativo (t*), descartando a cauda de degradação e armazenando apenas a fatia
+           de ganho positivo líquido (is_full_win=False).
         3. Calcula o retorno de Bellman isolado na fatia [0...t*], ancorando o valor terminal via
            bootstrapping de V(s_{t*+1}) para blindar a vantagem SIL positiva (max(0, R - V) > 0).
-        4. O gradiente da perda SIL refina a atribuição de valor a cada passo acima do crítico.
-        5. Se sil_dpo_enabled=True, a cauda de degradação pós-pico entra no buffer de falhas contrastivas.
+        4. Nenhuma trajetória de falha ou cauda de degradação é persistida no SuccessReplayBuffer;
+           o contraste DPO opera sob demanda contra chunks negativos on-policy frescos do rollout atual.
         """
         if not self.sil_enabled or len(traj_steps) == 0:
             return
@@ -1510,80 +1520,6 @@ class RecurrentPPOTrainer:
                         length=L_slice,
                         td_error=float(slice_returns[0]) if len(slice_returns) > 0 else 0.0,
                         log_probs=peak_logp,
-                        is_full_win=False,
-                    )
-                )
-
-                # Se DPO contrastivo estiver ativo, a cauda de degradação pós-pico entra no buffer de falhas
-                if getattr(self, "sil_dpo_enabled", False):
-                    deg_slice = traj_steps[t_star + 1 :]
-                    if len(deg_slice) >= 2:
-                        L_deg = len(deg_slice)
-                        deg_rews = [s["reward"] for s in deg_slice]
-                        deg_returns = np.zeros(L_deg, dtype=np.float32)
-                        running_d = 0.0
-                        for d_idx in reversed(range(L_deg)):
-                            running_d = deg_rews[d_idx] + self.effective_gamma * running_d
-                            deg_returns[d_idx] = running_d
-
-                        deg_obs = np.array([s["obs"] for s in deg_slice], dtype=np.float32)
-                        has_d_delta = any(s["delta_obs"] is not None for s in deg_slice)
-                        deg_delta = (
-                            np.array([s["delta_obs"] for s in deg_slice], dtype=np.float32)
-                            if has_d_delta
-                            else None
-                        )
-                        deg_prev_act = np.array([s["prev_action"] for s in deg_slice])
-                        deg_prev_rew = np.array([s["prev_reward"] for s in deg_slice], dtype=np.float32)
-                        deg_act = np.array([s["action"] for s in deg_slice])
-                        deg_logp = np.array([s.get("log_prob", 0.0) for s in deg_slice], dtype=np.float32)
-
-                        self.sil_buffer.add_failure(
-                            SuccessfulTrajectory(
-                                obs=deg_obs,
-                                delta_obs=deg_delta,
-                                prev_actions=deg_prev_act,
-                                prev_rewards=deg_prev_rew,
-                                actions=deg_act,
-                                returns=deg_returns,
-                                depth=cur_d,
-                                length=L_deg,
-                                log_probs=deg_logp,
-                                is_full_win=False,
-                            )
-                        )
-            elif getattr(self, "sil_dpo_enabled", False):
-                # Sem avanço mínimo: o episódio inteiro entra como falha se DPO ativo
-                traj_rews = [s["reward"] for s in traj_steps]
-                traj_returns = np.zeros(T_traj, dtype=np.float32)
-                running_r = 0.0
-                for t_idx in reversed(range(T_traj)):
-                    running_r = traj_rews[t_idx] + self.effective_gamma * running_r
-                    traj_returns[t_idx] = running_r
-
-                traj_obs = np.array([s["obs"] for s in traj_steps], dtype=np.float32)
-                has_delta = any(s["delta_obs"] is not None for s in traj_steps)
-                traj_delta = (
-                    np.array([s["delta_obs"] for s in traj_steps], dtype=np.float32)
-                    if has_delta
-                    else None
-                )
-                traj_prev_act = np.array([s["prev_action"] for s in traj_steps])
-                traj_prev_rew = np.array([s["prev_reward"] for s in traj_steps], dtype=np.float32)
-                traj_act = np.array([s["action"] for s in traj_steps])
-                traj_logp = np.array([s.get("log_prob", 0.0) for s in traj_steps], dtype=np.float32)
-
-                self.sil_buffer.add_failure(
-                    SuccessfulTrajectory(
-                        obs=traj_obs,
-                        delta_obs=traj_delta,
-                        prev_actions=traj_prev_act,
-                        prev_rewards=traj_prev_rew,
-                        actions=traj_act,
-                        returns=traj_returns,
-                        depth=cur_d,
-                        length=T_traj,
-                        log_probs=traj_logp,
                         is_full_win=False,
                     )
                 )
@@ -1985,6 +1921,20 @@ class RecurrentPPOTrainer:
                 target_depth=target_depth,
                 only_full_wins=only_full_wins,
             )
+            if pairs is None:
+                # Modo sem armazenamento de falhas: contrasta vitórias/fatias de sucesso do buffer
+                # contra chunks negativos frescos (vantagem GAE < 0) do rollout on-policy atual
+                win_cand = self.sil_buffer.sample_batch(
+                    batch_size=self.dpo_batch_size,
+                    target_depth=target_depth,
+                    only_full_wins=only_full_wins,
+                )
+                if win_cand is not None:
+                    k_win = int(win_cand["obs"].shape[0])
+                    loss_cand = self.buffer.sample_negative_chunks(batch_size=k_win)
+                    if loss_cand is not None:
+                        pairs = (win_cand, loss_cand)
+
             if pairs is not None:
                 win_batch, loss_batch = pairs
                 win_in = {
@@ -2032,11 +1982,13 @@ class RecurrentPPOTrainer:
                 h_w = ((win_logp - win_ref_logp) * win_mask).sum(dim=-1) / win_len
                 h_l = ((loss_logp - loss_ref_logp) * loss_mask).sum(dim=-1) / loss_len
 
-                dpo_logits = self.dpo_beta * (h_w - h_l)
-                dpo_loss = -torch.nn.functional.logsigmoid(dpo_logits).mean()
-                dpo_p_loss = float(dpo_loss.item())
-                scaled_dpo = self.dpo_coef * dpo_loss
-                total_mem_loss = scaled_dpo if total_mem_loss is None else (total_mem_loss + scaled_dpo)
+                b_eff = min(int(h_w.shape[0]), int(h_l.shape[0]))
+                if b_eff > 0:
+                    dpo_logits = self.dpo_beta * (h_w[:b_eff] - h_l[:b_eff])
+                    dpo_loss = -torch.nn.functional.logsigmoid(dpo_logits).mean()
+                    dpo_p_loss = float(dpo_loss.item())
+                    scaled_dpo = self.dpo_coef * dpo_loss
+                    total_mem_loss = scaled_dpo if total_mem_loss is None else (total_mem_loss + scaled_dpo)
 
         return total_mem_loss, sil_p_loss, dpo_p_loss
 

@@ -201,8 +201,18 @@ def train_mode(args: argparse.Namespace) -> None:
 
         sil_enabled = getattr(args, "sil", True)
         sil_coef = float(getattr(args, "sil_coef", 0.08))
-        sil_max_trajectories = int(getattr(args, "sil_max_trajectories", 10240))
-        sil_max_per_depth = int(getattr(args, "sil_max_per_depth", 2048))
+        raw_max_traj = getattr(args, "sil_max_trajectories", None)
+        sil_max_trajectories = (
+            int(raw_max_traj)
+            if (raw_max_traj is not None and int(raw_max_traj) > 0)
+            else None
+        )
+        raw_max_depth = getattr(args, "sil_max_per_depth", None)
+        sil_max_per_depth = (
+            int(raw_max_depth)
+            if (raw_max_depth is not None and int(raw_max_depth) > 0)
+            else None
+        )
         min_capacity_per_depth = int(getattr(args, "sil_min_capacity_per_depth", 32))
         max_failures_per_depth = int(getattr(args, "max_failures_per_depth", 512))
         min_failures_per_depth = int(getattr(args, "min_failures_per_depth", 16))
@@ -689,14 +699,14 @@ def main() -> None:
     parser.add_argument(
         "--sil-max-trajectories",
         type=int,
-        default=10240,
-        help="Capacidade máxima global de trajetórias no buffer de Self-Imitation Learning (padrão: 10240)",
+        default=0,
+        help="Capacidade máxima global de vitórias/fatias no buffer SIL (0 = ilimitado sem teto com compactação lossless, padrão: 0)",
     )
     parser.add_argument(
         "--sil-max-per-depth",
         type=int,
-        default=2048,
-        help="Capacidade máxima por profundidade no buffer estratificado de SIL (padrão: 2048)",
+        default=0,
+        help="Capacidade máxima por profundidade no buffer SIL (0 = ilimitado sem teto com deduplicação lossless, padrão: 0)",
     )
     parser.add_argument(
         "--sil-min-capacity-per-depth",

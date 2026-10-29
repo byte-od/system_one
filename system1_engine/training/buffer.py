@@ -1,7 +1,9 @@
 from collections import defaultdict, deque
 from dataclasses import dataclass
+import hashlib
 import heapq
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
+import zlib
 import numpy as np
 import torch
 
@@ -305,21 +307,269 @@ class RecurrentRolloutBuffer:
                 env_scales=tensor_scales,
             )
 
+    def sample_negative_chunks(
+        self,
+        batch_size: int = 8,
+    ) -> Optional[Dict[str, torch.Tensor]]:
+        """Extrai sob demanda chunks negativos (vantagem GAE média < 0) do rollout on-policy atual.
 
-@dataclass(eq=False)
+        Permite contraste DPO sem armazenar nenhuma trajetória de falha no SuccessReplayBuffer.
+        """
+        if (
+            self.step_idx < self.buffer_size
+            or not hasattr(self, "advantages")
+            or len(self.advantages) < self.buffer_size
+            or self.num_chunks <= 0
+        ):
+            return None
+
+        adv_arr = np.asarray(self.advantages, dtype=np.float32).reshape(self.num_chunks, self.chunk_length)
+        chunk_mean_adv = adv_arr.mean(axis=1)
+        neg_idxs = np.where(chunk_mean_adv < 0.0)[0]
+        if len(neg_idxs) == 0:
+            return None
+
+        k = max(1, int(batch_size))
+        chosen = np.random.choice(neg_idxs, size=k, replace=(len(neg_idxs) < k))
+        t_len = self.chunk_length
+
+        has_valid_delta = (
+            not self.is_visual
+            and self.delta_obs is not None
+            and len(self.delta_obs) >= self.buffer_size
+            and self.delta_obs[0] is not None
+        )
+
+        b_obs = []
+        b_delta = []
+        b_prev_act = []
+        b_prev_rew = []
+        b_actions = []
+        b_log_probs = []
+        b_dones = []
+        b_hx = []
+
+        for c_idx in chosen:
+            step_start = int(c_idx) * t_len
+            step_end = step_start + t_len
+            obs_slice = np.asarray(self.obs[step_start:step_end])
+            if self.is_visual and obs_slice.dtype == np.uint8:
+                obs_slice = obs_slice.astype(np.float32) / 255.0
+            b_obs.append(obs_slice)
+            if has_valid_delta:
+                b_delta.append(self.delta_obs[step_start:step_end])
+            b_prev_act.append(self.prev_actions[step_start:step_end])
+            b_prev_rew.append(self.prev_rewards[step_start:step_end])
+            b_actions.append(self.actions[step_start:step_end])
+            b_log_probs.append(self.log_probs[step_start:step_end])
+            b_dones.append(self.episode_starts[step_start:step_end])
+            b_hx.append(self.chunk_hx[int(c_idx)])
+
+        tensor_obs = torch.tensor(np.array(b_obs), dtype=torch.float32, device=self.device)
+        tensor_delta = (
+            torch.tensor(np.array(b_delta), dtype=torch.float32, device=self.device)
+            if has_valid_delta
+            else None
+        )
+        if self.is_discrete:
+            tensor_prev_act = torch.tensor(np.array(b_prev_act), dtype=torch.long, device=self.device)
+            if tensor_prev_act.dim() == 2:
+                tensor_prev_act = tensor_prev_act.unsqueeze(-1)
+            tensor_actions = torch.tensor(np.array(b_actions), dtype=torch.long, device=self.device)
+        else:
+            tensor_prev_act = torch.tensor(np.array(b_prev_act), dtype=torch.float32, device=self.device)
+            tensor_actions = torch.tensor(np.array(b_actions), dtype=torch.float32, device=self.device)
+
+        tensor_prev_rew = torch.tensor(np.array(b_prev_rew), dtype=torch.float32, device=self.device).unsqueeze(-1)
+        tensor_log_probs = torch.tensor(np.array(b_log_probs), dtype=torch.float32, device=self.device)
+        tensor_dones = torch.tensor(np.array(b_dones), dtype=torch.float32, device=self.device)
+        tensor_hx = torch.cat(b_hx, dim=1).to(self.device)
+        tensor_mask = torch.ones_like(tensor_log_probs, dtype=torch.float32, device=self.device)
+
+        return {
+            "obs": tensor_obs,
+            "delta_obs": tensor_delta,
+            "prev_actions": tensor_prev_act,
+            "prev_rewards": tensor_prev_rew,
+            "actions": tensor_actions,
+            "old_log_probs": tensor_log_probs,
+            "mask": tensor_mask,
+            "hx": tensor_hx,
+            "dones": tensor_dones,
+        }
+
+
+PackedArraySpec = Tuple[bytes, bool, Tuple[int, ...], np.dtype, np.dtype]
+
+
+def _pack_array_lossless(
+    arr: np.ndarray,
+) -> Tuple[Optional[np.ndarray], Optional[PackedArraySpec]]:
+    """Compacta um array NumPy estritamente sem perdas (100% bit-a-bit idêntico após reconstrução).
+
+    - Nunca degrada precisão numérica: só reduz o tipo intermediário para int8 ou float16 quando
+      `np.array_equal(cand.astype(orig_dtype), arr)` é estritamente verdadeiro (erro = 0.0 exato).
+    - Caso contrário (ex: estados contínuos float32 com mantissa arbitrária), preserva todos os 32 bits
+      IEEE-754 intactos e aplica zlib nível 1 apenas se houver ganho real de bytes.
+    """
+    arr_c = np.ascontiguousarray(arr)
+    orig_dtype = arr_c.dtype
+    shape = arr_c.shape
+    if arr_c.size == 0:
+        return arr_c, None
+
+    wire_arr = arr_c
+    if orig_dtype == np.float32:
+        mn = float(np.min(arr_c))
+        mx = float(np.max(arr_c))
+        if np.isfinite(mn) and np.isfinite(mx):
+            if -128.0 <= mn and mx <= 127.0:
+                cand_i8 = arr_c.astype(np.int8)
+                if np.array_equal(cand_i8.astype(np.float32), arr_c):
+                    wire_arr = cand_i8
+            if wire_arr is arr_c and -65504.0 <= mn and mx <= 65504.0:
+                cand_f16 = arr_c.astype(np.float16)
+                if np.array_equal(cand_f16.astype(np.float32), arr_c):
+                    wire_arr = cand_f16
+
+    raw_bytes = wire_arr.tobytes()
+    z_bytes = zlib.compress(raw_bytes, level=1)
+    if len(z_bytes) < len(raw_bytes):
+        best_bytes, is_zlib = z_bytes, True
+    else:
+        best_bytes, is_zlib = raw_bytes, False
+
+    if len(best_bytes) < arr_c.nbytes:
+        return None, (best_bytes, is_zlib, shape, orig_dtype, wire_arr.dtype)
+    return arr_c, None
+
+
+def _unpack_array_lossless(packed: PackedArraySpec) -> np.ndarray:
+    """Reconstrói bit-a-bit o array NumPy original a partir de sua representação sem perdas."""
+    payload, is_zlib, shape, orig_dtype, wire_dtype = packed
+    raw_buf = zlib.decompress(payload) if is_zlib else payload
+    view = np.frombuffer(raw_buf, dtype=wire_dtype).reshape(shape)
+    if wire_dtype != orig_dtype:
+        return view.astype(orig_dtype)
+    return view.copy()
+
+
 class SuccessfulTrajectory:
-    """Trajetória completa de um episódio vitorioso/resolvido ou negativo (falha)."""
-    obs: np.ndarray                  # [T, obs_dim]
-    delta_obs: Optional[np.ndarray]  # [T, obs_dim] ou None
-    prev_actions: np.ndarray         # [T, ...]
-    prev_rewards: np.ndarray         # [T]
-    actions: np.ndarray              # [T, ...]
-    returns: np.ndarray              # [T] retornos descontados reais
-    depth: int                       # Profundidade curricular ou do scramble
-    length: int                      # Duração T em passos
-    log_probs: Optional[np.ndarray] = None  # [T] log_probs da política de rollout (pi_old / pi_ref)
-    is_full_win: bool = True         # True se vitória terminal completa, False se fatia de pico (peak slice)
-    _entry_id: int = 0               # ID sequencial para desempate estável no min-heap (FIFO)
+    """Trajetória completa de vitória verificada ou fatia positiva de sucesso, com compactação lossless."""
+
+    def __init__(
+        self,
+        obs: np.ndarray,
+        delta_obs: Optional[np.ndarray],
+        prev_actions: np.ndarray,
+        prev_rewards: np.ndarray,
+        actions: np.ndarray,
+        returns: np.ndarray,
+        depth: int,
+        length: int,
+        log_probs: Optional[np.ndarray] = None,
+        is_full_win: bool = True,
+        _entry_id: int = 0,
+    ) -> None:
+        self._obs_raw: Optional[np.ndarray] = None
+        self._obs_packed: Optional[PackedArraySpec] = None
+        self._delta_raw: Optional[np.ndarray] = None
+        self._delta_packed: Optional[PackedArraySpec] = None
+        self._initial_state_key: Optional[bytes] = None
+
+        self.obs = obs
+        self.delta_obs = delta_obs
+        self.prev_actions = prev_actions
+        self.prev_rewards = prev_rewards
+        self.actions = actions
+        self.returns = returns
+        self.depth = int(depth)
+        self.length = int(length)
+        self.log_probs = log_probs
+        self.is_full_win = bool(is_full_win)
+        self._entry_id = int(_entry_id)
+
+    @property
+    def obs(self) -> np.ndarray:
+        if self._obs_packed is not None:
+            return _unpack_array_lossless(self._obs_packed)
+        assert self._obs_raw is not None
+        return self._obs_raw
+
+    @obs.setter
+    def obs(self, value: np.ndarray) -> None:
+        arr = np.asarray(value)
+        self._obs_raw = arr
+        self._obs_packed = None
+        self._initial_state_key = None
+
+    @property
+    def delta_obs(self) -> Optional[np.ndarray]:
+        if self._delta_packed is not None:
+            return _unpack_array_lossless(self._delta_packed)
+        return self._delta_raw
+
+    @delta_obs.setter
+    def delta_obs(self, value: Optional[np.ndarray]) -> None:
+        self._delta_raw = np.asarray(value) if value is not None else None
+        self._delta_packed = None
+
+    @property
+    def initial_state_key(self) -> bytes:
+        """Assinatura canônica de 128 bits do estado inicial obs[0] (calculada sem descompactar repetidamente)."""
+        if self._initial_state_key is None:
+            cur_obs = self.obs
+            first = np.ascontiguousarray(cur_obs[0]) if cur_obs.shape[0] > 0 else np.ascontiguousarray(cur_obs)
+            self._initial_state_key = hashlib.blake2b(first.tobytes(), digest_size=16).digest()
+        return self._initial_state_key
+
+    @property
+    def is_compacted(self) -> bool:
+        return (self._obs_packed is not None) or (self._delta_packed is not None)
+
+    @property
+    def memory_bytes(self) -> int:
+        """Bytes efetivamente ocupados pelos tensores da trajetória na memória RAM."""
+        total = 0
+        if self._obs_packed is not None:
+            total += len(self._obs_packed[0])
+        elif self._obs_raw is not None:
+            total += int(self._obs_raw.nbytes)
+        if self._delta_packed is not None:
+            total += len(self._delta_packed[0])
+        elif self._delta_raw is not None:
+            total += int(self._delta_raw.nbytes)
+        for arr in (self.prev_actions, self.prev_rewards, self.actions, self.returns, self.log_probs):
+            if isinstance(arr, np.ndarray):
+                total += int(arr.nbytes)
+        return total
+
+    @property
+    def uncompressed_bytes(self) -> int:
+        """Bytes equivalentes caso obs e delta_obs estivessem descomprimidos em seus tipos originais."""
+        total = 0
+        if self._obs_packed is not None:
+            _, _, shape, orig_dt, _ = self._obs_packed
+            total += int(np.prod(shape, dtype=np.int64)) * np.dtype(orig_dt).itemsize
+        elif self._obs_raw is not None:
+            total += int(self._obs_raw.nbytes)
+        if self._delta_packed is not None:
+            _, _, shape, orig_dt, _ = self._delta_packed
+            total += int(np.prod(shape, dtype=np.int64)) * np.dtype(orig_dt).itemsize
+        elif self._delta_raw is not None:
+            total += int(self._delta_raw.nbytes)
+        for arr in (self.prev_actions, self.prev_rewards, self.actions, self.returns, self.log_probs):
+            if isinstance(arr, np.ndarray):
+                total += int(arr.nbytes)
+        return total
+
+    def compact_lossless(self) -> None:
+        """Compacta obs e delta_obs in-place com 0.0 de perda de precisão (100% reversível bit-a-bit)."""
+        _ = self.initial_state_key
+        if self._obs_raw is not None and self._obs_packed is None:
+            self._obs_raw, self._obs_packed = _pack_array_lossless(self._obs_raw)
+        if self._delta_raw is not None and self._delta_packed is None:
+            self._delta_raw, self._delta_packed = _pack_array_lossless(self._delta_raw)
 
     def __len__(self) -> int:
         return self.length
@@ -359,10 +609,38 @@ class SuccessfulTrajectory:
         return self is other or (self._cmp_tuple() == other._cmp_tuple())
 
 
-@dataclass(eq=False)
 class FrontierTransition(SuccessfulTrajectory):
     """Transição atômica ou micro-manobra decisiva de fronteira (Bellman 1-step / n-step breakthrough)."""
-    td_error: float = 0.0
+
+    def __init__(
+        self,
+        obs: np.ndarray,
+        delta_obs: Optional[np.ndarray],
+        prev_actions: np.ndarray,
+        prev_rewards: np.ndarray,
+        actions: np.ndarray,
+        returns: np.ndarray,
+        depth: int,
+        length: int,
+        log_probs: Optional[np.ndarray] = None,
+        is_full_win: bool = True,
+        _entry_id: int = 0,
+        td_error: float = 0.0,
+    ) -> None:
+        super().__init__(
+            obs=obs,
+            delta_obs=delta_obs,
+            prev_actions=prev_actions,
+            prev_rewards=prev_rewards,
+            actions=actions,
+            returns=returns,
+            depth=depth,
+            length=length,
+            log_probs=log_probs,
+            is_full_win=is_full_win,
+            _entry_id=_entry_id,
+        )
+        self.td_error = float(td_error)
 
     @classmethod
     def from_step(
@@ -415,20 +693,22 @@ class FrontierTransition(SuccessfulTrajectory):
 
 
 class SuccessReplayBuffer:
-    """Buffer estratificado por profundidade de trajetórias completas e micro-transições para SIL e Frontier Replay.
+    """Buffer estratificado sem teto artificial e com compactação 100% lossless para vitórias e fatias de sucesso.
 
-    Preserva trajetórias vitoriosas e transições de avanço onde o agente atingiu o objetivo (ex: cubo resolvido),
-    organizadas em estratos por profundidade curricular (D1..D10+) para eliminar esquecimento
-    catastrófico e despejo cruzado (cross-depth eviction).
-    
-    A amostragem equilibra 75% de transições da fronteira ativa (reforço imediato) com 25% de
-    âncoras fundacionais de níveis anteriores (regularização contra regressão).
+    No modo padrão (max_trajectories=None, max_per_depth=None):
+    - Capacidade ilimitada por profundidade: jamais expulsa scrambles difíceis por causa de scrambles curtos
+      (elimina completamente o Easy-Scramble Bias e a memorização precoce de pool fixo).
+    - Deduplicação por estado inicial (hash(obs[0])): se o mesmo scramble for resolvido novamente, atualiza
+      in-place apenas se a nova trajetória for superior (ex: vitória completa substituindo fatia parcial,
+      ou solução com menos movimentos para o mesmo scramble).
+    - Compactação estritamente sem perdas (lossless_compaction=True): reduz ~30x o consumo de RAM em
+      domínios simbólicos/vetoriais sem alterar um único bit dos tensores float32 entregues à rede.
     """
 
     def __init__(
         self,
-        max_trajectories: int = 10240,
-        max_per_depth: int = 2048,
+        max_trajectories: Optional[int] = None,
+        max_per_depth: Optional[int] = None,
         min_capacity_per_depth: int = 32,
         is_visual: bool = False,
         is_discrete: bool = True,
@@ -443,10 +723,29 @@ class SuccessReplayBuffer:
         min_failures_per_depth: int = 16,
         dynamic_frontier: bool = True,
         proximal_decay: float = 0.8,
+        lossless_compaction: bool = True,
+        deduplicate_scrambles: Optional[bool] = None,
     ) -> None:
-        self.max_trajectories = max(2, int(max_trajectories))
-        self.max_per_depth = max(1, min(int(max_per_depth), self.max_trajectories))
-        self.min_capacity_per_depth = max(1, min(int(min_capacity_per_depth), self.max_per_depth))
+        self.max_trajectories: Optional[int] = (
+            max(2, int(max_trajectories))
+            if (max_trajectories is not None and int(max_trajectories) > 0)
+            else None
+        )
+        if max_per_depth is not None and int(max_per_depth) > 0:
+            raw_mpd = max(1, int(max_per_depth))
+            self.max_per_depth: Optional[int] = (
+                min(raw_mpd, self.max_trajectories) if self.max_trajectories is not None else raw_mpd
+            )
+        else:
+            self.max_per_depth = None
+
+        if self.max_per_depth is not None:
+            self.min_capacity_per_depth = max(1, min(int(min_capacity_per_depth), self.max_per_depth))
+        elif self.max_trajectories is not None:
+            self.min_capacity_per_depth = max(1, min(int(min_capacity_per_depth), self.max_trajectories))
+        else:
+            self.min_capacity_per_depth = max(1, int(min_capacity_per_depth))
+
         self.is_visual = is_visual
         self.is_discrete = is_discrete
         self.obs_shape = obs_shape
@@ -460,15 +759,45 @@ class SuccessReplayBuffer:
         self.min_failures_per_depth = max(1, min(int(min_failures_per_depth), self.max_failures_per_depth))
         self.dynamic_frontier = bool(dynamic_frontier)
         self.proximal_decay = float(proximal_decay)
+        self.lossless_compaction = bool(lossless_compaction)
+        self.deduplicate_scrambles = (
+            (self.max_trajectories is None and self.max_per_depth is None)
+            if deduplicate_scrambles is None
+            else bool(deduplicate_scrambles)
+        )
 
         self._depth_buffers: Dict[int, List[SuccessfulTrajectory]] = defaultdict(list)
+        self._scramble_index: Dict[int, Dict[bytes, int]] = defaultdict(dict)
         self._failure_buffers: Dict[int, deque[SuccessfulTrajectory]] = defaultdict(
             lambda: deque(maxlen=self.max_failures_per_depth)
         )
         self.total_added: int = 0
+        self.total_upgraded: int = 0
         self.total_pruned: int = 0
         self.total_failures_added: int = 0
         self._entry_counter: int = 0
+
+    @property
+    def is_unlimited(self) -> bool:
+        return self.max_trajectories is None and self.max_per_depth is None
+
+    @property
+    def memory_bytes(self) -> int:
+        """Total de bytes ocupados em RAM pelas trajetórias armazenadas."""
+        return sum(t.memory_bytes for b in self._depth_buffers.values() for t in b)
+
+    @property
+    def uncompressed_bytes(self) -> int:
+        """Total de bytes equivalentes sem compactação lossless."""
+        return sum(t.uncompressed_bytes for b in self._depth_buffers.values() for t in b)
+
+    @property
+    def compression_ratio(self) -> float:
+        """Fator real de redução de memória RAM obtido pela compactação 100% lossless."""
+        mem = self.memory_bytes
+        if mem <= 0:
+            return 1.0
+        return float(self.uncompressed_bytes) / float(mem)
 
     @property
     def trajectories(self) -> List[SuccessfulTrajectory]:
@@ -493,10 +822,12 @@ class SuccessReplayBuffer:
         return all_fails
 
     def clear(self) -> None:
-        """Limpa todos os estratos vitoriosos e negativos do buffer."""
+        """Limpa todos os estratos do buffer."""
         self._depth_buffers.clear()
+        self._scramble_index.clear()
         self._failure_buffers.clear()
         self.total_added = 0
+        self.total_upgraded = 0
         self.total_pruned = 0
         self.total_failures_added = 0
         self._entry_counter = 0
@@ -509,41 +840,34 @@ class SuccessReplayBuffer:
         """Retorna a contagem de falhas armazenadas por profundidade."""
         return {d: len(fails) for d, fails in sorted(self._failure_buffers.items()) if len(fails) > 0}
 
-    def get_capacity_for_depth(self, depth: int) -> int:
-        """Calcula a cota máxima de trajetórias para um estrato específico.
-
-        No modo progressivo, aloca capacidade proporcional à entropia combinatorial do nível:
-        cap(d) = clamp(C_0 * 2^(d - 1), C_0, C_max)
-        Onde C_0 = min_capacity_per_depth (ex: 32) e C_max = max_per_depth (ex: 2048).
-        """
-        if not self.progressive_capacity or depth <= 0 or self.max_per_depth <= 4:
-            return self.max_per_depth
+    def get_capacity_for_depth(self, depth: int) -> Optional[int]:
+        """Calcula a cota máxima de trajetórias para um estrato específico (None se ilimitado)."""
+        eff_max = self.max_per_depth if self.max_per_depth is not None else self.max_trajectories
+        if eff_max is None:
+            return None
+        if not self.progressive_capacity or depth <= 0 or eff_max <= 4:
+            return eff_max
         cap = int(self.min_capacity_per_depth * (2 ** max(0, depth - 1)))
-        return max(1, min(self.max_per_depth, cap))
+        return max(1, min(eff_max, cap))
 
     def get_failure_capacity_for_depth(self, depth: int) -> int:
-        """Calcula a cota máxima de falhas para DPO em um estrato específico.
-
-        No modo progressivo, aloca cota reduzida para erros triviais rasos (F_0 = 16)
-        e cota expandida para erros sutis de alta complexidade (F_max = max_failures_per_depth, ex: 512).
-        """
+        """Calcula a cota máxima de falhas para DPO em um estrato específico."""
         if not self.progressive_capacity or depth <= 0 or self.max_failures_per_depth <= 4:
             return self.max_failures_per_depth
         f_cap = int(self.min_failures_per_depth * (2 ** max(0, depth - 1)))
         return max(1, min(self.max_failures_per_depth, f_cap))
 
-    def get_depth_capacities(self) -> Dict[int, int]:
-        """Retorna as cotas de capacidade ativas para todas as profundidades presentes."""
+    def get_depth_capacities(self) -> Dict[int, Optional[int]]:
+        """Retorna as cotas de capacidade ativas para todas as profundidades presentes (None = ilimitado)."""
         return {d: self.get_capacity_for_depth(d) for d in sorted(self._depth_buffers.keys())}
 
     def __len__(self) -> int:
         return sum(len(b) for b in self._depth_buffers.values())
 
     def add_failure(self, trajectory: SuccessfulTrajectory) -> None:
-        """Adiciona uma trajetória de falha/erro ao buffer negativo estratificado para DPO contrastivo."""
+        """Método legado para testes unitários isolados de contraste explícito."""
         depth = int(getattr(trajectory, "depth", 1))
 
-        # Compressão de Observações Visuais para uint8 [0, 255]
         if self.is_visual and trajectory.obs.dtype != np.uint8:
             if np.issubdtype(trajectory.obs.dtype, np.floating):
                 max_val = float(np.max(trajectory.obs)) if trajectory.obs.size > 0 else 1.0
@@ -555,7 +879,9 @@ class SuccessReplayBuffer:
                 comp_obs = np.clip(trajectory.obs, 0, 255).astype(np.uint8)
             trajectory.obs = comp_obs
 
-        # Alocação dinâmica de capacidade progressiva para falhas
+        if self.lossless_compaction:
+            trajectory.compact_lossless()
+
         f_cap = self.get_failure_capacity_for_depth(depth)
         if depth not in self._failure_buffers or self._failure_buffers[depth].maxlen != f_cap:
             existing = list(self._failure_buffers[depth]) if depth in self._failure_buffers else []
@@ -565,17 +891,18 @@ class SuccessReplayBuffer:
         self.total_failures_added += 1
 
     def add(self, trajectory: SuccessfulTrajectory, slice_frontier: Optional[bool] = None) -> None:
-        """Adiciona uma trajetória ou micro-manobra de vitória ao estrato correspondente.
+        """Adiciona uma vitória completa ou fatia de sucesso ao estrato correspondente.
 
-        Aplica poda de loops erráticos ou Frontier Slicing (para resgatar o avanço de fronteira),
-        compressão de observações visuais para uint8, e substituição prioritária por qualidade/retorno.
+        No modo padrão sem teto (quota is None):
+        - Compacta sem perdas (lossless_compaction=True) com 0.0 erro numérico.
+        - Deduplica por estado inicial (hash(obs[0])): nunca expulsa outros scrambles, apenas atualiza
+          o próprio scramble caso uma solução estritamente melhor/mais curta seja descoberta.
         """
         depth = int(getattr(trajectory, "depth", 1))
         d_buf = self._depth_buffers[depth]
         do_slice = self.frontier_slicing if slice_frontier is None else bool(slice_frontier)
 
-        # 1. Filtro de Eficiência / Poda de Loops Erráticos ou Frontier Slicing:
-        # Rejeita trajetórias excessivamente longas/erráticas ou extrai o prefixo de fronteira decisivo.
+        # 1. Filtro de Eficiência / Poda de Loops Erráticos ou Frontier Slicing
         if depth > 0:
             if len(d_buf) < 4:
                 max_allowed = max(10, int(depth * 2.5))
@@ -583,14 +910,11 @@ class SuccessReplayBuffer:
                 max_allowed = max(8, int(depth * 2.0))
             if trajectory.length > max_allowed:
                 if do_slice:
-                    # Frontier Slicing: preserva a descoberta no nível de fronteira cortando para o prefixo decisivo
                     L = max_allowed
-                    sliced_obs = trajectory.obs[:L]
-                    sliced_delta = (
-                        trajectory.delta_obs[:L]
-                        if trajectory.delta_obs is not None
-                        else None
-                    )
+                    cur_obs = trajectory.obs
+                    cur_delta = trajectory.delta_obs
+                    sliced_obs = cur_obs[:L]
+                    sliced_delta = cur_delta[:L] if cur_delta is not None else None
                     sliced_prev_actions = trajectory.prev_actions[:L]
                     sliced_prev_rewards = trajectory.prev_rewards[:L]
                     sliced_actions = trajectory.actions[:L]
@@ -633,25 +957,49 @@ class SuccessReplayBuffer:
                     self.total_pruned += 1
                     return
 
-        # 2. Compressão de Observações Visuais para uint8 [0, 255] (Redução de 75% a 90% de RAM em jogos pixel)
+        # 2. Compressão de Observações Visuais para uint8 [0, 255] em jogos pixel
         if self.is_visual and trajectory.obs.dtype != np.uint8:
-            if np.issubdtype(trajectory.obs.dtype, np.floating):
-                max_val = float(np.max(trajectory.obs)) if trajectory.obs.size > 0 else 1.0
+            cur_obs = trajectory.obs
+            if np.issubdtype(cur_obs.dtype, np.floating):
+                max_val = float(np.max(cur_obs)) if cur_obs.size > 0 else 1.0
                 if max_val <= 1.0 + 1e-4:
-                    comp_obs = np.clip(trajectory.obs * 255.0, 0, 255).astype(np.uint8)
+                    comp_obs = np.clip(cur_obs * 255.0, 0, 255).astype(np.uint8)
                 else:
-                    comp_obs = np.clip(trajectory.obs, 0, 255).astype(np.uint8)
+                    comp_obs = np.clip(cur_obs, 0, 255).astype(np.uint8)
             else:
-                comp_obs = np.clip(trajectory.obs, 0, 255).astype(np.uint8)
+                comp_obs = np.clip(cur_obs, 0, 255).astype(np.uint8)
             trajectory.obs = comp_obs
 
-        # 3. Quota local por estrato com substituição prioritária por qualidade via Min-Heap O(log N):
-        # Vitórias totais têm prioridade máxima sobre vitórias parciais (fatias de pico).
+        # 3. Compactação 100% Lossless (0.0 perda de qualidade)
+        init_key = trajectory.initial_state_key
+        if self.lossless_compaction:
+            trajectory.compact_lossless()
+
         self._entry_counter += 1
         trajectory._entry_id = self._entry_counter
 
         quota = self.get_capacity_for_depth(depth)
-        if len(d_buf) >= quota:
+
+        # Modo Ilimitado (sem teto): crescimento livre + deduplicação/upgrade por estado inicial O(1)
+        if quota is None and self.max_trajectories is None:
+            if self.deduplicate_scrambles:
+                s_map = self._scramble_index[depth]
+                existing_idx = s_map.get(init_key, None)
+                if existing_idx is not None and existing_idx < len(d_buf):
+                    if trajectory.quality_key > d_buf[existing_idx].quality_key:
+                        d_buf[existing_idx] = trajectory
+                        self.total_added += 1
+                        self.total_upgraded += 1
+                    else:
+                        self.total_pruned += 1
+                    return
+                s_map[init_key] = len(d_buf)
+            d_buf.append(trajectory)
+            self.total_added += 1
+            return
+
+        # Modo com cota explícita finita (compatibilidade com testes legados de cota fixa)
+        if quota is not None and len(d_buf) >= quota:
             worst_traj = d_buf[0]
             if trajectory > worst_traj:
                 heapq.heapreplace(d_buf, trajectory)
@@ -663,26 +1011,27 @@ class SuccessReplayBuffer:
             heapq.heappush(d_buf, trajectory)
             self.total_added += 1
 
-        # 4. Limite global com Proteção de Âncoras Fundacionais:
-        # Se o total exceder max_trajectories, descarte a pior trajetória de profundidades que possuem
-        # excedente além do piso fundacional (anchor_floor = 8). Nunca extingue um estrato completo prematuramente.
-        while len(self) > self.max_trajectories:
-            non_empty_depths = [d for d in sorted(self._depth_buffers.keys()) if len(self._depth_buffers[d]) > 0]
-            if not non_empty_depths:
-                break
+        if self.max_trajectories is not None:
+            while len(self) > self.max_trajectories:
+                non_empty_depths = [d for d in sorted(self._depth_buffers.keys()) if len(self._depth_buffers[d]) > 0]
+                if not non_empty_depths:
+                    break
 
-            anchor_floor = 8
-            eligible_depths = [
-                d for d in non_empty_depths
-                if len(self._depth_buffers[d]) > min(anchor_floor, self.get_capacity_for_depth(d))
-            ]
-            if not eligible_depths:
-                eligible_depths = non_empty_depths
+                anchor_floor = 8
+                eligible_depths = [
+                    d for d in non_empty_depths
+                    if len(self._depth_buffers[d]) > min(
+                        anchor_floor,
+                        self.get_capacity_for_depth(d) or anchor_floor,
+                    )
+                ]
+                if not eligible_depths:
+                    eligible_depths = non_empty_depths
 
-            target_d = eligible_depths[0]
-            heapq.heappop(self._depth_buffers[target_d])
-            if len(self._depth_buffers[target_d]) == 0:
-                del self._depth_buffers[target_d]
+                target_d = eligible_depths[0]
+                heapq.heappop(self._depth_buffers[target_d])
+                if len(self._depth_buffers[target_d]) == 0:
+                    del self._depth_buffers[target_d]
 
     def _collate_trajectories(
         self,
@@ -692,14 +1041,18 @@ class SuccessReplayBuffer:
         k = len(sampled_trajs)
         max_len = max(t.length for t in sampled_trajs)
 
+        # Descompacta cada trajetória amostrada exatamente uma vez para eliminar descompressões redundantes
+        obs_list = [t.obs for t in sampled_trajs]
+        delta_list = [t.delta_obs for t in sampled_trajs]
+
         # Prealocação de tensores padronizados com zeros
         b_obs = np.zeros((k, max_len, *self.obs_shape), dtype=np.float32)
-        has_delta = any(t.delta_obs is not None for t in sampled_trajs)
+        has_delta = any(d_arr is not None for d_arr in delta_list)
         if has_delta:
             max_delta_dim = max(
-                (t.delta_obs.shape[-1] if t.delta_obs.ndim > 1 else t.delta_obs.shape[0])
-                for t in sampled_trajs
-                if t.delta_obs is not None
+                (d_arr.shape[-1] if d_arr.ndim > 1 else d_arr.shape[0])
+                for d_arr in delta_list
+                if d_arr is not None
             )
             b_delta = np.zeros((k, max_len, max_delta_dim), dtype=np.float32)
         else:
@@ -720,13 +1073,15 @@ class SuccessReplayBuffer:
 
         for i, t in enumerate(sampled_trajs):
             L = t.length
-            if self.is_visual and t.obs.dtype == np.uint8:
-                b_obs[i, :L] = t.obs.astype(np.float32) / 255.0
+            obs_arr = obs_list[i]
+            delta_arr = delta_list[i]
+            if self.is_visual and obs_arr.dtype == np.uint8:
+                b_obs[i, :L] = obs_arr.astype(np.float32) / 255.0
             else:
-                b_obs[i, :L] = t.obs
-            if has_delta and t.delta_obs is not None:
-                d_dim = min(b_delta.shape[-1], t.delta_obs.shape[-1])
-                b_delta[i, :L, :d_dim] = t.delta_obs[:, :d_dim]
+                b_obs[i, :L] = obs_arr
+            if has_delta and delta_arr is not None:
+                d_dim = min(b_delta.shape[-1], delta_arr.shape[-1])
+                b_delta[i, :L, :d_dim] = delta_arr[:, :d_dim]
             b_prev_act[i, :L] = t.prev_actions
             b_prev_rew[i, :L, 0] = t.prev_rewards
             b_act[i, :L] = t.actions
@@ -778,6 +1133,15 @@ class SuccessReplayBuffer:
             if getattr(t, "is_full_win", True)
         )
 
+    def count_success_slices(self) -> int:
+        """Retorna o total de fatias de sucesso parcial (Peak Slicing, is_full_win == False)."""
+        return sum(
+            1
+            for b in self._depth_buffers.values()
+            for t in b
+            if not getattr(t, "is_full_win", True)
+        )
+
     def sample_batch(
         self,
         batch_size: int = 8,
@@ -802,9 +1166,17 @@ class SuccessReplayBuffer:
         if k <= 0:
             return None
 
+        # Saturação de peso por estrato em 256.0 no modo ilimitado: impede que estratos maduros
+        # com 100.000+ vitórias afoguem novas fronteiras recém-desbloqueadas (ex: D12/D13),
+        # mantendo amostragem uniforme sobre todas as vitórias dentro do estrato escolhido.
+        depth_weight_cap = 256.0
+
         if target_depth is None:
             eligible_depths = list(pools.keys())
-            depth_counts = np.array([len(pools[d]) for d in eligible_depths], dtype=np.float64)
+            depth_counts = np.minimum(
+                np.array([len(pools[d]) for d in eligible_depths], dtype=np.float64),
+                depth_weight_cap,
+            )
             depth_probs = depth_counts / depth_counts.sum()
             chosen_depths = np.random.choice(eligible_depths, size=k, replace=True, p=depth_probs)
             sampled_trajs = [
@@ -826,16 +1198,17 @@ class SuccessReplayBuffer:
                 n_anchor = k - n_frontier
 
                 # Amostragem de fronteira
+                f_counts = np.minimum(
+                    np.array([len(pools[d]) for d in frontier_depths], dtype=np.float64),
+                    depth_weight_cap,
+                )
                 if getattr(self, "dynamic_frontier", True):
                     f_depth_arr = np.array(frontier_depths, dtype=np.float64)
-                    f_counts = np.array([len(pools[d]) for d in frontier_depths], dtype=np.float64)
                     f_weights = f_counts * np.exp(-self.proximal_decay * np.abs(target_depth - f_depth_arr))
-                    f_weights /= f_weights.sum()
-                    f_chosen_depths = np.random.choice(frontier_depths, size=n_frontier, replace=True, p=f_weights)
                 else:
-                    f_counts = np.array([len(pools[d]) for d in frontier_depths], dtype=np.float64)
-                    f_weights = f_counts / f_counts.sum()
-                    f_chosen_depths = np.random.choice(frontier_depths, size=n_frontier, replace=True, p=f_weights)
+                    f_weights = f_counts
+                f_weights = f_weights / f_weights.sum()
+                f_chosen_depths = np.random.choice(frontier_depths, size=n_frontier, replace=True, p=f_weights)
 
                 sampled_trajs.extend(
                     pools[d][np.random.randint(0, len(pools[d]))]
@@ -844,7 +1217,10 @@ class SuccessReplayBuffer:
 
                 # Amostragem de âncoras
                 if n_anchor > 0:
-                    a_counts = np.array([len(pools[d]) for d in anchor_depths], dtype=np.float64)
+                    a_counts = np.minimum(
+                        np.array([len(pools[d]) for d in anchor_depths], dtype=np.float64),
+                        depth_weight_cap,
+                    )
                     a_weights = a_counts / a_counts.sum()
                     a_chosen_depths = np.random.choice(anchor_depths, size=n_anchor, replace=True, p=a_weights)
                     sampled_trajs.extend(
@@ -853,23 +1229,27 @@ class SuccessReplayBuffer:
                     )
 
             elif len(frontier_depths) > 0:
+                f_counts = np.minimum(
+                    np.array([len(pools[d]) for d in frontier_depths], dtype=np.float64),
+                    depth_weight_cap,
+                )
                 if getattr(self, "dynamic_frontier", True):
                     f_depth_arr = np.array(frontier_depths, dtype=np.float64)
-                    f_counts = np.array([len(pools[d]) for d in frontier_depths], dtype=np.float64)
                     f_weights = f_counts * np.exp(-self.proximal_decay * np.abs(target_depth - f_depth_arr))
-                    f_weights /= f_weights.sum()
-                    chosen_depths = np.random.choice(frontier_depths, size=k, replace=True, p=f_weights)
                 else:
-                    f_counts = np.array([len(pools[d]) for d in frontier_depths], dtype=np.float64)
-                    f_weights = f_counts / f_counts.sum()
-                    chosen_depths = np.random.choice(frontier_depths, size=k, replace=True, p=f_weights)
+                    f_weights = f_counts
+                f_weights = f_weights / f_weights.sum()
+                chosen_depths = np.random.choice(frontier_depths, size=k, replace=True, p=f_weights)
 
                 sampled_trajs.extend(
                     pools[d][np.random.randint(0, len(pools[d]))]
                     for d in chosen_depths
                 )
             else:
-                a_counts = np.array([len(pools[d]) for d in anchor_depths], dtype=np.float64)
+                a_counts = np.minimum(
+                    np.array([len(pools[d]) for d in anchor_depths], dtype=np.float64),
+                    depth_weight_cap,
+                )
                 a_weights = a_counts / a_counts.sum()
                 chosen_depths = np.random.choice(anchor_depths, size=k, replace=True, p=a_weights)
                 sampled_trajs.extend(
