@@ -601,6 +601,7 @@ class SuccessReplayBuffer:
                         else None
                     )
                     td_err = getattr(trajectory, "td_error", 0.0)
+                    orig_full_win = bool(getattr(trajectory, "is_full_win", True))
                     if isinstance(trajectory, FrontierTransition):
                         trajectory = FrontierTransition(
                             obs=sliced_obs,
@@ -613,6 +614,7 @@ class SuccessReplayBuffer:
                             length=L,
                             log_probs=sliced_logp,
                             td_error=td_err,
+                            is_full_win=orig_full_win,
                         )
                     else:
                         trajectory = SuccessfulTrajectory(
@@ -625,6 +627,7 @@ class SuccessReplayBuffer:
                             depth=depth,
                             length=L,
                             log_probs=sliced_logp,
+                            is_full_win=orig_full_win,
                         )
                 else:
                     self.total_pruned += 1
@@ -766,33 +769,52 @@ class SuccessReplayBuffer:
             "dones": None,
         }
 
+    def count_full_wins(self) -> int:
+        """Retorna o total de trajetórias de vitória terminal completa (is_full_win == True)."""
+        return sum(
+            1
+            for b in self._depth_buffers.values()
+            for t in b
+            if getattr(t, "is_full_win", True)
+        )
+
     def sample_batch(
         self,
         batch_size: int = 8,
         target_depth: Optional[int] = None,
+        only_full_wins: bool = False,
     ) -> Optional[Dict[str, torch.Tensor]]:
         """Amostra um mini-lote padronizado de trajetórias/transições com balanceamento fronteira/âncora e máscara temporal."""
         if len(self) == 0:
             return None
 
-        total_available = len(self)
+        if only_full_wins:
+            pools: Dict[int, List[SuccessfulTrajectory]] = {
+                d: [t for t in trajs if getattr(t, "is_full_win", True)]
+                for d, trajs in self._depth_buffers.items()
+            }
+            pools = {d: trajs for d, trajs in pools.items() if len(trajs) > 0}
+        else:
+            pools = {d: trajs for d, trajs in self._depth_buffers.items() if len(trajs) > 0}
+
+        total_available = sum(len(trajs) for trajs in pools.values())
         k = min(batch_size, total_available)
         if k <= 0:
             return None
 
         if target_depth is None:
-            eligible_depths = [d for d in self._depth_buffers.keys() if len(self._depth_buffers[d]) > 0]
-            depth_counts = np.array([len(self._depth_buffers[d]) for d in eligible_depths], dtype=np.float64)
+            eligible_depths = list(pools.keys())
+            depth_counts = np.array([len(pools[d]) for d in eligible_depths], dtype=np.float64)
             depth_probs = depth_counts / depth_counts.sum()
             chosen_depths = np.random.choice(eligible_depths, size=k, replace=True, p=depth_probs)
             sampled_trajs = [
-                self._depth_buffers[d][np.random.randint(0, len(self._depth_buffers[d]))]
+                pools[d][np.random.randint(0, len(pools[d]))]
                 for d in chosen_depths
             ]
         else:
             frontier_min_depth = max(1, target_depth - 1)
-            frontier_depths = [d for d in self._depth_buffers.keys() if d >= frontier_min_depth and len(self._depth_buffers[d]) > 0]
-            anchor_depths = [d for d in self._depth_buffers.keys() if d < frontier_min_depth and len(self._depth_buffers[d]) > 0]
+            frontier_depths = [d for d in pools.keys() if d >= frontier_min_depth]
+            anchor_depths = [d for d in pools.keys() if d < frontier_min_depth]
 
             sampled_trajs: List[SuccessfulTrajectory] = []
 
@@ -806,52 +828,52 @@ class SuccessReplayBuffer:
                 # Amostragem de fronteira
                 if getattr(self, "dynamic_frontier", True):
                     f_depth_arr = np.array(frontier_depths, dtype=np.float64)
-                    f_counts = np.array([len(self._depth_buffers[d]) for d in frontier_depths], dtype=np.float64)
+                    f_counts = np.array([len(pools[d]) for d in frontier_depths], dtype=np.float64)
                     f_weights = f_counts * np.exp(-self.proximal_decay * np.abs(target_depth - f_depth_arr))
                     f_weights /= f_weights.sum()
                     f_chosen_depths = np.random.choice(frontier_depths, size=n_frontier, replace=True, p=f_weights)
                 else:
-                    f_counts = np.array([len(self._depth_buffers[d]) for d in frontier_depths], dtype=np.float64)
+                    f_counts = np.array([len(pools[d]) for d in frontier_depths], dtype=np.float64)
                     f_weights = f_counts / f_counts.sum()
                     f_chosen_depths = np.random.choice(frontier_depths, size=n_frontier, replace=True, p=f_weights)
 
                 sampled_trajs.extend(
-                    self._depth_buffers[d][np.random.randint(0, len(self._depth_buffers[d]))]
+                    pools[d][np.random.randint(0, len(pools[d]))]
                     for d in f_chosen_depths
                 )
 
                 # Amostragem de âncoras
                 if n_anchor > 0:
-                    a_counts = np.array([len(self._depth_buffers[d]) for d in anchor_depths], dtype=np.float64)
+                    a_counts = np.array([len(pools[d]) for d in anchor_depths], dtype=np.float64)
                     a_weights = a_counts / a_counts.sum()
                     a_chosen_depths = np.random.choice(anchor_depths, size=n_anchor, replace=True, p=a_weights)
                     sampled_trajs.extend(
-                        self._depth_buffers[d][np.random.randint(0, len(self._depth_buffers[d]))]
+                        pools[d][np.random.randint(0, len(pools[d]))]
                         for d in a_chosen_depths
                     )
 
             elif len(frontier_depths) > 0:
                 if getattr(self, "dynamic_frontier", True):
                     f_depth_arr = np.array(frontier_depths, dtype=np.float64)
-                    f_counts = np.array([len(self._depth_buffers[d]) for d in frontier_depths], dtype=np.float64)
+                    f_counts = np.array([len(pools[d]) for d in frontier_depths], dtype=np.float64)
                     f_weights = f_counts * np.exp(-self.proximal_decay * np.abs(target_depth - f_depth_arr))
                     f_weights /= f_weights.sum()
                     chosen_depths = np.random.choice(frontier_depths, size=k, replace=True, p=f_weights)
                 else:
-                    f_counts = np.array([len(self._depth_buffers[d]) for d in frontier_depths], dtype=np.float64)
+                    f_counts = np.array([len(pools[d]) for d in frontier_depths], dtype=np.float64)
                     f_weights = f_counts / f_counts.sum()
                     chosen_depths = np.random.choice(frontier_depths, size=k, replace=True, p=f_weights)
 
                 sampled_trajs.extend(
-                    self._depth_buffers[d][np.random.randint(0, len(self._depth_buffers[d]))]
+                    pools[d][np.random.randint(0, len(pools[d]))]
                     for d in chosen_depths
                 )
             else:
-                a_counts = np.array([len(self._depth_buffers[d]) for d in anchor_depths], dtype=np.float64)
+                a_counts = np.array([len(pools[d]) for d in anchor_depths], dtype=np.float64)
                 a_weights = a_counts / a_counts.sum()
                 chosen_depths = np.random.choice(anchor_depths, size=k, replace=True, p=a_weights)
                 sampled_trajs.extend(
-                    self._depth_buffers[d][np.random.randint(0, len(self._depth_buffers[d]))]
+                    pools[d][np.random.randint(0, len(pools[d]))]
                     for d in chosen_depths
                 )
 
@@ -861,6 +883,7 @@ class SuccessReplayBuffer:
         self,
         batch_size: int = 8,
         target_depth: Optional[int] = None,
+        only_full_wins: bool = False,
     ) -> Optional[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]]:
         """Amostra pares contrastivos (vitória, falha) emparelhados pelo MESMO estrato (d_w == d_l).
         
@@ -869,14 +892,22 @@ class SuccessReplayBuffer:
         
         Retorna (batch_win, batch_loss) ou None se não houver pares elegíveis suficientes.
         """
+        if only_full_wins:
+            win_pools: Dict[int, List[SuccessfulTrajectory]] = {
+                d: [t for t in trajs if getattr(t, "is_full_win", True)]
+                for d, trajs in self._depth_buffers.items()
+            }
+        else:
+            win_pools = self._depth_buffers
+
         eligible_depths = [
-            d for d in self._depth_buffers.keys()
-            if len(self._depth_buffers[d]) > 0 and len(self._failure_buffers.get(d, [])) > 0
+            d for d, w_list in win_pools.items()
+            if len(w_list) > 0 and len(self._failure_buffers.get(d, [])) > 0
         ]
         if not eligible_depths:
             return None
 
-        total_pairs = sum(min(len(self._depth_buffers[d]), len(self._failure_buffers[d])) for d in eligible_depths)
+        total_pairs = sum(min(len(win_pools[d]), len(self._failure_buffers[d])) for d in eligible_depths)
         k = max(1, min(batch_size, total_pairs))
 
         # Separação entre fronteira e âncoras se target_depth fornecido
@@ -915,7 +946,7 @@ class SuccessReplayBuffer:
         sampled_losses: List[SuccessfulTrajectory] = []
 
         for d in chosen_depths:
-            w_candidates = self._depth_buffers[d]
+            w_candidates = win_pools[d]
             l_candidates = list(self._failure_buffers[d])
             w_idx = np.random.randint(0, len(w_candidates))
             l_idx = np.random.randint(0, len(l_candidates))

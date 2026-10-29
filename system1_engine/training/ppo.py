@@ -1,4 +1,5 @@
 from collections import deque
+import math
 import os
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -79,6 +80,9 @@ class RecurrentPPOTrainer:
         adaptive_entropy_coef: bool = True,
         min_entropy_coef: float = 0.003,
         max_entropy_coef: float = 0.080,
+        pcgrad_enabled: bool = True,
+        gradvac_max_alpha: float = 0.25,
+        gradvac_ema_beta: float = 0.99,
     ) -> None:
         self.agent = agent.to(device)
         self.env = env
@@ -124,6 +128,17 @@ class RecurrentPPOTrainer:
         self.progressive_buffer_capacity = bool(progressive_buffer_capacity)
         self.max_failures_per_depth = max(1, int(max_failures_per_depth))
         self.min_failures_per_depth = max(1, int(min_failures_per_depth))
+
+        # Curvature-Gated Actor Surgery (Opção 3: Unificação Analítica M1 [PCGrad] + M3 [GradVac] + Crítico 100% PPO Puro)
+        self.pcgrad_enabled = bool(pcgrad_enabled)
+        self.gradvac_max_alpha = float(np.clip(gradvac_max_alpha, 0.0, 0.50))
+        self.gradvac_ema_beta = float(np.clip(gradvac_ema_beta, 0.50, 0.9999))
+        self._gradvac_ema: Dict[str, float] = {
+            "FrontEnd": 0.05,
+            "Trunk": 0.05,
+            "PolicyHead": 0.05,
+        }
+        self._recent_frontier_wins: deque = deque(maxlen=128)
 
         # Dynamic Entropy Floor & Adaptive Entropy Controller
         self.entropy_floor_enabled = bool(entropy_floor_enabled)
@@ -1402,6 +1417,11 @@ class RecurrentPPOTrainer:
         cur_d = max(1, int(cur_depth))
         T_traj = len(traj_steps)
 
+        raw_env_ref = getattr(self.env, "unwrapped", self.env)
+        frontier_d = int(getattr(raw_env_ref, "current_depth", getattr(self.env, "current_depth", cur_d)) or cur_d)
+        if cur_d >= frontier_d:
+            self._recent_frontier_wins.append(1.0 if is_win else 0.0)
+
         if is_win:
             # Vitória Completa: preserva o episódio inteiro com retorno terminal canônico
             traj_rews = [s["reward"] for s in traj_steps]
@@ -1822,14 +1842,251 @@ class RecurrentPPOTrainer:
 
         return current_obs_dict, current_hx, episode_start, mean_return
 
+    def _get_actor_and_value_blocks(self) -> Tuple[Dict[str, List[nn.Parameter]], List[nn.Parameter]]:
+        """Particiona os parâmetros treináveis nos 3 blocos do Caminho do Ator e na ValueHead isolada."""
+        actor_blocks: Dict[str, List[nn.Parameter]] = {
+            "FrontEnd": [p for p in self.agent.front_end.parameters() if p.requires_grad],
+            "Trunk": [p for p in self.agent.trunk.parameters() if p.requires_grad],
+            "PolicyHead": [p for p in self.agent.policy_head.parameters() if p.requires_grad],
+        }
+        value_params = [p for p in self.agent.value_head.parameters() if p.requires_grad]
+        return actor_blocks, value_params
+
+    def _get_on_policy_win_density(self) -> float:
+        """Retorna a densidade recente de vitórias on-policy na fronteira (w_on in [0.0, 1.0])."""
+        if len(self._recent_frontier_wins) > 0:
+            return float(np.clip(np.mean(self._recent_frontier_wins), 0.0, 1.0))
+        raw_env = getattr(self.env, "unwrapped", self.env)
+        cur_sr = getattr(raw_env, "last_curriculum_success_rate", None)
+        if cur_sr is not None:
+            return float(np.clip(float(cur_sr), 0.0, 1.0))
+        return 0.0
+
+    def _apply_curvature_gated_projection_inplace(
+        self,
+        params: List[nn.Parameter],
+        ref_list: List[torch.Tensor],
+        alpha_target: float,
+    ) -> Tuple[bool, float]:
+        """Unificação Analítica Contínua M1 (PCGrad 90°) + M3 (GradVac Lei dos Senos) preservadora de norma.
+
+        Quando alpha_target == 0.0 (fronteira extrema esparsa), reduz-se identicamente ao PCGrad Simétrico 90°:
+            coef = -<g, r> / ||r||^2.
+        Quando alpha_target > 0.0 (sinal on-policy denso), rotaciona suavemente pela Lei dos Senos até cos == alpha_target,
+        alinhando os subespaços recorrentes sem encolher a norma original ||g||_2.
+        """
+        dot_val = 0.0
+        norm_p_sq = 0.0
+        norm_r_sq = 0.0
+        for p, r in zip(params, ref_list):
+            if p.grad is not None:
+                g = p.grad.detach()
+                dot_val += float(torch.sum(g * r).item())
+                norm_p_sq += float(torch.sum(g * g).item())
+            norm_r_sq += float(torch.sum(r * r).item())
+
+        norm_p = math.sqrt(max(0.0, norm_p_sq))
+        norm_r = math.sqrt(max(0.0, norm_r_sq))
+        if norm_p < 1e-12 or norm_r < 1e-12:
+            return False, 0.0
+
+        cos_val = dot_val / (norm_p * norm_r + 1e-12)
+        cos_c = max(-1.0, min(1.0, cos_val))
+        alpha_t = max(0.0, min(self.gradvac_max_alpha, float(alpha_target)))
+
+        if cos_c < alpha_t:
+            sin_c = math.sqrt(max(0.0, 1.0 - cos_c * cos_c))
+            sin_t = math.sqrt(max(1e-12, 1.0 - alpha_t * alpha_t))
+            coef = norm_p * (alpha_t * sin_c - cos_c * sin_t) / (norm_r * sin_t + 1e-12)
+            new_norm_sq = 0.0
+            for p, r in zip(params, ref_list):
+                if p.grad is None:
+                    p.grad = (coef * r).clone()
+                else:
+                    p.grad.add_(r, alpha=coef)
+                new_norm_sq += float(torch.sum(p.grad.detach() * p.grad.detach()).item())
+            new_norm = math.sqrt(max(0.0, new_norm_sq))
+            if new_norm > 1e-6 * norm_p and sin_c > 1e-4:
+                mult = min(norm_p / new_norm, 5.0)
+                if abs(mult - 1.0) > 1e-7:
+                    for p in params:
+                        if p.grad is not None:
+                            p.grad.mul_(mult)
+            return True, cos_val
+        return False, cos_val
+
+    def _compute_unified_memory_loss(
+        self,
+        target_depth: Optional[int],
+        only_full_wins: bool = False,
+    ) -> Tuple[Optional[torch.Tensor], float, float]:
+        """Calcula a perda unificada de memória off-policy (SIL-Policy + DPO contrastivo).
+
+        A ValueHead permanece 100% isolada (sil_val_sq.detach(), sem sil_val_loss), garantindo
+        gradiente EXATAMENTE None no Crítico e zero viés de otimismo em horizontes profundos.
+        Quando only_full_wins=True (usado para extrair o escudo g_mem_ref nos mini-batches PPO),
+        considera apenas vitórias terminais completas verificadas (is_full_win=True), impedindo que
+        fatias parciais de episódios falhos/mínimos locais bloqueiem o desaprender corretivo do PPO.
+        """
+        if not self.sil_enabled:
+            return None, 0.0, 0.0
+
+        total_mem_loss: Optional[torch.Tensor] = None
+        sil_p_loss = 0.0
+        dpo_p_loss = 0.0
+
+        avail_count = (
+            self.sil_buffer.count_full_wins()
+            if (only_full_wins and hasattr(self.sil_buffer, "count_full_wins"))
+            else len(self.sil_buffer)
+        )
+        if avail_count >= self.sil_min_samples and self.sil_coef > 0.0:
+            sil_batch = self.sil_buffer.sample_batch(
+                batch_size=self.sil_batch_size,
+                target_depth=target_depth,
+                only_full_wins=only_full_wins,
+            )
+            if sil_batch is not None:
+                sil_in = {
+                    "obs": sil_batch["obs"],
+                    "prev_action": sil_batch["prev_actions"],
+                    "prev_reward": sil_batch["prev_rewards"],
+                }
+                if not self.agent.is_visual and sil_batch["delta_obs"] is not None:
+                    sil_in["delta_obs"] = sil_batch["delta_obs"]
+
+                sil_dist, sil_val, _ = self.agent(sil_in, hx=sil_batch["hx"], dones=sil_batch["dones"])
+                sil_val_sq = sil_val.squeeze(-1)
+                sil_ret = sil_batch["returns"]
+                sil_mask = sil_batch["mask"]
+
+                # Surpresa positiva estritamente com crítico desconectado do grafo (100% PPO Pure Critic)
+                sil_adv = torch.clamp(sil_ret - sil_val_sq.detach(), min=0.0)
+
+                if self.agent.is_discrete:
+                    if self.action_chunk_size > 1:
+                        sil_logp = sil_dist.log_prob(sil_batch["actions"]).sum(dim=-1)
+                    else:
+                        sil_logp = sil_dist.log_prob(sil_batch["actions"])
+                else:
+                    if self.action_chunk_size > 1:
+                        sil_logp = sil_dist.log_prob(sil_batch["actions"]).sum(dim=(-2, -1))
+                    else:
+                        sil_logp = sil_dist.log_prob(sil_batch["actions"]).sum(dim=-1)
+
+                denom = sil_mask.sum().clamp(min=1.0)
+                sil_policy_loss = -(sil_logp * sil_adv * sil_mask).sum() / denom
+                sil_p_loss = float(sil_policy_loss.item())
+                total_mem_loss = self.sil_coef * sil_policy_loss
+
+        if self.sil_dpo_enabled and self.dpo_coef > 0.0:
+            pairs = self.sil_buffer.sample_contrastive_pairs(
+                batch_size=self.dpo_batch_size,
+                target_depth=target_depth,
+                only_full_wins=only_full_wins,
+            )
+            if pairs is not None:
+                win_batch, loss_batch = pairs
+                win_in = {
+                    "obs": win_batch["obs"],
+                    "prev_action": win_batch["prev_actions"],
+                    "prev_reward": win_batch["prev_rewards"],
+                }
+                if not self.agent.is_visual and win_batch["delta_obs"] is not None:
+                    win_in["delta_obs"] = win_batch["delta_obs"]
+
+                loss_in = {
+                    "obs": loss_batch["obs"],
+                    "prev_action": loss_batch["prev_actions"],
+                    "prev_reward": loss_batch["prev_rewards"],
+                }
+                if not self.agent.is_visual and loss_batch["delta_obs"] is not None:
+                    loss_in["delta_obs"] = loss_batch["delta_obs"]
+
+                win_dist, _, _ = self.agent(win_in, hx=win_batch["hx"], dones=win_batch["dones"])
+                loss_dist, _, _ = self.agent(loss_in, hx=loss_batch["hx"], dones=loss_batch["dones"])
+
+                if self.agent.is_discrete:
+                    if self.action_chunk_size > 1:
+                        win_logp = win_dist.log_prob(win_batch["actions"]).sum(dim=-1)
+                        loss_logp = loss_dist.log_prob(loss_batch["actions"]).sum(dim=-1)
+                    else:
+                        win_logp = win_dist.log_prob(win_batch["actions"])
+                        loss_logp = loss_dist.log_prob(loss_batch["actions"])
+                else:
+                    if self.action_chunk_size > 1:
+                        win_logp = win_dist.log_prob(win_batch["actions"]).sum(dim=(-2, -1))
+                        loss_logp = loss_dist.log_prob(loss_batch["actions"]).sum(dim=(-2, -1))
+                    else:
+                        win_logp = win_dist.log_prob(win_batch["actions"]).sum(dim=-1)
+                        loss_logp = loss_dist.log_prob(loss_batch["actions"]).sum(dim=-1)
+
+                win_ref_logp = win_batch["old_log_probs"]
+                loss_ref_logp = loss_batch["old_log_probs"]
+                win_mask = win_batch["mask"]
+                loss_mask = loss_batch["mask"]
+
+                win_len = win_mask.sum(dim=-1).clamp(min=1.0)
+                loss_len = loss_mask.sum(dim=-1).clamp(min=1.0)
+
+                h_w = ((win_logp - win_ref_logp) * win_mask).sum(dim=-1) / win_len
+                h_l = ((loss_logp - loss_ref_logp) * loss_mask).sum(dim=-1) / loss_len
+
+                dpo_logits = self.dpo_beta * (h_w - h_l)
+                dpo_loss = -torch.nn.functional.logsigmoid(dpo_logits).mean()
+                dpo_p_loss = float(dpo_loss.item())
+                scaled_dpo = self.dpo_coef * dpo_loss
+                total_mem_loss = scaled_dpo if total_mem_loss is None else (total_mem_loss + scaled_dpo)
+
+        return total_mem_loss, sil_p_loss, dpo_p_loss
+
     def train_epoch(self) -> Dict[str, float]:
-        """Performs PPO mini-batch updates over stored chunks."""
+        """Executa época PPO acoplada à Cirurgia de Gradiente Simétrica por Curvatura no Caminho do Ator.
+
+        - ValueHead permanece 100% exclusiva do PPO on-policy (zero gradiente de SIL/DPO).
+        - FrontEnd, Trunk e PolicyHead recebem projeção bilateral preservadora de norma com
+          alpha_t = clip(EMA_cos_b, 0.0, gradvac_max_alpha * w_on), unificando continuamente
+          GradVac (em regime denso) e PCGrad 90° (em fronteira extrema esparsa).
+        """
         self.agent.train()
         total_policy_loss = 0.0
         total_val_loss = 0.0
         total_ent_loss = 0.0
         total_floor_loss = 0.0
         n_updates = 0
+        conflict_hits = 0
+        conflict_checks = 0
+
+        raw_env = getattr(self.env, "unwrapped", self.env)
+        target_depth = getattr(raw_env, "current_depth", getattr(self.env, "current_depth", None))
+
+        actor_blocks, value_params = self._get_actor_and_value_blocks()
+        w_on = self._get_on_policy_win_density()
+        alpha_cap = self.gradvac_max_alpha * w_on
+
+        ppo_actor_accum: Dict[str, Optional[List[torch.Tensor]]] = {
+            b_name: None for b_name in actor_blocks
+        }
+
+        # Extrai referência inicial do gradiente unificado de memória (SIL + DPO) APENAS sobre vitórias
+        # completas verificadas (only_full_wins=True) para proteger todos os mini-batches PPO contra
+        # esquecimento catastrófico sem jamais bloquear o PPO de escapar de mínimos locais / falhas parciais.
+        g_mem_ref: Optional[Dict[str, Optional[List[torch.Tensor]]]] = None
+        if self.sil_enabled and self.pcgrad_enabled:
+            self.optimizer.zero_grad()
+            mem_ref_loss, _, _ = self._compute_unified_memory_loss(target_depth, only_full_wins=True)
+            if mem_ref_loss is not None:
+                mem_ref_loss.backward()
+                g_mem_ref = {}
+                for b_name, params in actor_blocks.items():
+                    if params and any(p.grad is not None for p in params):
+                        g_mem_ref[b_name] = [
+                            p.grad.detach().clone() if p.grad is not None else torch.zeros_like(p)
+                            for p in params
+                        ]
+                    else:
+                        g_mem_ref[b_name] = None
+            self.optimizer.zero_grad()
 
         for _ in range(self.n_epochs):
             for batch in self.buffer.get_chunks_generator(self.chunk_batch_size):
@@ -1887,15 +2144,12 @@ class RecurrentPPOTrainer:
                         new_log_probs = dist_eval.log_prob(batch.actions).sum(dim=-1)
                         entropy = dist.entropy().sum(dim=-1)
 
-                # Ratio robusto com clamping numérico para evitar explosões de razão de amostragem de importância
                 log_ratio = new_log_probs - batch.old_log_probs
-                log_ratio = torch.clamp(log_ratio, min=-10.0, max=2.5)  # exp(2.5) ~= 12.18
+                log_ratio = torch.clamp(log_ratio, min=-10.0, max=2.5)
                 ratio = torch.exp(log_ratio)
 
-                # Advantages are already globally normalized across rollout
                 norm_adv = batch.advantages
 
-                # Clipped surrogate policy loss (com proteção estrita contra picos desmedidos de vantagem negativa)
                 surr1 = ratio * norm_adv
                 surr2 = (
                     torch.clamp(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range) * norm_adv
@@ -1903,15 +2157,11 @@ class RecurrentPPOTrainer:
                 surr = torch.min(surr1, surr2)
                 policy_loss = -torch.clamp(surr, min=-15.0, max=15.0).mean()
 
-                # Robust MSE value loss
                 val_loss = 0.5 * ((values_sq - batch.returns) ** 2).mean()
 
-                # Entropy loss
                 batch_entropy = entropy.mean()
                 entropy_loss = -batch_entropy
 
-                # Dynamic Entropy Floor (Barrier Loss)
-                # Impede que a entropia caia abaixo do piso de segurança (ex: 0.18)
                 floor_loss = torch.tensor(0.0, device=self.device)
                 floor_active = False
                 if self.entropy_floor_enabled and batch_entropy < self.entropy_floor:
@@ -1928,6 +2178,40 @@ class RecurrentPPOTrainer:
 
                 self.optimizer.zero_grad()
                 loss.backward()
+
+                # Acumula direção média do PPO nos blocos do Ator antes da projeção
+                if self.sil_enabled and self.pcgrad_enabled:
+                    for b_name, params in actor_blocks.items():
+                        if not params or not any(p.grad is not None for p in params):
+                            continue
+                        cur_acc = ppo_actor_accum[b_name]
+                        if cur_acc is None:
+                            ppo_actor_accum[b_name] = [
+                                p.grad.detach().clone() if p.grad is not None else torch.zeros_like(p)
+                                for p in params
+                            ]
+                        else:
+                            for acc_t, p in zip(cur_acc, params):
+                                if p.grad is not None:
+                                    acc_t.add_(p.grad.detach())
+
+                # Proteção Simétrica em todos os mini-batches do Ator (ValueHead permanece 100% intocada!)
+                if g_mem_ref is not None and self.pcgrad_enabled:
+                    for b_name, params in actor_blocks.items():
+                        gm_list = g_mem_ref.get(b_name, None)
+                        if not params or gm_list is None:
+                            continue
+                        alpha_t = min(alpha_cap, max(0.0, self._gradvac_ema.get(b_name, 0.0)))
+                        conflict_checks += 1
+                        is_c, cos_obs = self._apply_curvature_gated_projection_inplace(
+                            params, gm_list, alpha_t
+                        )
+                        if is_c:
+                            conflict_hits += 1
+                        ema_prev = self._gradvac_ema.get(b_name, 0.0)
+                        self._gradvac_ema[b_name] = (
+                            self.gradvac_ema_beta * ema_prev + (1.0 - self.gradvac_ema_beta) * cos_obs
+                        )
 
                 # Telemetry: calculate per-block gradient norms
                 fe_grads = [p.grad for p in self.agent.front_end.parameters() if p.grad is not None]
@@ -1963,127 +2247,41 @@ class RecurrentPPOTrainer:
                 total_floor_loss += float(floor_loss.item())
                 n_updates += 1
 
-        # Self-Imitation Learning (SIL) update step
+        # Passo Unificado de Consolidação de Memória Off-Policy (SIL-Policy + c-SIL/DPO)
+        # Substitui integralmente os antigos passos isolados de SIL e DPO, mantendo ValueHead com gradiente None.
         sil_p_loss = 0.0
         sil_v_loss = 0.0
-        if self.sil_enabled and len(self.sil_buffer) >= self.sil_min_samples:
-            raw_env = getattr(self.env, "unwrapped", self.env)
-            target_depth = getattr(raw_env, "current_depth", getattr(self.env, "current_depth", None))
-            sil_batch = self.sil_buffer.sample_batch(
-                batch_size=self.sil_batch_size,
-                target_depth=target_depth,
-            )
-            if sil_batch is not None:
-                sil_in = {
-                    "obs": sil_batch["obs"],
-                    "prev_action": sil_batch["prev_actions"],
-                    "prev_reward": sil_batch["prev_rewards"],
-                }
-                if not self.agent.is_visual and sil_batch["delta_obs"] is not None:
-                    sil_in["delta_obs"] = sil_batch["delta_obs"]
-
-                sil_dist, sil_val, _ = self.agent(sil_in, hx=sil_batch["hx"], dones=sil_batch["dones"])
-                sil_val_sq = sil_val.squeeze(-1)
-                sil_ret = sil_batch["returns"]
-                sil_mask = sil_batch["mask"]
-
-                # SIL advantage: positive surprise (R - V)_+
-                sil_adv = torch.clamp(sil_ret - sil_val_sq.detach(), min=0.0)
-
-                if self.agent.is_discrete:
-                    if self.action_chunk_size > 1:
-                        sil_logp = sil_dist.log_prob(sil_batch["actions"]).sum(dim=-1)
-                    else:
-                        sil_logp = sil_dist.log_prob(sil_batch["actions"])
-                else:
-                    if self.action_chunk_size > 1:
-                        sil_logp = sil_dist.log_prob(sil_batch["actions"]).sum(dim=(-2, -1))
-                    else:
-                        sil_logp = sil_dist.log_prob(sil_batch["actions"]).sum(dim=-1)
-
-                denom = sil_mask.sum().clamp(min=1.0)
-                sil_policy_loss = -(sil_logp * sil_adv * sil_mask).sum() / denom
-                sil_val_loss = 0.5 * (torch.clamp(sil_ret - sil_val_sq, min=0.0) ** 2 * sil_mask).sum() / denom
-
-                sil_loss = self.sil_coef * (sil_policy_loss + 0.5 * sil_val_loss)
-
-                self.optimizer.zero_grad()
-                sil_loss.backward()
-                nn.utils.clip_grad_norm_(self.agent.parameters(), self.max_grad_norm)
-                self.optimizer.step()
-
-                sil_p_loss = float(sil_policy_loss.item())
-                sil_v_loss = float(sil_val_loss.item())
-
-        # Contrastive Online DPO-SIL (c-SIL) update step
         dpo_p_loss = 0.0
-        if self.sil_enabled and self.sil_dpo_enabled:
-            raw_env = getattr(self.env, "unwrapped", self.env)
-            target_depth = getattr(raw_env, "current_depth", getattr(self.env, "current_depth", None))
-            pairs = self.sil_buffer.sample_contrastive_pairs(
-                batch_size=self.dpo_batch_size,
-                target_depth=target_depth,
-            )
-            if pairs is not None:
-                win_batch, loss_batch = pairs
-                win_in = {
-                    "obs": win_batch["obs"],
-                    "prev_action": win_batch["prev_actions"],
-                    "prev_reward": win_batch["prev_rewards"],
-                }
-                if not self.agent.is_visual and win_batch["delta_obs"] is not None:
-                    win_in["delta_obs"] = win_batch["delta_obs"]
+        if self.sil_enabled:
+            self.optimizer.zero_grad()
+            mem_loss, sil_p_loss, dpo_p_loss = self._compute_unified_memory_loss(target_depth)
+            if mem_loss is not None:
+                mem_loss.backward()
+                # Garante isolamento absoluto bit-a-bit da ValueHead (zero vazamento de momentum no Adam)
+                for vp in value_params:
+                    vp.grad = None
 
-                loss_in = {
-                    "obs": loss_batch["obs"],
-                    "prev_action": loss_batch["prev_actions"],
-                    "prev_reward": loss_batch["prev_rewards"],
-                }
-                if not self.agent.is_visual and loss_batch["delta_obs"] is not None:
-                    loss_in["delta_obs"] = loss_batch["delta_obs"]
+                if self.pcgrad_enabled and n_updates > 0:
+                    inv_n = 1.0 / float(n_updates)
+                    for b_name, params in actor_blocks.items():
+                        gp_acc = ppo_actor_accum.get(b_name, None)
+                        if not params or gp_acc is None:
+                            continue
+                        gp_mean_list = [t * inv_n for t in gp_acc]
+                        alpha_t = min(alpha_cap, max(0.0, self._gradvac_ema.get(b_name, 0.0)))
+                        conflict_checks += 1
+                        is_c, cos_obs = self._apply_curvature_gated_projection_inplace(
+                            params, gp_mean_list, alpha_t
+                        )
+                        if is_c:
+                            conflict_hits += 1
+                        ema_prev = self._gradvac_ema.get(b_name, 0.0)
+                        self._gradvac_ema[b_name] = (
+                            self.gradvac_ema_beta * ema_prev + (1.0 - self.gradvac_ema_beta) * cos_obs
+                        )
 
-                win_dist, _, _ = self.agent(win_in, hx=win_batch["hx"], dones=win_batch["dones"])
-                loss_dist, _, _ = self.agent(loss_in, hx=loss_batch["hx"], dones=loss_batch["dones"])
-
-                if self.agent.is_discrete:
-                    if self.action_chunk_size > 1:
-                        win_logp = win_dist.log_prob(win_batch["actions"]).sum(dim=-1)
-                        loss_logp = loss_dist.log_prob(loss_batch["actions"]).sum(dim=-1)
-                    else:
-                        win_logp = win_dist.log_prob(win_batch["actions"])
-                        loss_logp = loss_dist.log_prob(loss_batch["actions"])
-                else:
-                    if self.action_chunk_size > 1:
-                        win_logp = win_dist.log_prob(win_batch["actions"]).sum(dim=(-2, -1))
-                        loss_logp = loss_dist.log_prob(loss_batch["actions"]).sum(dim=(-2, -1))
-                    else:
-                        win_logp = win_dist.log_prob(win_batch["actions"]).sum(dim=-1)
-                        loss_logp = loss_dist.log_prob(loss_batch["actions"]).sum(dim=-1)
-
-                win_ref_logp = win_batch["old_log_probs"]
-                loss_ref_logp = loss_batch["old_log_probs"]
-                win_mask = win_batch["mask"]
-                loss_mask = loss_batch["mask"]
-
-                win_len = win_mask.sum(dim=-1).clamp(min=1.0)
-                loss_len = loss_mask.sum(dim=-1).clamp(min=1.0)
-
-                # Length-normalized log-ratios: razão média por passo de decisão
-                h_w = ((win_logp - win_ref_logp) * win_mask).sum(dim=-1) / win_len
-                h_l = ((loss_logp - loss_ref_logp) * loss_mask).sum(dim=-1) / loss_len
-
-                # Logit contrastivo de preferência DPO com escala beta
-                dpo_logits = self.dpo_beta * (h_w - h_l)
-                dpo_loss = -torch.nn.functional.logsigmoid(dpo_logits).mean()
-
-                total_dpo_loss = self.dpo_coef * dpo_loss
-
-                self.optimizer.zero_grad()
-                total_dpo_loss.backward()
                 nn.utils.clip_grad_norm_(self.agent.parameters(), self.max_grad_norm)
                 self.optimizer.step()
-
-                dpo_p_loss = float(dpo_loss.item())
 
         if self.tracker is not None:
             self.tracker.record_sil_step(
@@ -2130,6 +2328,9 @@ class RecurrentPPOTrainer:
             "sil_failures": len(self.sil_buffer.failures),
             "sterility_prototypes": ster_prototypes,
             "sterility_rehabilitated": ster_rehab,
+            "pcgrad_conflict_rate": float(conflict_hits / max(1, conflict_checks)),
+            "pcgrad_alpha_cap": float(alpha_cap),
+            "pcgrad_win_density": float(w_on),
         }
 
     def train(
