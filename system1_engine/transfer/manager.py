@@ -26,6 +26,9 @@ class KnowledgeTransferManager:
             extra.setdefault("action_chunk_size", getattr(agent, "action_chunk_size", 1))
         if hasattr(agent, "tri_compass"):
             extra.setdefault("tri_compass", bool(getattr(agent, "tri_compass", True)))
+        if hasattr(agent, "value_head"):
+            extra.setdefault("value_head_type", getattr(agent.value_head, "head_type", "two_hot_symlog"))
+        extra.setdefault("sil_tournament_size", 5)
         payload = {
             "state_dict": state_dict_cpu,
             "extra_info": extra,
@@ -686,19 +689,24 @@ class KnowledgeTransferManager:
 
         except Exception as e:
             info["error"] = str(e)
+            checkpoint = None
 
-        info["action_chunk_size"] = KnowledgeTransferManager.detect_action_chunk_size(checkpoint_path)
-        info["trunk_type"] = KnowledgeTransferManager.detect_trunk_type(checkpoint_path)
-        info["tri_compass"] = KnowledgeTransferManager.detect_tri_compass(checkpoint_path)
+        info["action_chunk_size"] = KnowledgeTransferManager.detect_action_chunk_size(checkpoint_path, checkpoint_obj=checkpoint)
+        info["trunk_type"] = KnowledgeTransferManager.detect_trunk_type(checkpoint_path, checkpoint_obj=checkpoint)
+        info["tri_compass"] = KnowledgeTransferManager.detect_tri_compass(checkpoint_path, checkpoint_obj=checkpoint)
+        info["value_head_type"] = KnowledgeTransferManager.detect_value_head_type(checkpoint_path, checkpoint_obj=checkpoint)
         return info
 
     @staticmethod
-    def detect_action_chunk_size(checkpoint_path: str, action_space: Optional[Any] = None) -> int:
+    def detect_action_chunk_size(checkpoint_path: str, action_space: Optional[Any] = None, checkpoint_obj: Optional[Dict[str, Any]] = None) -> int:
         """Inspects checkpoint to detect action_chunk_size from extra_info or policy head output shape."""
-        if not os.path.exists(checkpoint_path):
-            return 1
         try:
-            checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            if checkpoint_obj is not None:
+                checkpoint = checkpoint_obj
+            else:
+                if not os.path.exists(checkpoint_path):
+                    return 1
+                checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
             extra = checkpoint.get("extra_info", {}) if isinstance(checkpoint, dict) else {}
             if "action_chunk_size" in extra and int(extra["action_chunk_size"]) >= 1:
                 return int(extra["action_chunk_size"])
@@ -724,12 +732,15 @@ class KnowledgeTransferManager:
         return 1
 
     @staticmethod
-    def detect_trunk_type(checkpoint_path: str) -> str:
+    def detect_trunk_type(checkpoint_path: str, checkpoint_obj: Optional[Dict[str, Any]] = None) -> str:
         """Inspects checkpoint state_dict to detect trunk architecture ('classic' or 'lean')."""
-        if not os.path.exists(checkpoint_path):
-            return "classic"
         try:
-            checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            if checkpoint_obj is not None:
+                checkpoint = checkpoint_obj
+            else:
+                if not os.path.exists(checkpoint_path):
+                    return "classic"
+                checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
             sd = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
             if isinstance(sd, dict):
                 if any(k.startswith("trunk.fast_gru.") or k.startswith("trunk.highway.") for k in sd.keys()):
@@ -739,12 +750,15 @@ class KnowledgeTransferManager:
         return "classic"
 
     @staticmethod
-    def detect_tri_compass(checkpoint_path: str) -> bool:
+    def detect_tri_compass(checkpoint_path: str, checkpoint_obj: Optional[Dict[str, Any]] = None) -> bool:
         """Inspects checkpoint state_dict to detect if it uses decoupled triangulation (tri_compass=True)."""
-        if not os.path.exists(checkpoint_path):
-            return True
         try:
-            checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            if checkpoint_obj is not None:
+                checkpoint = checkpoint_obj
+            else:
+                if not os.path.exists(checkpoint_path):
+                    return True
+                checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
             extra = checkpoint.get("extra_info", {}) if isinstance(checkpoint, dict) else {}
             if "tri_compass" in extra:
                 return bool(extra["tri_compass"])
@@ -761,6 +775,29 @@ class KnowledgeTransferManager:
         except Exception:
             pass
         return True
+
+    @staticmethod
+    def detect_value_head_type(checkpoint_path: str, checkpoint_obj: Optional[Dict[str, Any]] = None) -> str:
+        """Inspects checkpoint state_dict to detect value head architecture ('two_hot_symlog' or 'scalar_mse')."""
+        try:
+            if checkpoint_obj is not None:
+                checkpoint = checkpoint_obj
+            else:
+                if not os.path.exists(checkpoint_path):
+                    return "two_hot_symlog"
+                checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            extra = checkpoint.get("extra_info", {}) if isinstance(checkpoint, dict) else {}
+            if "value_head_type" in extra:
+                return str(extra["value_head_type"])
+            sd = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+            if isinstance(sd, dict):
+                if "value_head.bins" in sd or any(k.startswith("value_head.net.") for k in sd.keys()):
+                    return "two_hot_symlog"
+                if "value_head.linear.weight" in sd and sd["value_head.linear.weight"].shape[0] == 1:
+                    return "scalar_mse"
+        except Exception:
+            pass
+        return "two_hot_symlog"
 
     @staticmethod
     def validate_evaluation_compatibility(

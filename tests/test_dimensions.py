@@ -113,25 +113,25 @@ def test_lean_residual_trunk_dimensions_and_hx():
 
 
 def test_lean_agent_parameter_count():
-    """Verify Lean UniversalS1Agent parameter count is ~1.5M-1.7M."""
+    """Verify Lean UniversalS1Agent parameter count is ~1.5M-2.3M with Two-Hot Symlog Value Head."""
     agent = UniversalS1Agent(
         obs_space=gym.spaces.Box(low=-1, high=1, shape=(4,)),
         action_space=gym.spaces.Discrete(2),
         trunk_type="lean",
     )
     total_params = sum(p.numel() for p in agent.parameters())
-    assert 1_400_000 <= total_params <= 1_800_000, f"Expected ~1.5M-1.7M params, got {total_params:,}"
+    assert 1_400_000 <= total_params <= 2_300_000, f"Expected ~1.5M-2.3M params, got {total_params:,}"
 
 
 def test_parameter_counts_and_memory():
-    """Verify parameter count is ~650k-725k for vector and ~2.0M-2.5M for visual scenarios."""
+    """Verify parameter count is ~650k-1.1M for vector and ~2.0M-2.8M for visual scenarios."""
     vec_agent = UniversalS1Agent(
         obs_space=gym.spaces.Box(low=-1, high=1, shape=(4,)),
         action_space=gym.spaces.Discrete(2),
     )
     vec_params = sum(p.numel() for p in vec_agent.parameters())
-    # Target ~650k-850k parameters (vector Tri-Compass default)
-    assert 600_000 <= vec_params <= 900_000, f"Vector parameters {vec_params} out of target ~650k-850k"
+    # Target ~650k-1.1M parameters (vector Tri-Compass + Two-Hot Symlog default)
+    assert 600_000 <= vec_params <= 1_100_000, f"Vector parameters {vec_params} out of target ~650k-1.1M"
 
     vis_agent = UniversalS1Agent(
         obs_space=gym.spaces.Box(low=0, high=255, shape=(6, 84, 84)),

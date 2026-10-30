@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 import urllib.parse
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from system1_engine.hud.frame_buffer import VideoFrameBuffer
 from system1_engine.hud.runner import HUDProcessRunner
@@ -96,6 +96,8 @@ class HUDServer:
             valid.add(p)
         return sorted(list(valid))
 
+    _CHECKPOINT_CACHE: Dict[str, Tuple[float, int, Dict[str, Any]]] = {}
+
     def scan_checkpoints_detailed(self) -> List[Dict[str, Any]]:
         """Retorna detalhes enriquecidos (tamanho em MB, data, ambiente de origem e tensores) de cada checkpoint."""
         candidates = self.scan_checkpoints()
@@ -105,7 +107,12 @@ class HUDServer:
                 stat = os.stat(path)
                 size_mb = stat.st_size / (1024 * 1024)
                 mtime_str = time.strftime("%d/%m/%Y %H:%M:%S", time.localtime(stat.st_mtime))
-                meta = KnowledgeTransferManager.inspect_checkpoint(path)
+                cached = self._CHECKPOINT_CACHE.get(path)
+                if cached and cached[0] == stat.st_mtime and cached[1] == stat.st_size:
+                    meta = cached[2]
+                else:
+                    meta = KnowledgeTransferManager.inspect_checkpoint(path)
+                    self._CHECKPOINT_CACHE[path] = (stat.st_mtime, stat.st_size, meta)
                 results.append({
                     "path": path,
                     "filename": os.path.basename(path),
@@ -125,6 +132,7 @@ class HUDServer:
                     "trunk_type": meta.get("trunk_type", "classic"),
                     "action_chunk_size": meta.get("action_chunk_size", 1),
                     "tri_compass": meta.get("tri_compass", False),
+                    "value_head_type": meta.get("value_head_type", "two_hot_symlog"),
                 })
             except Exception:
                 results.append({"path": path, "filename": os.path.basename(path), "size_mb": 0.0, "mtime": "—"})

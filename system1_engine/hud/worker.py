@@ -542,6 +542,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         sil_enabled=sil_enabled,
         sil_coef=sil_coef,
         sil_batch_size=sil_batch_size,
+        sil_tournament_size=int(config.get("sil_tournament_size", 5)),
         sil_max_trajectories=sil_max_trajectories,
         sil_max_per_depth=sil_max_per_depth,
         min_capacity_per_depth=min_capacity_per_depth,
@@ -689,6 +690,12 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         now = time.time()
         snap = tracker.snapshot()
         snap["grad_norms"] = tracker.metrics.grad_norms
+        if hasattr(trainer, "sil_buffer"):
+            snap["sil_full_wins"] = trainer.sil_buffer.count_full_wins()
+            snap["sil_success_slices"] = trainer.sil_buffer.count_success_slices()
+            snap["sil_memory_mb"] = round(trainer.sil_buffer.memory_bytes / (1024 * 1024), 2)
+            snap["sil_tournament_size"] = getattr(trainer.sil_buffer, "tournament_size", 5)
+        snap["value_head_type"] = "Two-Hot Symlog (255 bins)"
         hud_client.send_telemetry(snap)
         last_telemetry_ts = now
 
