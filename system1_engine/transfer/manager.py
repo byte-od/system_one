@@ -155,9 +155,10 @@ class KnowledgeTransferManager:
         # Check if heads and front_end specifically match
         has_matching_policy = any(k.startswith("policy_head.") for k in matching_keys)
         has_matching_front = any(k.startswith("front_end.") for k in matching_keys)
-        has_head_mismatch = any(k.startswith(("policy_head.", "front_end.", "value_head.")) for k in mismatched_keys)
+        has_actor_mismatch = any(k.startswith(("policy_head.", "front_end.")) for k in mismatched_keys)
+        has_value_mismatch = any(k.startswith("value_head.") for k in mismatched_keys)
 
-        heads_and_frontend_match = has_matching_policy and has_matching_front and not has_head_mismatch
+        heads_and_frontend_match = has_matching_policy and has_matching_front and not has_actor_mismatch
         is_warm_start = heads_and_frontend_match and not force_trunk_only
 
         if is_warm_start:
@@ -175,8 +176,12 @@ class KnowledgeTransferManager:
             print(f"\n{'='*72}")
             print(f"🚀 [Warm-Start / Continual Training Ativo]")
             print(f"   Arquivo: {checkpoint_path}")
-            print(f"   Compatibilidade: 100% dos parâmetros compatíveis ({len(matching_keys)}/{len(agent_dict)} tensores)")
-            print(f"   -> Política, Valor e Percepção RESTAURADOS com sucesso!")
+            if has_value_mismatch:
+                print(f"   Compatibilidade de Ator: 100% da Política e Percepção RESTAURADOS ({len(matching_keys)}/{len(agent_dict)} tensores)")
+                print(f"   -> ValueHead atualizada nativamente para Two-Hot Symlog (pronta para treino).")
+            else:
+                print(f"   Compatibilidade: 100% dos parâmetros compatíveis ({len(matching_keys)}/{len(agent_dict)} tensores)")
+                print(f"   -> Política, Valor e Percepção RESTAURADOS com sucesso!")
             print(f"   -> Tronco: {'CONGELADO' if eff_freeze_trunk else 'LIVRE PARA FINE-TUNING'}")
             print(f"{'='*72}\n")
 

@@ -2055,7 +2055,9 @@ class RecurrentPPOTrainer:
                 if not self.agent.is_visual:
                     input_dict["delta_obs"] = batch.delta_obs
 
-                dist, values, _ = self.agent(input_dict, hx=batch.hx, dones=batch.dones)
+                dist, values, _, val_logits = self.agent(
+                    input_dict, hx=batch.hx, dones=batch.dones, return_value_logits=True
+                )
                 values_sq = values.squeeze(-1)  # [B, T]
 
                 if self.agent.is_discrete:
@@ -2114,7 +2116,7 @@ class RecurrentPPOTrainer:
                 surr = torch.min(surr1, surr2)
                 policy_loss = -torch.clamp(surr, min=-15.0, max=15.0).mean()
 
-                val_loss = 0.5 * ((values_sq - batch.returns) ** 2).mean()
+                val_loss = self.agent.value_head.loss(val_logits, batch.returns)
 
                 batch_entropy = entropy.mean()
                 entropy_loss = -batch_entropy

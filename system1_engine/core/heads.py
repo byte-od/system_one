@@ -1,4 +1,4 @@
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical, Normal
@@ -92,13 +92,109 @@ class GaussianPolicyHead(nn.Module):
         return action, log_prob, entropy
 
 
-class ValueHead(nn.Module):
-    """Critic head estimating expected return V(s)."""
+def symlog(x: torch.Tensor) -> torch.Tensor:
+    """Função logarítmica simétrica contínua e diferenciável em ℝ."""
+    return torch.sign(x) * torch.log(torch.abs(x) + 1.0)
 
-    def __init__(self, in_features: int = 256) -> None:
+
+def symexp(y: torch.Tensor) -> torch.Tensor:
+    """Inversa analítica da função symlog."""
+    return torch.sign(y) * (torch.exp(torch.abs(y)) - 1.0)
+
+
+def two_hot_encode(
+    scalar_targets: torch.Tensor,
+    bins: torch.Tensor,
+) -> torch.Tensor:
+    """Converte um tensor escalar contínuo em uma distribuição two-hot sobre os bins discretos."""
+    device = scalar_targets.device
+    num_bins = bins.shape[0]
+
+    # Garante que os alvos estejam dentro da faixa dos bins
+    clamped = scalar_targets.clamp(min=bins[0].item(), max=bins[-1].item())
+
+    # Localiza o índice do bin imediatamente inferior via bucketize
+    bin_idx = torch.bucketize(clamped, bins) - 1
+    bin_idx = bin_idx.clamp(min=0, max=num_bins - 2)
+
+    lower_bin = bins[bin_idx]
+    upper_bin = bins[bin_idx + 1]
+
+    # Pesos lineares complementares que somam exatamente 1.0
+    weight_upper = (clamped - lower_bin) / (upper_bin - lower_bin + 1e-8)
+    weight_lower = 1.0 - weight_upper
+
+    # Cria o tensor two-hot esparso
+    target_dist = torch.zeros(*scalar_targets.shape, num_bins, device=device)
+    target_dist.scatter_(-1, bin_idx.unsqueeze(-1), weight_lower.unsqueeze(-1))
+    target_dist.scatter_(-1, (bin_idx + 1).unsqueeze(-1), weight_upper.unsqueeze(-1))
+
+    return target_dist
+
+
+class ValueHead(nn.Module):
+    """Cabeça de Crítico Categórica Two-Hot Symlog (DreamerV3 / MuZero style).
+
+    Substitui a regressão MSE escalar por entropia cruzada sobre partição de bins symlog.
+    Elimina explosão de gradientes (gradientes estritamente limitados em [-1, 1]) e é invariante à escala.
+    """
+
+    def __init__(
+        self,
+        in_features: int = 256,
+        num_bins: int = 255,
+        v_min: float = -50.0,
+        v_max: float = 500.0,
+    ) -> None:
         super().__init__()
         self.in_features = in_features
-        self.linear = nn.Linear(in_features, 1)
+        self.num_bins = num_bins
+        self.v_min = v_min
+        self.v_max = v_max
+
+        # Bins uniformemente distribuídos no espaço symlog
+        bins = torch.linspace(
+            symlog(torch.tensor(float(v_min))),
+            symlog(torch.tensor(float(v_max))),
+            num_bins,
+        )
+        self.register_buffer("bins", bins)
+
+        self.net = nn.Sequential(
+            nn.Linear(in_features, in_features),
+            nn.LayerNorm(in_features),
+            nn.GELU(),
+            nn.Linear(in_features, num_bins),
+        )
+        self._last_logits: Optional[torch.Tensor] = None
+
+    @property
+    def last_logits(self) -> Optional[torch.Tensor]:
+        return self._last_logits
 
     def forward(self, h: torch.Tensor) -> torch.Tensor:
-        return self.linear(h)
+        """Retorna o valor escalar contínuo decodificado V(s) com shape (*h.shape[:-1], 1)."""
+        logits = self.net(h)
+        self._last_logits = logits
+        probs = torch.softmax(logits, dim=-1)
+        expected_symlog = torch.sum(probs * self.bins, dim=-1, keepdim=True)
+        return symexp(expected_symlog)
+
+    def forward_with_logits(
+        self, h: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Retorna (valor_escalar, logits, entropia_incerteza)."""
+        logits = self.net(h)
+        self._last_logits = logits
+        probs = torch.softmax(logits, dim=-1)
+        expected_symlog = torch.sum(probs * self.bins, dim=-1, keepdim=True)
+        expected_val = symexp(expected_symlog)
+        entropy = -torch.sum(probs * torch.log(probs.clamp(min=1e-8)), dim=-1)
+        return expected_val, logits, entropy
+
+    def loss(self, logits: torch.Tensor, continuous_targets: torch.Tensor) -> torch.Tensor:
+        """Calcula perda de Cross-Entropy contra a projeção Two-Hot dos alvos contínuos."""
+        target_symlog = symlog(continuous_targets)
+        target_dist = two_hot_encode(target_symlog, self.bins)
+        log_probs = torch.log_softmax(logits, dim=-1)
+        return -(target_dist * log_probs).sum(dim=-1).mean()

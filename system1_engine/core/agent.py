@@ -223,7 +223,8 @@ class UniversalS1Agent(nn.Module):
         hx: Optional[torch.Tensor] = None,
         dones: Optional[torch.Tensor] = None,
         return_latent: bool = False,
-    ) -> Union[Tuple[Distribution, torch.Tensor, torch.Tensor], Tuple[Distribution, torch.Tensor, torch.Tensor, torch.Tensor]]:
+        return_value_logits: bool = False,
+    ) -> Any:
         """Unified forward pass returning action distribution, state value, and next hidden state."""
         z_in = self.extract_features(obs_dict)
         h, next_hx = self.trunk(z_in, hx=hx, dones=dones)
@@ -232,6 +233,8 @@ class UniversalS1Agent(nn.Module):
         self._last_latent = h
         if return_latent:
             return dist, val, next_hx, h
+        if return_value_logits:
+            return dist, val, next_hx, self.value_head.last_logits
         return dist, val, next_hx
 
     def get_action(
