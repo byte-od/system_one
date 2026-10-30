@@ -437,7 +437,19 @@ def test_o1_tournament_selection_prioritizes_full_wins_and_optimal_paths():
     assert tourn3_win_rate >= 0.20, f"Tournament-3 rate {tourn3_win_rate} deveria enriquecer vitórias (esperado >= 20%)"
     assert tourn3_win_rate > uniform_win_rate * 1.5, "Torneio deve enriquecer significativamente em relação ao uniforme"
 
-    # 3. Validação do modo only_full_wins=True em O(1) via _full_win_buffers
+    # 3. Torneio k=5 (Padrão de Produção) atinge enriquecimento ótimo (~40%) sem omitir fatias
+    sampled_tourn5_wins = 0
+    for _ in range(n_samples):
+        # Omissão do parâmetro tournament_size valida o valor default padrão (k=5)
+        b = buf.sample_batch(batch_size=1, target_depth=5)
+        if float(b["returns"][0, 0].item()) >= 9.0:
+            sampled_tourn5_wins += 1
+
+    tourn5_win_rate = sampled_tourn5_wins / n_samples
+    assert tourn5_win_rate >= 0.30, f"Tournament-5 default rate {tourn5_win_rate} deveria enriquecer vitórias para >= 30%"
+    assert tourn5_win_rate > tourn3_win_rate, "k=5 deve prover maior pressão seletiva que k=3"
+
+    # 4. Validação do modo only_full_wins=True em O(1) via _full_win_buffers
     b_only_wins = buf.sample_batch(batch_size=8, target_depth=5, only_full_wins=True)
     assert b_only_wins is not None
     # Todos os itens do lote devem ser vitórias completas (retorno 10.0 e comprimento 5)

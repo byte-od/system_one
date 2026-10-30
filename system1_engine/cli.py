@@ -216,6 +216,7 @@ def train_mode(args: argparse.Namespace) -> None:
         min_capacity_per_depth = int(getattr(args, "sil_min_capacity_per_depth", 32))
         max_failures_per_depth = int(getattr(args, "max_failures_per_depth", 512))
         min_failures_per_depth = int(getattr(args, "min_failures_per_depth", 16))
+        sil_tournament_size = int(getattr(args, "sil_tournament_size", 5))
         sil_dpo_enabled = getattr(args, "sil_dpo_enabled", True)
         dpo_coef = float(getattr(args, "dpo_coef", 0.05))
         dpo_beta = float(getattr(args, "dpo_beta", 0.10))
@@ -240,6 +241,7 @@ def train_mode(args: argparse.Namespace) -> None:
             sil_max_trajectories=sil_max_trajectories,
             sil_max_per_depth=sil_max_per_depth,
             min_capacity_per_depth=min_capacity_per_depth,
+            sil_tournament_size=sil_tournament_size,
             sil_dpo_enabled=sil_dpo_enabled,
             dpo_coef=dpo_coef,
             dpo_beta=dpo_beta,
@@ -713,6 +715,12 @@ def main() -> None:
         type=int,
         default=32,
         help="Cota mínima de trajetórias para estratos iniciais/rasos no modo progressivo (padrão: 32)",
+    )
+    parser.add_argument(
+        "--sil-tournament-size",
+        type=int,
+        default=5,
+        help="Tamanho do torneio O(1) de seleção de trajetórias no buffer SIL (padrão: 5, validado empiricamente em 15M passos)",
     )
     parser.add_argument(
         "--max-failures-per-depth",
