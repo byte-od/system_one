@@ -52,6 +52,7 @@ class RecurrentPPOTrainer:
         sil_max_per_depth: Optional[int] = None,
         min_capacity_per_depth: int = 32,
         sil_min_samples: int = 8,
+        sil_tournament_size: int = 3,
         sil_dpo_enabled: bool = False,
         dpo_coef: float = 0.0,
         dpo_beta: float = 0.10,
@@ -133,6 +134,7 @@ class RecurrentPPOTrainer:
         self.dpo_coef = float(dpo_coef)
         self.dpo_beta = float(dpo_beta)
         self.dpo_batch_size = max(1, int(dpo_batch_size))
+        self.sil_tournament_size = max(1, int(sil_tournament_size))
         self.progressive_buffer_capacity = bool(progressive_buffer_capacity)
         self.max_failures_per_depth = max(1, int(max_failures_per_depth))
         self.min_failures_per_depth = max(1, int(min_failures_per_depth))
@@ -1881,6 +1883,7 @@ class RecurrentPPOTrainer:
                 batch_size=self.sil_batch_size,
                 target_depth=target_depth,
                 only_full_wins=only_full_wins,
+                tournament_size=self.sil_tournament_size,
             )
             if sil_batch is not None:
                 sil_in = {
@@ -1920,6 +1923,7 @@ class RecurrentPPOTrainer:
                 batch_size=self.dpo_batch_size,
                 target_depth=target_depth,
                 only_full_wins=only_full_wins,
+                tournament_size=self.sil_tournament_size,
             )
             if pairs is None:
                 # Modo sem armazenamento de falhas: contrasta vitórias/fatias de sucesso do buffer
@@ -1928,6 +1932,7 @@ class RecurrentPPOTrainer:
                     batch_size=self.dpo_batch_size,
                     target_depth=target_depth,
                     only_full_wins=only_full_wins,
+                    tournament_size=self.sil_tournament_size,
                 )
                 if win_cand is not None:
                     k_win = int(win_cand["obs"].shape[0])
