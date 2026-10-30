@@ -768,6 +768,8 @@ class SuccessReplayBuffer:
 
         self._depth_buffers: Dict[int, List[SuccessfulTrajectory]] = defaultdict(list)
         self._scramble_index: Dict[int, Dict[bytes, int]] = defaultdict(dict)
+        self._full_win_buffers: Dict[int, List[SuccessfulTrajectory]] = defaultdict(list)
+        self._full_win_scramble_index: Dict[int, Dict[bytes, int]] = defaultdict(dict)
         self._failure_buffers: Dict[int, deque[SuccessfulTrajectory]] = defaultdict(
             lambda: deque(maxlen=self.max_failures_per_depth)
         )
@@ -777,18 +779,49 @@ class SuccessReplayBuffer:
         self.total_failures_added: int = 0
         self._entry_counter: int = 0
 
+        # Contadores incrementais O(1) de telemetria e integridade
+        self._running_total_trajectories: int = 0
+        self._running_memory_bytes: int = 0
+        self._running_uncompressed_bytes: int = 0
+        self._running_full_wins: int = 0
+        self._running_success_slices: int = 0
+
+    def _track_add(self, trajectory: SuccessfulTrajectory) -> None:
+        """Atualiza contadores incrementais O(1) na inserção de trajetória."""
+        self._running_total_trajectories += 1
+        self._running_memory_bytes += trajectory.memory_bytes
+        self._running_uncompressed_bytes += trajectory.uncompressed_bytes
+        if getattr(trajectory, "is_full_win", True):
+            self._running_full_wins += 1
+        else:
+            self._running_success_slices += 1
+
+    def _track_remove(self, trajectory: SuccessfulTrajectory) -> None:
+        """Atualiza contadores incrementais O(1) na remoção/substituição de trajetória."""
+        self._running_total_trajectories = max(0, self._running_total_trajectories - 1)
+        self._running_memory_bytes = max(0, self._running_memory_bytes - trajectory.memory_bytes)
+        self._running_uncompressed_bytes = max(0, self._running_uncompressed_bytes - trajectory.uncompressed_bytes)
+        if getattr(trajectory, "is_full_win", True):
+            self._running_full_wins = max(0, self._running_full_wins - 1)
+        else:
+            self._running_success_slices = max(0, self._running_success_slices - 1)
+
     @property
     def is_unlimited(self) -> bool:
         return self.max_trajectories is None and self.max_per_depth is None
 
     @property
     def memory_bytes(self) -> int:
-        """Total de bytes ocupados em RAM pelas trajetórias armazenadas."""
+        """Total de bytes ocupados em RAM pelas trajetórias armazenadas em O(1)."""
+        if hasattr(self, "_running_memory_bytes"):
+            return self._running_memory_bytes
         return sum(t.memory_bytes for b in self._depth_buffers.values() for t in b)
 
     @property
     def uncompressed_bytes(self) -> int:
-        """Total de bytes equivalentes sem compactação lossless."""
+        """Total de bytes equivalentes sem compactação lossless em O(1)."""
+        if hasattr(self, "_running_uncompressed_bytes"):
+            return self._running_uncompressed_bytes
         return sum(t.uncompressed_bytes for b in self._depth_buffers.values() for t in b)
 
     @property
@@ -825,12 +858,19 @@ class SuccessReplayBuffer:
         """Limpa todos os estratos do buffer."""
         self._depth_buffers.clear()
         self._scramble_index.clear()
+        self._full_win_buffers.clear()
+        self._full_win_scramble_index.clear()
         self._failure_buffers.clear()
         self.total_added = 0
         self.total_upgraded = 0
         self.total_pruned = 0
         self.total_failures_added = 0
         self._entry_counter = 0
+        self._running_total_trajectories = 0
+        self._running_memory_bytes = 0
+        self._running_uncompressed_bytes = 0
+        self._running_full_wins = 0
+        self._running_success_slices = 0
 
     def get_depth_distribution(self) -> Dict[int, int]:
         """Retorna a contagem de trajetórias armazenadas por profundidade."""
@@ -862,6 +902,9 @@ class SuccessReplayBuffer:
         return {d: self.get_capacity_for_depth(d) for d in sorted(self._depth_buffers.keys())}
 
     def __len__(self) -> int:
+        """Retorna o total de trajetórias armazenadas em O(1)."""
+        if hasattr(self, "_running_total_trajectories"):
+            return self._running_total_trajectories
         return sum(len(b) for b in self._depth_buffers.values())
 
     def add_failure(self, trajectory: SuccessfulTrajectory) -> None:
@@ -987,7 +1030,22 @@ class SuccessReplayBuffer:
                 existing_idx = s_map.get(init_key, None)
                 if existing_idx is not None and existing_idx < len(d_buf):
                     if trajectory.quality_key > d_buf[existing_idx].quality_key:
+                        old_t = d_buf[existing_idx]
+                        self._track_remove(old_t)
                         d_buf[existing_idx] = trajectory
+                        self._track_add(trajectory)
+
+                        if self.is_unlimited:
+                            fw_map = self._full_win_scramble_index[depth]
+                            fw_buf = self._full_win_buffers[depth]
+                            fw_idx = fw_map.get(init_key, None)
+                            if fw_idx is not None and fw_idx < len(fw_buf):
+                                if trajectory.is_full_win:
+                                    fw_buf[fw_idx] = trajectory
+                            elif trajectory.is_full_win:
+                                fw_map[init_key] = len(fw_buf)
+                                fw_buf.append(trajectory)
+
                         self.total_added += 1
                         self.total_upgraded += 1
                     else:
@@ -995,6 +1053,11 @@ class SuccessReplayBuffer:
                     return
                 s_map[init_key] = len(d_buf)
             d_buf.append(trajectory)
+            self._track_add(trajectory)
+            if self.is_unlimited and trajectory.is_full_win:
+                if self.deduplicate_scrambles:
+                    self._full_win_scramble_index[depth][init_key] = len(self._full_win_buffers[depth])
+                self._full_win_buffers[depth].append(trajectory)
             self.total_added += 1
             return
 
@@ -1002,13 +1065,16 @@ class SuccessReplayBuffer:
         if quota is not None and len(d_buf) >= quota:
             worst_traj = d_buf[0]
             if trajectory > worst_traj:
-                heapq.heapreplace(d_buf, trajectory)
+                removed_traj = heapq.heapreplace(d_buf, trajectory)
+                self._track_remove(removed_traj)
+                self._track_add(trajectory)
                 self.total_added += 1
             else:
                 self.total_pruned += 1
                 return
         else:
             heapq.heappush(d_buf, trajectory)
+            self._track_add(trajectory)
             self.total_added += 1
 
         if self.max_trajectories is not None:
@@ -1029,7 +1095,8 @@ class SuccessReplayBuffer:
                     eligible_depths = non_empty_depths
 
                 target_d = eligible_depths[0]
-                heapq.heappop(self._depth_buffers[target_d])
+                popped_traj = heapq.heappop(self._depth_buffers[target_d])
+                self._track_remove(popped_traj)
                 if len(self._depth_buffers[target_d]) == 0:
                     del self._depth_buffers[target_d]
 
@@ -1125,7 +1192,9 @@ class SuccessReplayBuffer:
         }
 
     def count_full_wins(self) -> int:
-        """Retorna o total de trajetórias de vitória terminal completa (is_full_win == True)."""
+        """Retorna o total de trajetórias de vitória terminal completa (is_full_win == True) em O(1)."""
+        if hasattr(self, "_running_full_wins"):
+            return self._running_full_wins
         return sum(
             1
             for b in self._depth_buffers.values()
@@ -1134,7 +1203,9 @@ class SuccessReplayBuffer:
         )
 
     def count_success_slices(self) -> int:
-        """Retorna o total de fatias de sucesso parcial (Peak Slicing, is_full_win == False)."""
+        """Retorna o total de fatias de sucesso parcial (Peak Slicing, is_full_win == False) em O(1)."""
+        if hasattr(self, "_running_success_slices"):
+            return self._running_success_slices
         return sum(
             1
             for b in self._depth_buffers.values()
@@ -1142,22 +1213,65 @@ class SuccessReplayBuffer:
             if not getattr(t, "is_full_win", True)
         )
 
+    def _pick_trajectory(
+        self,
+        pool_list: List[SuccessfulTrajectory],
+        tournament_size: int = 3,
+    ) -> SuccessfulTrajectory:
+        """Seleciona uma trajetória do pool via Torneio O(1) avaliando metadados leves de cabeçalho.
+
+        Agnóstico e universal:
+        1. Prioriza vitória completa verificada (is_full_win == True).
+        2. Prioriza eficiência de caminho (maior razão profundidade/passos: d / L).
+        3. Prioriza maior retorno acumulado (returns[0]).
+
+        Nunca descompacta arrays comprimidos de observações durante a seleção, garantindo
+        latência estritamente O(1) da ordem de microssegundos mesmo com 1M+ trajetórias.
+        """
+        n = len(pool_list)
+        if n == 0:
+            raise ValueError("Cannot pick from empty trajectory pool")
+        if tournament_size <= 1 or n == 1:
+            return pool_list[np.random.randint(0, n)]
+
+        k = min(tournament_size, n)
+        idxs = np.random.randint(0, n, size=k)
+        cands = [pool_list[int(i)] for i in idxs]
+
+        def _traj_score(t: SuccessfulTrajectory) -> Tuple[int, float, float]:
+            is_fw = 1 if getattr(t, "is_full_win", True) else 0
+            d = float(getattr(t, "depth", 1))
+            length = max(1, int(getattr(t, "length", 1)))
+            eff = (d / length) if d > 0 else (1.0 / length)
+            ret = float(t.returns[0]) if (t.returns is not None and len(t.returns) > 0) else 0.0
+            return (is_fw, eff, ret)
+
+        return max(cands, key=_traj_score)
+
     def sample_batch(
         self,
         batch_size: int = 8,
         target_depth: Optional[int] = None,
         only_full_wins: bool = False,
+        tournament_size: int = 3,
     ) -> Optional[Dict[str, torch.Tensor]]:
-        """Amostra um mini-lote padronizado de trajetórias/transições com balanceamento fronteira/âncora e máscara temporal."""
+        """Amostra um mini-lote padronizado de trajetórias/transições com balanceamento fronteira/âncora,
+        seleção por torneio O(1) e máscara temporal.
+        """
         if len(self) == 0:
             return None
 
         if only_full_wins:
-            pools: Dict[int, List[SuccessfulTrajectory]] = {
-                d: [t for t in trajs if getattr(t, "is_full_win", True)]
-                for d, trajs in self._depth_buffers.items()
-            }
-            pools = {d: trajs for d, trajs in pools.items() if len(trajs) > 0}
+            if self.is_unlimited and hasattr(self, "_full_win_buffers"):
+                pools: Dict[int, List[SuccessfulTrajectory]] = {
+                    d: trajs for d, trajs in self._full_win_buffers.items() if len(trajs) > 0
+                }
+            else:
+                pools = {
+                    d: [t for t in trajs if getattr(t, "is_full_win", True)]
+                    for d, trajs in self._depth_buffers.items()
+                }
+                pools = {d: trajs for d, trajs in pools.items() if len(trajs) > 0}
         else:
             pools = {d: trajs for d, trajs in self._depth_buffers.items() if len(trajs) > 0}
 
@@ -1180,7 +1294,7 @@ class SuccessReplayBuffer:
             depth_probs = depth_counts / depth_counts.sum()
             chosen_depths = np.random.choice(eligible_depths, size=k, replace=True, p=depth_probs)
             sampled_trajs = [
-                pools[d][np.random.randint(0, len(pools[d]))]
+                self._pick_trajectory(pools[d], tournament_size=tournament_size)
                 for d in chosen_depths
             ]
         else:
@@ -1211,7 +1325,7 @@ class SuccessReplayBuffer:
                 f_chosen_depths = np.random.choice(frontier_depths, size=n_frontier, replace=True, p=f_weights)
 
                 sampled_trajs.extend(
-                    pools[d][np.random.randint(0, len(pools[d]))]
+                    self._pick_trajectory(pools[d], tournament_size=tournament_size)
                     for d in f_chosen_depths
                 )
 
@@ -1224,7 +1338,7 @@ class SuccessReplayBuffer:
                     a_weights = a_counts / a_counts.sum()
                     a_chosen_depths = np.random.choice(anchor_depths, size=n_anchor, replace=True, p=a_weights)
                     sampled_trajs.extend(
-                        pools[d][np.random.randint(0, len(pools[d]))]
+                        self._pick_trajectory(pools[d], tournament_size=tournament_size)
                         for d in a_chosen_depths
                     )
 
@@ -1242,7 +1356,7 @@ class SuccessReplayBuffer:
                 chosen_depths = np.random.choice(frontier_depths, size=k, replace=True, p=f_weights)
 
                 sampled_trajs.extend(
-                    pools[d][np.random.randint(0, len(pools[d]))]
+                    self._pick_trajectory(pools[d], tournament_size=tournament_size)
                     for d in chosen_depths
                 )
             else:
@@ -1253,7 +1367,7 @@ class SuccessReplayBuffer:
                 a_weights = a_counts / a_counts.sum()
                 chosen_depths = np.random.choice(anchor_depths, size=k, replace=True, p=a_weights)
                 sampled_trajs.extend(
-                    pools[d][np.random.randint(0, len(pools[d]))]
+                    self._pick_trajectory(pools[d], tournament_size=tournament_size)
                     for d in chosen_depths
                 )
 
@@ -1264,6 +1378,7 @@ class SuccessReplayBuffer:
         batch_size: int = 8,
         target_depth: Optional[int] = None,
         only_full_wins: bool = False,
+        tournament_size: int = 3,
     ) -> Optional[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]]:
         """Amostra pares contrastivos (vitória, falha) emparelhados pelo MESMO estrato (d_w == d_l).
         
@@ -1273,10 +1388,15 @@ class SuccessReplayBuffer:
         Retorna (batch_win, batch_loss) ou None se não houver pares elegíveis suficientes.
         """
         if only_full_wins:
-            win_pools: Dict[int, List[SuccessfulTrajectory]] = {
-                d: [t for t in trajs if getattr(t, "is_full_win", True)]
-                for d, trajs in self._depth_buffers.items()
-            }
+            if self.is_unlimited and hasattr(self, "_full_win_buffers"):
+                win_pools: Dict[int, List[SuccessfulTrajectory]] = {
+                    d: trajs for d, trajs in self._full_win_buffers.items() if len(trajs) > 0
+                }
+            else:
+                win_pools = {
+                    d: [t for t in trajs if getattr(t, "is_full_win", True)]
+                    for d, trajs in self._depth_buffers.items()
+                }
         else:
             win_pools = self._depth_buffers
 
@@ -1328,9 +1448,9 @@ class SuccessReplayBuffer:
         for d in chosen_depths:
             w_candidates = win_pools[d]
             l_candidates = list(self._failure_buffers[d])
-            w_idx = np.random.randint(0, len(w_candidates))
+            w_traj = self._pick_trajectory(w_candidates, tournament_size=tournament_size)
             l_idx = np.random.randint(0, len(l_candidates))
-            sampled_wins.append(w_candidates[w_idx])
+            sampled_wins.append(w_traj)
             sampled_losses.append(l_candidates[l_idx])
 
         batch_win = self._collate_trajectories(sampled_wins)

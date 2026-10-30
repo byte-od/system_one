@@ -309,3 +309,139 @@ def test_strictly_wins_and_success_slices_with_on_policy_dpo_contrast():
     assert metrics["sil_failures"] == 0
     assert np.isfinite(metrics["sil_dpo_loss"])
     assert metrics["sil_dpo_loss"] > 0.0
+
+
+def test_o1_running_telemetry_counters_accuracy_under_mutations():
+    """Valida que todos os contadores O(1) de telemetria coincidem com a soma manual sob adições, upgrades e limpezas."""
+    buf = SuccessReplayBuffer(obs_shape=(8,), is_discrete=True, lossless_compaction=True)
+    rng = np.random.default_rng(123)
+
+    # 1. Buffer vazio inicial
+    assert len(buf) == 0
+    assert buf.memory_bytes == 0
+    assert buf.uncompressed_bytes == 0
+    assert buf.count_full_wins() == 0
+    assert buf.count_success_slices() == 0
+
+    # 2. Inserção mista de 20 fatias e 30 vitórias completas em profundidades variadas
+    for i in range(50):
+        depth = (i % 5) + 1
+        is_fw = (i >= 20)
+        length = 4 + (i % 3)  # comprimentos 4, 5, 6 respeitam o filtro max_allowed
+        obs = rng.integers(0, 2, size=(length, 8)).astype(np.float32)
+        obs[0, 0] = float(i)
+        t = FrontierTransition(
+            obs=obs,
+            delta_obs=None,
+            prev_actions=np.zeros(length, dtype=np.int64),
+            prev_rewards=np.zeros(length, dtype=np.float32),
+            actions=rng.integers(0, 4, size=length, dtype=np.int64),
+            returns=np.linspace(5.0, 1.0, length, dtype=np.float32),
+            depth=depth,
+            length=length,
+            is_full_win=is_fw,
+        )
+        buf.add(t)
+
+    # Verifica exatidão bit-a-bit dos contadores O(1) contra soma O(N)
+    manual_trajs = [t for b in buf._depth_buffers.values() for t in b]
+    assert len(buf) == len(manual_trajs) == 50
+    assert buf.memory_bytes == sum(t.memory_bytes for t in manual_trajs)
+    assert buf.uncompressed_bytes == sum(t.uncompressed_bytes for t in manual_trajs)
+    assert buf.count_full_wins() == sum(1 for t in manual_trajs if t.is_full_win) == 30
+    assert buf.count_success_slices() == sum(1 for t in manual_trajs if not t.is_full_win) == 20
+
+    # 3. Upgrade in-place de uma fatia parcial para vitória completa com menor comprimento
+    target_slice = buf._depth_buffers[1][0]
+    upgraded_obs = target_slice.obs[:3].copy()
+    better_t = FrontierTransition(
+        obs=upgraded_obs,
+        delta_obs=None,
+        prev_actions=np.zeros(3, dtype=np.int64),
+        prev_rewards=np.zeros(3, dtype=np.float32),
+        actions=np.zeros(3, dtype=np.int64),
+        returns=np.ones(3, dtype=np.float32) * 10.0,
+        depth=1,
+        length=3,
+        is_full_win=True,
+    )
+    buf.add(better_t)
+
+    manual_trajs = [t for b in buf._depth_buffers.values() for t in b]
+    assert len(buf) == 50
+    assert buf.memory_bytes == sum(t.memory_bytes for t in manual_trajs)
+    assert buf.uncompressed_bytes == sum(t.uncompressed_bytes for t in manual_trajs)
+    assert buf.count_full_wins() == 31
+    assert buf.count_success_slices() == 19
+
+    # 4. Limpeza total do buffer
+    buf.clear()
+    assert len(buf) == 0
+    assert buf.memory_bytes == 0
+    assert buf.uncompressed_bytes == 0
+    assert buf.count_full_wins() == 0
+    assert buf.count_success_slices() == 0
+
+
+def test_o1_tournament_selection_prioritizes_full_wins_and_optimal_paths():
+    """Valida que o Torneio O(1) enriquece a taxa de vitórias e caminhos eficientes sem tocar nas observações."""
+    buf = SuccessReplayBuffer(obs_shape=(4,), is_discrete=True, lossless_compaction=True)
+    rng = np.random.default_rng(42)
+
+    # Cria um pool com 90% fatias parciais longas e 10% vitórias completas curtas e ótimas no nível 5
+    for i in range(100):
+        is_win = (i < 10)  # apenas 10% são vitórias completas
+        length = 5 if is_win else 9  # vitória em 5 passos vs fatia em 9 passos (ambos <= max_allowed 10)
+        ret_val = 10.0 if is_win else 2.0
+        obs = rng.integers(0, 2, size=(length, 4)).astype(np.float32)
+        obs[0, 0] = float(i)
+        buf.add(
+            FrontierTransition(
+                obs=obs,
+                delta_obs=None,
+                prev_actions=np.zeros(length, dtype=np.int64),
+                prev_rewards=np.zeros(length, dtype=np.float32),
+                actions=np.zeros(length, dtype=np.int64),
+                returns=np.ones(length, dtype=np.float32) * ret_val,
+                depth=5,
+                length=length,
+                is_full_win=is_win,
+            )
+        )
+
+    assert len(buf) == 100
+    assert buf.count_full_wins() == 10
+    assert buf.count_success_slices() == 90
+
+    # 1. Amostragem uniforme pura (tournament_size=1) reproduz ~10% de vitórias
+    np.random.seed(123)
+    n_samples = 400
+    sampled_uniform_wins = 0
+    for _ in range(n_samples):
+        b = buf.sample_batch(batch_size=1, target_depth=5, tournament_size=1)
+        # Se for vitória completa, o retorno acumulado é 10.0
+        if float(b["returns"][0, 0].item()) >= 9.0:
+            sampled_uniform_wins += 1
+
+    uniform_win_rate = sampled_uniform_wins / n_samples
+    assert 0.05 <= uniform_win_rate <= 0.16, f"Uniform rate {uniform_win_rate} fora do esperado (~10%)"
+
+    # 2. Torneio k=3 eleva a taxa de vitórias completas para ~25-35%
+    sampled_tourn3_wins = 0
+    for _ in range(n_samples):
+        b = buf.sample_batch(batch_size=1, target_depth=5, tournament_size=3)
+        if float(b["returns"][0, 0].item()) >= 9.0:
+            sampled_tourn3_wins += 1
+
+    tourn3_win_rate = sampled_tourn3_wins / n_samples
+    assert tourn3_win_rate >= 0.20, f"Tournament-3 rate {tourn3_win_rate} deveria enriquecer vitórias (esperado >= 20%)"
+    assert tourn3_win_rate > uniform_win_rate * 1.5, "Torneio deve enriquecer significativamente em relação ao uniforme"
+
+    # 3. Validação do modo only_full_wins=True em O(1) via _full_win_buffers
+    b_only_wins = buf.sample_batch(batch_size=8, target_depth=5, only_full_wins=True)
+    assert b_only_wins is not None
+    # Todos os itens do lote devem ser vitórias completas (retorno 10.0 e comprimento 5)
+    for i in range(8):
+        assert float(b_only_wins["returns"][i, 0].item()) >= 9.0
+        # A máscara deve ser exatamente 5
+        assert int(b_only_wins["mask"][i].sum().item()) == 5
