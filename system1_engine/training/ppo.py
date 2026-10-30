@@ -52,7 +52,7 @@ class RecurrentPPOTrainer:
         sil_max_per_depth: Optional[int] = None,
         min_capacity_per_depth: int = 32,
         sil_min_samples: int = 8,
-        sil_tournament_size: int = 3,
+        sil_tournament_size: int = 5,
         sil_dpo_enabled: bool = False,
         dpo_coef: float = 0.0,
         dpo_beta: float = 0.10,

@@ -1216,7 +1216,7 @@ class SuccessReplayBuffer:
     def _pick_trajectory(
         self,
         pool_list: List[SuccessfulTrajectory],
-        tournament_size: int = 3,
+        tournament_size: int = 5,
     ) -> SuccessfulTrajectory:
         """Seleciona uma trajetória do pool via Torneio O(1) avaliando metadados leves de cabeçalho.
 
@@ -1253,7 +1253,7 @@ class SuccessReplayBuffer:
         batch_size: int = 8,
         target_depth: Optional[int] = None,
         only_full_wins: bool = False,
-        tournament_size: int = 3,
+        tournament_size: int = 5,
     ) -> Optional[Dict[str, torch.Tensor]]:
         """Amostra um mini-lote padronizado de trajetórias/transições com balanceamento fronteira/âncora,
         seleção por torneio O(1) e máscara temporal.
@@ -1378,7 +1378,7 @@ class SuccessReplayBuffer:
         batch_size: int = 8,
         target_depth: Optional[int] = None,
         only_full_wins: bool = False,
-        tournament_size: int = 3,
+        tournament_size: int = 5,
     ) -> Optional[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]]:
         """Amostra pares contrastivos (vitória, falha) emparelhados pelo MESMO estrato (d_w == d_l).
         
