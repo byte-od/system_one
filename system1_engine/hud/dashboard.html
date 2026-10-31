@@ -2034,16 +2034,16 @@
             <span class="text-[10px] font-bold text-amber-300 flex items-center gap-1">
               <span>🎲</span> Dificuldade (--scramble-depth)
             </span>
-            <div class="flex gap-1">
-              <button type="button" onclick="setScrambleDepthInput(1)" class="badge-btn">D1</button>
-              <button type="button" onclick="setScrambleDepthInput(4)" class="badge-btn">D4</button>
-              <button type="button" onclick="setScrambleDepthInput(7)" class="badge-btn">D7</button>
-              <button type="button" onclick="setScrambleDepthInput(10)" class="badge-btn">D10</button>
-              <button type="button" onclick="setScrambleDepthInput(14)" class="badge-btn text-cyan-300 font-bold border-cyan-700 bg-cyan-950">D14</button>
+            <div class="flex gap-1" id="scramble-preset-buttons">
+              <button type="button" onclick="setScrambleDepthInput(1)" class="badge-btn" id="btn-scramble-1">D1</button>
+              <button type="button" onclick="setScrambleDepthInput(4)" class="badge-btn" id="btn-scramble-4">D4</button>
+              <button type="button" onclick="setScrambleDepthInput(7)" class="badge-btn" id="btn-scramble-7">D7</button>
+              <button type="button" onclick="setScrambleDepthInput(10)" class="badge-btn" id="btn-scramble-10">D10</button>
+              <button type="button" onclick="setScrambleDepthInput(14)" class="badge-btn text-cyan-300 font-bold border-cyan-700 bg-cyan-950" id="btn-scramble-14">D14</button>
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <input type="number" id="cfg-scramble-depth" value="14" min="1" placeholder="Qtd de passos de scramble..." class="hud-input font-mono text-[11px] text-amber-200" />
+            <input type="number" id="cfg-scramble-depth" value="14" min="1" placeholder="Qtd de passos de scramble..." class="hud-input font-mono text-[11px] text-amber-200" oninput="updateScrambleDepthButtons(this.value)" />
             <span class="text-[9px] text-amber-400/80 font-mono whitespace-nowrap">Passos livres</span>
           </div>
         </div>
@@ -2124,11 +2124,11 @@
           <div class="flex items-center justify-between bg-gray-950/70 p-2 rounded border border-gray-800/80">
             <span class="text-[10px] text-gray-300 font-semibold">Episódios de Teste</span>
             <div class="flex items-center gap-1">
-              <button type="button" onclick="setEpisodes(1)" class="badge-btn">1</button>
-              <button type="button" onclick="setEpisodes(5)" class="badge-btn font-bold text-cyan-300 border-cyan-700 bg-cyan-950">5</button>
-              <button type="button" onclick="setEpisodes(20)" class="badge-btn">20</button>
-              <button type="button" onclick="setEpisodes(50)" class="badge-btn">50</button>
-              <input type="number" id="cfg-episodes" value="5" min="1" max="1000" class="hud-input w-12 text-center font-mono font-bold text-cyan-300 py-0.5 ml-1 text-xs" />
+              <button type="button" onclick="setEpisodes(1)" class="badge-btn" id="btn-episodes-1">1</button>
+              <button type="button" onclick="setEpisodes(5)" class="badge-btn font-bold text-cyan-300 border-cyan-700 bg-cyan-950" id="btn-episodes-5">5</button>
+              <button type="button" onclick="setEpisodes(20)" class="badge-btn" id="btn-episodes-20">20</button>
+              <button type="button" onclick="setEpisodes(50)" class="badge-btn" id="btn-episodes-50">50</button>
+              <input type="number" id="cfg-episodes" value="5" min="1" max="1000" class="hud-input w-12 text-center font-mono font-bold text-cyan-300 py-0.5 ml-1 text-xs" oninput="updateEpisodesButtons(this.value)" />
             </div>
           </div>
         </div>
@@ -2149,10 +2149,10 @@
               <label class="text-[10px] text-gray-300 font-medium">Ambientes Paralelos</label>
             </div>
             <div class="flex items-center gap-1">
-              <button type="button" onclick="setNumEnvs(32)" class="badge-btn">32</button>
-              <button type="button" onclick="setNumEnvs(64)" class="badge-btn">64</button>
+              <button type="button" onclick="setNumEnvs(32)" class="badge-btn" id="btn-num-envs-32">32</button>
+              <button type="button" onclick="setNumEnvs(64)" class="badge-btn" id="btn-num-envs-64">64</button>
               <button type="button" onclick="setNumEnvs(128)" class="badge-btn font-bold text-cyan-300 border-cyan-700 bg-cyan-950" id="btn-num-envs-128">128</button>
-              <input type="number" id="cfg-num-envs" value="128" min="1" max="512" class="hud-input w-12 text-center font-mono font-bold text-cyan-300 py-0.5 text-xs" />
+              <input type="number" id="cfg-num-envs" value="128" min="1" max="512" class="hud-input w-12 text-center font-mono font-bold text-cyan-300 py-0.5 text-xs" oninput="setNumEnvs(this.value)" />
             </div>
           </div>
           <!-- Dispositivo -->
@@ -3892,12 +3892,12 @@
         document.getElementById('cfg-rollout-steps').value = 2048;
       }
       else if (actualEnv === 'RubiksCubeMacro-v0') {
-        setTargetReturn(12.0); setEntropy(0.01); setSteps(30000);
+        setTargetReturn(12.0); setEntropy(0.01); setSteps(5);
         document.getElementById('cfg-chunk-length').value = 16;
         document.getElementById('cfg-rollout-steps').value = 1024;
       }
       else if (actualEnv === 'RubiksCube-v0') {
-        setTargetReturn(12.0); setEntropy(0.007); setSteps(40000); setLR('0.0003');
+        setTargetReturn(12.0); setEntropy(0.007); setSteps(5); setLR('0.0003');
         document.getElementById('cfg-chunk-length').value = 32;
         document.getElementById('cfg-rollout-steps').value = 2048;
         document.getElementById('cfg-chunk-batch').value = 16;
@@ -3946,6 +3946,21 @@
       if (inp) {
         inp.value = val;
       }
+      updateScrambleDepthButtons(val);
+    }
+
+    function updateScrambleDepthButtons(val) {
+      const num = parseInt(val, 10);
+      [1, 4, 7, 10, 14].forEach(d => {
+        const btn = document.getElementById('btn-scramble-' + d);
+        if (btn) {
+          if (!isNaN(num) && num === d) {
+            btn.className = 'badge-btn text-cyan-300 font-bold border-cyan-700 bg-cyan-950';
+          } else {
+            btn.className = 'badge-btn';
+          }
+        }
+      });
     }
 
     function onMixedReplayInput(val) {
@@ -4389,7 +4404,7 @@
     }
     function setSteps(val) {
       let num = parseFloat(val);
-      if (isNaN(num)) num = 10;
+      if (isNaN(num)) num = 5;
       if (num >= 1000) {
         num = num / 1000000;
       }
@@ -4401,16 +4416,23 @@
     }
     function updateStepsButtons(val) {
       let num = parseFloat(val);
-      if (isNaN(num)) return;
-      if (num >= 1000) {
-        num = num / 1000000;
-      }
       const stepsMap = {
+        '1m': 1,
+        '5m': 5,
         '10m': 10,
         '25m': 25,
         '50m': 50,
-        '100m': 100,
       };
+      if (isNaN(num)) {
+        Object.keys(stepsMap).forEach(id => {
+          const btn = document.getElementById('btn-steps-' + id);
+          if (btn) btn.className = 'badge-btn';
+        });
+        return;
+      }
+      if (num >= 1000) {
+        num = num / 1000000;
+      }
       Object.entries(stepsMap).forEach(([id, target]) => {
         const btn = document.getElementById('btn-steps-' + id);
         if (btn) {
@@ -4424,7 +4446,24 @@
     }
     function setTargetReturn(val) { document.getElementById('cfg-target-return').value = val; }
     function setLR(val) { document.getElementById('cfg-lr').value = val; }
-    function setEpisodes(val) { document.getElementById('cfg-episodes').value = val; }
+    function setEpisodes(val) {
+      const inp = document.getElementById('cfg-episodes');
+      if (inp) inp.value = val;
+      updateEpisodesButtons(val);
+    }
+    function updateEpisodesButtons(val) {
+      const num = parseInt(val, 10);
+      [1, 5, 20, 50].forEach(ep => {
+        const btn = document.getElementById('btn-episodes-' + ep);
+        if (btn) {
+          if (!isNaN(num) && num === ep) {
+            btn.className = 'badge-btn font-bold text-cyan-300 border-cyan-700 bg-cyan-950';
+          } else {
+            btn.className = 'badge-btn';
+          }
+        }
+      });
+    }
     function setEntropy(val) {
       const inp = document.getElementById('cfg-entropy');
       if (inp) {
@@ -6578,12 +6617,13 @@
     }
 
     function setNumEnvs(n) {
+      const num = parseInt(n, 10);
       const input = document.getElementById('cfg-num-envs');
-      if (input) input.value = n;
+      if (input && !isNaN(num) && input.value != num) input.value = num;
       [16, 32, 64, 128].forEach(v => {
         const btn = document.getElementById(`btn-num-envs-${v}`);
         if (btn) {
-          if (v === n) {
+          if (v === num) {
             btn.className = 'badge-btn font-bold text-cyan-300 border-cyan-700 bg-cyan-950';
           } else {
             btn.className = 'badge-btn';
