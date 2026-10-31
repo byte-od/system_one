@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "updated_at": 1793330953.368736,
-  "updated_at_str": "30/10/2026 00:29:13",
+  "updated_at": 1793454745.229152,
+  "updated_at_str": "31/10/2026 10:52:25",
   "models": {
     "acrobot": {
       "key": "acrobot",
@@ -73,8 +73,8 @@
       "file": "s1_cartpole.onnx",
       "size_mb": 3.16,
       "size_bytes": 3315208,
-      "mtime": 1793307884.662133,
-      "mtime_str": "29/10/2026 18:04:44",
+      "mtime": 1793405999.734949,
+      "mtime_str": "30/10/2026 21:19:59",
       "checkpoint_source": "s1_cartpole_v1_trained.pt",
       "checkpoint_version": "v1",
       "action_chunk_size": 1
@@ -130,10 +130,10 @@
       "description": "AURA (Sistema 1) — Tronco recorrente de 1.6M parâmetros com Lean GRU + Tri-Compass. 12 giros atômicos, latência sub-milissegundo em CPU pura, treinado até D10.",
       "default": true,
       "file": "s1_rubiks_atomic.onnx",
-      "size_mb": 7.16,
-      "size_bytes": 7506588,
-      "mtime": 1793330928.0575001,
-      "mtime_str": "30/10/2026 00:28:48",
+      "size_mb": 8.67,
+      "size_bytes": 9086256,
+      "mtime": 1793454687.3658218,
+      "mtime_str": "31/10/2026 10:51:27",
       "checkpoint_source": "s1_rubikscube_v0_trained_v11.pt",
       "checkpoint_version": "v11",
       "action_chunk_size": 1
@@ -151,8 +151,8 @@
       "file": "s1_rubiks_macro.onnx",
       "size_mb": 3.18,
       "size_bytes": 3329533,
-      "mtime": 1791417199.1011772,
-      "mtime_str": "07/10/2026 20:53:19",
+      "mtime": 1793454679.928206,
+      "mtime_str": "31/10/2026 10:51:19",
       "checkpoint_source": "s1_rubikscubemacro_v0_trained.pt",
       "checkpoint_version": "v1",
       "action_chunk_size": 1
