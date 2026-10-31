@@ -2394,7 +2394,13 @@ class RecurrentPPOTrainer:
                 print(" | ".join(log_parts))
 
             if callback is not None:
-                callback(self.total_steps, mean_return)
+                cb_res = callback(self.total_steps, mean_return)
+                if cb_res is False:
+                    if verbose:
+                        print(
+                            f"⏹️ Callback solicitou encerramento programado aos {self.total_steps} passos."
+                        )
+                    break
 
             if (
                 target_return is not None

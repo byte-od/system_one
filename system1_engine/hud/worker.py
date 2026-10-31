@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import http.client
 import io
 import json
@@ -364,6 +365,26 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     freeze_trunk_cfg = config.get("freeze_trunk")
     force_trunk_only = bool(config.get("force_trunk_only", False))
 
+    target_end_timestamp = None
+    target_end_str = ""
+    if "max_seconds" in config and config["max_seconds"]:
+        target_end_timestamp = time.time() + float(config["max_seconds"])
+        target_end_str = datetime.datetime.fromtimestamp(target_end_timestamp).strftime("%H:%M:%S")
+        print(f"⏳ Treinamento com limite de tempo ativo: até {target_end_str} ({config['max_seconds']:.0f}s)")
+    elif "target_time" in config and config["target_time"]:
+        try:
+            now_dt = datetime.datetime.now()
+            parts = str(config["target_time"]).strip().split(":")
+            thour, tminute = int(parts[0]), int(parts[1])
+            target_dt = now_dt.replace(hour=thour, minute=tminute, second=0, microsecond=0)
+            if target_dt <= now_dt:
+                target_dt += datetime.timedelta(days=1)
+            target_end_timestamp = target_dt.timestamp()
+            target_end_str = target_dt.strftime("%H:%M:%S")
+            print(f"⏳ Treinamento programado até o horário: {target_end_str} (em {(target_end_timestamp - time.time())/60:.1f} min)")
+        except Exception as e:
+            print(f"⚠️ Erro ao interpretar target_time '{config.get('target_time')}': {e}")
+
     scramble_depth = config.get("scramble_depth")
     if scramble_depth is not None:
         try:
@@ -416,11 +437,13 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     if action_chunk_size > 1:
         print(f"⚡ Action Chunking Temporal (ACT) ATIVO: k={action_chunk_size} macro-ações coordenadas por passo")
 
+    tri_compass_cfg = bool(config.get("tri_compass", True))
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
         action_space=env.action_space,
         trunk_type=trunk_type,
         action_chunk_size=action_chunk_size,
+        tri_compass=tri_compass_cfg,
     )
 
     if checkpoint_to_load:
@@ -703,6 +726,11 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         hud_client.send_telemetry(snap)
         last_telemetry_ts = now
 
+        # Verificação de encerramento programado por horário limite
+        if target_end_timestamp is not None and now >= target_end_timestamp:
+            print(f"⏰ [HUD Worker] Horário limite atingido ({target_end_str}). Finalizando treinamento programado...")
+            return False
+
         # Salvamento automático periódico e por marcos (Curriculum Promotion & Novo Pico)
         if save_path:
             cur_promotions = tracker.metrics.curriculum_promotions if tracker else 0
@@ -853,11 +881,13 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
     if action_chunk_size > 1:
         print(f"⚡ Action Chunking Temporal (ACT) ATIVO na Avaliação: k={action_chunk_size}")
 
+    tri_compass_cfg = bool(config.get("tri_compass", True))
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
         action_space=env.action_space,
         trunk_type=trunk_type,
         action_chunk_size=action_chunk_size,
+        tri_compass=tri_compass_cfg,
     ).to(device)
 
     eval_calib_cfg = config.get("eval_calibration", config.get("calibration"))
