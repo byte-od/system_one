@@ -2194,6 +2194,7 @@
                 <span class="text-[9px] text-gray-400 block mb-0.5">Tronco Neural (--trunk)</span>
                 <select id="cfg-trunk" onchange="onTrunkChange(this.value)" class="hud-input text-[11px]">
                   <option value="lean" selected>⚡ Lean Residual (512D • 1.5M)</option>
+                  <option value="lru">🌀 LRU Linear Recurrent (512D • 1.14M)</option>
                   <option value="classic">Recorrente Clássico (256D • 400k)</option>
                 </select>
               </div>
@@ -6614,7 +6615,7 @@
       const isTri = document.getElementById('cfg-tri-compass') ? document.getElementById('cfg-tri-compass').checked : true;
       const trunkVal = document.getElementById('cfg-trunk') ? document.getElementById('cfg-trunk').value : 'lean';
       const triText = isTri ? 'Tri-465D' : '337D';
-      const trunkText = trunkVal === 'lean' ? 'Lean 512D' : 'Classic 256D';
+      const trunkText = trunkVal === 'lru' ? 'LRU 512D' : (trunkVal === 'lean' ? 'Lean 512D' : 'Classic 256D');
       badge.innerText = `${triText} • ${trunkText}`;
     }
 

@@ -881,8 +881,8 @@ def main() -> None:
         "--trunk",
         type=str,
         default="lean",
-        choices=["classic", "lean"],
-        help="Tipo de tronco neural recorrente: 'lean' (LeanResidualTrunk 512 Multi-Timescale, ~1.6M, padrão) ou 'classic' (GRU 256 + 2x ResMLP 256, ~830k)",
+        choices=["classic", "lean", "lru"],
+        help="Tipo de tronco neural recorrente: 'lru' (LRUResidualTrunk 512 Linear Recurrent Unit, ~1.14M, sem saturação), 'lean' (LeanResidualTrunk 512 Multi-Timescale GRU, ~1.6M, padrão) ou 'classic' (GRU 256 + 2x ResMLP 256, ~830k)",
     )
     parser.add_argument(
         "--action-chunk-size",

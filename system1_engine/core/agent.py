@@ -11,7 +11,7 @@ from torch.distributions import Distribution
 from system1_engine.core.encoders import ImpalaVisualFrontEnd, VectorFrontEnd
 from system1_engine.core.ensemble import ConfidenceGatedEnsemble
 from system1_engine.core.heads import CategoricalPolicyHead, GaussianPolicyHead, ValueHead
-from system1_engine.core.trunk import LeanResidualTrunk, System1Trunk
+from system1_engine.core.trunk import LeanResidualTrunk, LRUResidualTrunk, System1Trunk
 
 
 @dataclass(frozen=True)
@@ -108,6 +108,8 @@ class UniversalS1Agent(nn.Module):
         front_end_out_dim = getattr(self.front_end, "out_dim", 465 if self.tri_compass else 337)
         if trunk is not None:
             self.trunk = trunk
+        elif str(trunk_type).lower() in ("lru", "lru_residual", "v3"):
+            self.trunk = LRUResidualTrunk(input_dim=front_end_out_dim, fast_dim=256, slow_dim=256)
         elif str(trunk_type).lower() in ("lean", "lean_residual", "v2"):
             self.trunk = LeanResidualTrunk(input_dim=front_end_out_dim, fast_dim=256, slow_dim=256)
         else:

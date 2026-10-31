@@ -743,6 +743,8 @@ class KnowledgeTransferManager:
                 checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
             sd = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
             if isinstance(sd, dict):
+                if any(k.startswith("trunk.fast_lru.") for k in sd.keys()):
+                    return "lru"
                 if any(k.startswith("trunk.fast_gru.") or k.startswith("trunk.highway.") for k in sd.keys()):
                     return "lean"
         except Exception:

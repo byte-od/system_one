@@ -2,6 +2,8 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 
+from system1_engine.core.recurrent import LinearRecurrentUnit
+
 
 class ResMLPBlock(nn.Module):
     """Residual Multi-Layer Perceptron Block.
@@ -321,4 +323,154 @@ class LeanResidualTrunk(nn.Module):
         # Unified next hidden state [1, B, 512]
         next_hx = torch.cat([next_h_fast, next_h_slow], dim=-1)
         return h, next_hx
+
+
+class LRUResidualTrunk(nn.Module):
+    """Universal Deep Linear Recurrent Residual Trunk (~1.14M parameters).
+
+    Pilar 3 do AURA (Orvieto et al., ICML 2023 - DeepMind).
+    Substitui os GRUs por Linear Recurrent Units (LRU) com parametrização
+    polar e decomposição analítica real float32:
+
+      1. LayerNorm(input_dim) (com suporte transparente a Tri-Compass)
+      2. Layer 1 LRU (Fast sensory recurrence): input_dim -> fast_dim (256)
+         r in [0.80, 0.95] (alta reatividade temporal, dinâmica de 1 a 10 passos)
+      3. Layer 2 LRU (Strategic temporal abstraction): fast_dim -> slow_dim (256)
+         r in [0.95, 0.999] (memória estratégica profunda, traços de 20 a 500 passos)
+      4. Identity Residual Highway: Linear(input_dim, hidden_dim)
+         z_comb = LayerNorm([y_fast, y_slow] + highway(x_norm))
+      5. High-Capacity ResMLPBlock(hidden_dim):
+         z_out = ResMLPBlock(512)(z_comb)
+
+    State Management:
+      Accepts hidden state hx of shape [1, B, 512] or [B, 512].
+      Returns next_hx with canonical shape [1, B, 512].
+      100% compatível com a interface do LeanResidualTrunk e exportação ONNX Opset 11+.
+    """
+
+    def __init__(
+        self,
+        input_dim: int = 337,
+        fast_dim: int = 256,
+        slow_dim: int = 256,
+        highway_bias: bool = True,
+    ) -> None:
+        super().__init__()
+        self.input_dim = input_dim
+        self.fast_dim = fast_dim
+        self.slow_dim = slow_dim
+        self.hidden_dim = fast_dim + slow_dim
+
+        if input_dim > 337:
+            self.input_norm = nn.LayerNorm(337)
+            self.compass_input_norm = nn.LayerNorm(input_dim - 337)
+        else:
+            self.input_norm = nn.LayerNorm(input_dim)
+            self.compass_input_norm = None
+
+        self.fast_lru = LinearRecurrentUnit(
+            d_in=input_dim,
+            d_out=fast_dim,
+            d_hidden=fast_dim // 2,
+            r_min=0.80,
+            r_max=0.95,
+        )
+        self.slow_lru = LinearRecurrentUnit(
+            d_in=fast_dim,
+            d_out=slow_dim,
+            d_hidden=slow_dim // 2,
+            r_min=0.95,
+            r_max=0.999,
+        )
+        self.highway = nn.Linear(input_dim, self.hidden_dim, bias=highway_bias)
+        self.combine_norm = nn.LayerNorm(self.hidden_dim)
+        self.res_block = ResMLPBlock(self.hidden_dim)
+
+    def get_initial_hx(
+        self,
+        batch_size: int = 1,
+        device: Optional[torch.device] = None,
+        dtype: Optional[torch.dtype] = None,
+    ) -> torch.Tensor:
+        """Returns standard zero-initialized hidden state of shape [1, B, hidden_dim]."""
+        return torch.zeros(
+            1, batch_size, self.hidden_dim,
+            device=device,
+            dtype=dtype or torch.float32,
+        )
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        hx: Optional[torch.Tensor] = None,
+        dones: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass through deep linear recurrent residual trunk.
+
+        Args:
+            x: Input tensor of shape [B, T, D] or [B, D].
+            hx: Hidden state [1, B, 512] or [B, 512].
+            dones: Episode boundary mask [B, T].
+
+        Returns:
+            Tuple of:
+              - h: Latent representations [B, T, 512] (or [B, 512] if 2D input).
+              - next_hx: Updated LRU hidden state [1, B, 512].
+        """
+        is_2d = x.dim() == 2
+        if is_2d:
+            x = x.unsqueeze(1)  # [B, 1, D]
+
+        b, t, d = x.shape
+        assert d == self.input_dim, (
+            f"Expected input dimension {self.input_dim}, got {d}"
+        )
+
+        if hx is not None:
+            if hx.dim() == 2:
+                hx = hx.unsqueeze(0)
+            assert hx.shape == (1, b, self.hidden_dim), (
+                f"Expected hx shape {(1, b, self.hidden_dim)}, got {hx.shape}"
+            )
+            h_fast = hx[:, :, :self.fast_dim]
+            h_slow = hx[:, :, self.fast_dim:]
+        else:
+            h_fast = torch.zeros(1, b, self.fast_dim, device=x.device, dtype=x.dtype)
+            h_slow = torch.zeros(1, b, self.slow_dim, device=x.device, dtype=x.dtype)
+
+        # Normalize sensory input
+        if self.compass_input_norm is not None:
+            x_norm = torch.cat([
+                self.input_norm(x[:, :, :337]),
+                self.compass_input_norm(x[:, :, 337:]),
+            ], dim=-1)
+        else:
+            x_norm = self.input_norm(x)
+
+        # Recurrent propagation through cascaded LRU stages
+        out_fast, next_hf = self.fast_lru(x_norm, h_fast, dones=dones)
+        out_slow, next_hs = self.slow_lru(out_fast, h_slow, dones=dones)
+
+        # Multi-timescale fusion: concatenate fast and slow features [B, T, 512]
+        h_rec = torch.cat([out_fast, out_slow], dim=-1)
+
+        # Identity residual highway projection directly from sensory input [B, T, 512]
+        h_high = self.highway(x_norm)
+
+        # Fused representation with LayerNorm
+        h_comb = self.combine_norm(h_rec + h_high)
+
+        # High-capacity ResMLP non-linear processing
+        h = self.res_block(h_comb)
+        assert h.shape == (b, t, self.hidden_dim), (
+            f"Expected h shape {(b, t, self.hidden_dim)}, got {h.shape}"
+        )
+
+        if is_2d:
+            h = h.squeeze(1)
+
+        # Unified next hidden state [1, B, 512]
+        next_hx = torch.cat([next_hf, next_hs], dim=-1)
+        return h, next_hx
+
 
