@@ -289,7 +289,7 @@ class HUDServer:
                 self.latest_telemetry["curriculum_success_rate"] = 0.0
                 self._current_depth_best_rate = 0.0
 
-            # Sanitização contra anomalia estatística de 1 amostra inicial (1/1 = 100% em D5+)
+            # Sanitização contra anomalia estatística de amostras iniciais espúrias (ex: 3/4 = 75% em D5+)
             curr_d = new_d if new_d is not None else prev_d
             curr_rate = data.get("curriculum_success_rate")
             if curr_d is not None and curr_d >= 5:
@@ -299,7 +299,11 @@ class HUDServer:
                     self._current_depth_best_rate = max(self._current_depth_best_rate, float(curr_rate))
 
                 incoming_best = data.get("curriculum_depth_best_success_rate")
-                if incoming_best is not None and incoming_best >= 0.95 and (curr_rate is None or curr_rate < 0.80):
+                is_anomalous_spike = incoming_best is not None and (
+                    (incoming_best >= 0.95 and (curr_rate is None or curr_rate < 0.80))
+                    or (incoming_best >= 0.60 and curr_rate is not None and curr_rate < 0.30 and self._current_depth_best_rate < 0.50)
+                )
+                if is_anomalous_spike:
                     data["curriculum_depth_best_success_rate"] = (
                         self._current_depth_best_rate if self._current_depth_best_rate > 0 else (curr_rate if curr_rate is not None else 0.0)
                     )

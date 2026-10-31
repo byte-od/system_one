@@ -682,6 +682,13 @@ class RubiksCubeEnv(gym.Env):
         return {i: i ^ 1 for i in range(12)}
 
     @property
+    def curriculum_samples(self) -> int:
+        f = self.frontier_successes
+        if len(f) > 0:
+            return len(f)
+        return len(self.recent_successes)
+
+    @property
     def curriculum_success_rate(self) -> float:
         f = self.frontier_successes
         if len(f) > 0:
@@ -823,6 +830,7 @@ class RubiksCubeEnv(gym.Env):
             "dynamic_frontier": getattr(self, "dynamic_frontier", True),
             "target_success_rate": self.get_target_success_rate(),
             "curriculum_success_rate": self.curriculum_success_rate,
+            "curriculum_samples": self.curriculum_samples,
         }
         return obs, info
 
@@ -887,6 +895,7 @@ class RubiksCubeEnv(gym.Env):
             "curriculum_promotions": self.curriculum_promotions,
             "target_success_rate": self.get_target_success_rate(),
             "curriculum_success_rate": self.curriculum_success_rate,
+            "curriculum_samples": self.curriculum_samples,
         }
         return obs, reward, terminated, truncated, info
 
@@ -1024,6 +1033,13 @@ class RubiksCubeMacroEnv(gym.Env):
     @property
     def inverse_action_map(self) -> Dict[int, int]:
         return {i: i ^ 1 for i in range(12)}
+
+    @property
+    def curriculum_samples(self) -> int:
+        f = self.frontier_successes
+        if len(f) > 0:
+            return len(f)
+        return len(self.recent_successes)
 
     @property
     def curriculum_success_rate(self) -> float:
@@ -1165,6 +1181,7 @@ class RubiksCubeMacroEnv(gym.Env):
             "dynamic_frontier": getattr(self, "dynamic_frontier", True),
             "target_success_rate": self.get_target_success_rate(),
             "curriculum_success_rate": self.curriculum_success_rate,
+            "curriculum_samples": self.curriculum_samples,
         }
         return obs, info
 
@@ -1224,6 +1241,7 @@ class RubiksCubeMacroEnv(gym.Env):
             "curriculum_promotions": self.curriculum_promotions,
             "target_success_rate": self.get_target_success_rate(),
             "curriculum_success_rate": self.curriculum_success_rate,
+            "curriculum_samples": self.curriculum_samples,
         }
         return obs, reward, terminated, truncated, info
 
@@ -1378,13 +1396,22 @@ class VectorizedRubiksEnv(gym.Env):
         return self.envs[0].frontier_successes
 
     @property
+    def curriculum_samples(self) -> int:
+        f = self.frontier_successes
+        if len(f) > 0:
+            return len(f)
+        return len(self.recent_successes)
+
+    @property
     def curriculum_success_rate(self) -> float:
         f = self.frontier_successes
         if len(f) > 0:
-            return float(np.mean(f))
+            effective_window = max(len(f), 16) if (self.envs[0].current_depth >= 5) else len(f)
+            return float(sum(f) / effective_window)
         r = self.recent_successes
         if len(r) > 0:
-            return float(np.mean(r))
+            effective_window = max(len(r), 16) if (self.envs[0].current_depth >= 5) else len(r)
+            return float(sum(r) / effective_window)
         return 0.0
 
     @property
@@ -1461,10 +1488,12 @@ class VectorizedRubiksEnv(gym.Env):
                 env.curriculum_promotions = shared_promos
 
         mean_p_frontier = float(np.mean([inf.get("curriculum_p_frontier", 1.0) for inf in info_list]))
+        cur_samples = self.curriculum_samples
         for inf in info_list:
             inf["current_depth"] = shared_depth
             inf["curriculum_promotions"] = shared_promos
             inf["curriculum_success_rate"] = global_rate
+            inf["curriculum_samples"] = cur_samples
             inf["dynamic_frontier"] = self.dynamic_frontier
             inf["curriculum_p_frontier"] = mean_p_frontier
 
@@ -1535,14 +1564,17 @@ class VectorizedRubiksEnv(gym.Env):
                 inf["curriculum_promotions"] = shared_promos
                 inf["curriculum_promoted"] = True
                 inf["curriculum_success_rate"] = 0.0
+                inf["curriculum_samples"] = 0
                 inf["target_success_rate"] = eff_target
         else:
             global_rate = self.curriculum_success_rate
+            cur_samples = self.curriculum_samples
             eff_target = self.get_target_success_rate()
             for inf in info_list:
                 inf["current_depth"] = shared_depth
                 inf["curriculum_promotions"] = shared_promos
                 inf["curriculum_success_rate"] = global_rate
+                inf["curriculum_samples"] = cur_samples
                 inf["target_success_rate"] = eff_target
 
         return (

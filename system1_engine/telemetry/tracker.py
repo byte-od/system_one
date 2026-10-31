@@ -147,23 +147,24 @@ class LiveStatsTracker:
                 m.curriculum_promotions = new_promos
             if "curriculum_success_rate" in info:
                 rate = float(info["curriculum_success_rate"])
+                samples = int(info.get("curriculum_samples", 16))
                 if is_promoted and rate >= 0.8:
                     # Resíduo da vitória que disparou a promoção no nível anterior: inicializa em 0.0
                     m.curriculum_success_rate = 0.0
                 else:
                     m.curriculum_success_rate = rate
-                    # Para patamares combinatórios (D5+), descarta spike espúrio de taxa unitária (1/1 = 100%)
-                    ignore_spike = (
-                        m.curriculum_depth is not None
-                        and m.curriculum_depth >= 5
-                        and rate >= 0.95
-                        and (m.curriculum_depth_best_success_rate is None or m.curriculum_depth_best_success_rate < 0.50)
+                    # Para patamares combinatórios (D5+), descarta spikes espúrios com amostra pequena (< 16 episódios)
+                    is_combinatorial = m.curriculum_depth is not None and m.curriculum_depth >= 5
+                    ignore_spike = is_combinatorial and (
+                        samples < 16
+                        or (rate >= 0.95 and (m.curriculum_depth_best_success_rate is None or m.curriculum_depth_best_success_rate < 0.50))
                     )
                     if not ignore_spike:
                         if m.curriculum_depth_best_success_rate is None or rate > m.curriculum_depth_best_success_rate:
                             m.curriculum_depth_best_success_rate = rate
-                    if m.curriculum_depth_min_success_rate is None or rate < m.curriculum_depth_min_success_rate:
-                        m.curriculum_depth_min_success_rate = rate
+                    if not (is_combinatorial and samples < 16):
+                        if m.curriculum_depth_min_success_rate is None or rate < m.curriculum_depth_min_success_rate:
+                            m.curriculum_depth_min_success_rate = rate
             if "curriculum_p_frontier" in info:
                 m.curriculum_p_frontier = float(info["curriculum_p_frontier"])
             if "dynamic_frontier" in info:

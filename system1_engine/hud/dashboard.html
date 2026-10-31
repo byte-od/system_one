@@ -5641,13 +5641,15 @@
           let candMaxWr = curWinRate;
           if (telemetry.curriculum_depth_best_success_rate !== undefined && telemetry.curriculum_depth_best_success_rate !== null) {
             const backendMaxWr = Number(telemetry.curriculum_depth_best_success_rate) * 100;
-            if (currentDepthNum < 5 || backendMaxWr < 90.0 || curWinRate >= 80.0) {
+            const isSuspicious = (currentDepthNum >= 5 && backendMaxWr >= 60.0 && curWinRate < 30.0);
+            if (!isSuspicious && (currentDepthNum < 5 || backendMaxWr < 90.0 || curWinRate >= 80.0)) {
               candMaxWr = Math.max(candMaxWr, backendMaxWr);
             }
           }
 
           if (candMaxWr > (curLevelLm.maxWinRate || 0)) {
-            if (currentDepthNum < 5 || candMaxWr < 95.0 || curWinRate >= 80.0) {
+            const isSuspicious = (currentDepthNum >= 5 && candMaxWr >= 60.0 && curWinRate < 30.0);
+            if (!isSuspicious && (currentDepthNum < 5 || candMaxWr < 95.0 || curWinRate >= 80.0)) {
               curLevelLm.maxWinRate = candMaxWr;
             }
           }
