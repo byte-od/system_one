@@ -606,12 +606,16 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
                     episodes_per_depth=32,
                     calibrate_curriculum=True,
                 )
+                trainer.best_state_depth = raw_env.current_depth
+                trainer._rollout_tracked_depth = raw_env.current_depth
+                tracker.metrics.curriculum_depth = raw_env.current_depth
+                tracker.metrics.curriculum_promotions = raw_env.curriculum_promotions
                 rates_str = ", ".join(
                     f"D{d}:{sr*100:.0f}%"
                     for d, sr in sorted(getattr(trainer, "last_warmup_solve_rates", {}).items())
                 )
                 print(
-                    f"🔥 [Warm-Start Curricular & SIL] Retomando diretamente em D{raw_env.current_depth} "
+                    f"🔥 [Warm-Start Curricular & SIL] Calibrado empiricamente em D{raw_env.current_depth} "
                     f"(Promoções consolidadas: {raw_env.curriculum_promotions}) | "
                     f"SIL pré-aquecido com {n_warm} trajetórias âncoras ({rates_str})"
                 )

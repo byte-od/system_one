@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "updated_at": 1793454745.229152,
-  "updated_at_str": "31/10/2026 10:52:25",
+  "updated_at": 1793456140.104841,
+  "updated_at_str": "31/10/2026 11:15:40",
   "models": {
     "acrobot": {
       "key": "acrobot",
@@ -71,10 +71,10 @@
       "discrete": true,
       "description": "Equilíbrio invertido amortizado em sub-milissegundo com reflexos ultra-estáveis.",
       "file": "s1_cartpole.onnx",
-      "size_mb": 3.16,
-      "size_bytes": 3315208,
-      "mtime": 1793405999.734949,
-      "mtime_str": "30/10/2026 21:19:59",
+      "size_mb": 3.67,
+      "size_bytes": 3843330,
+      "mtime": 1793455772.232858,
+      "mtime_str": "31/10/2026 11:09:32",
       "checkpoint_source": "s1_cartpole_v1_trained.pt",
       "checkpoint_version": "v1",
       "action_chunk_size": 1
@@ -132,10 +132,10 @@
       "file": "s1_rubiks_atomic.onnx",
       "size_mb": 8.67,
       "size_bytes": 9086256,
-      "mtime": 1793454687.3658218,
-      "mtime_str": "31/10/2026 10:51:27",
-      "checkpoint_source": "s1_rubikscube_v0_trained_v11.pt",
-      "checkpoint_version": "v11",
+      "mtime": 1793456139.979026,
+      "mtime_str": "31/10/2026 11:15:39",
+      "checkpoint_source": "s1_rubikscube_v0_trained_v2.pt",
+      "checkpoint_version": "v2",
       "action_chunk_size": 1
     },
     "rubiks_macro": {

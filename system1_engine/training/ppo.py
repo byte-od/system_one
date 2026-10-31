@@ -609,8 +609,8 @@ class RecurrentPPOTrainer:
         if has_curriculum_setter:
             target_final_d = orig_depth if orig_depth >= 1 else max_d_target
             if calibrate_curriculum and getattr(raw_env, "curriculum", False):
-                # Nunca rebaixa abaixo da profundidade explicitamente carregada do checkpoint (orig_depth)
-                # e utiliza o limiar curricular adaptativo do próprio ambiente em vez de 78% fixo
+                # Calibra dinamicamente a fronteira curricular baseado no desempenho real do agente nos testes de aquecimento,
+                # utilizando o limiar adaptativo do próprio ambiente (ex.: 85% D1-D4, 65% D5-D6, 50% D7-D10, 40% D11-D14).
                 calib_d = 1
                 for d in range(1, max_d_target + 1):
                     target_rate = (
@@ -622,7 +622,7 @@ class RecurrentPPOTrainer:
                         calib_d = max(calib_d, d + 1)
                     else:
                         break
-                target_final_d = max(orig_depth, min(max_d_target, calib_d))
+                target_final_d = min(max_d_target, calib_d)
             raw_env.set_curriculum_depth(target_final_d)
             self.best_state_depth = raw_env.current_depth
             self._rollout_tracked_depth = raw_env.current_depth
