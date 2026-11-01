@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "updated_at": 1793494942.446455,
-  "updated_at_str": "31/10/2026 22:02:22",
+  "updated_at": 1793519530.760757,
+  "updated_at_str": "01/11/2026 04:52:10",
   "models": {
     "acrobot": {
       "key": "acrobot",
@@ -127,14 +127,14 @@
       "act_dim": 12,
       "hx_dim": 512,
       "discrete": true,
-      "description": "AURA (Sistema 1) — Tronco recorrente de 1.6M parâmetros com Lean GRU + Tri-Compass. 12 giros atômicos, latência sub-milissegundo em CPU pura, treinado até D10.",
+      "description": "AURA (Sistema 1) — Tronco recorrente de 1.14M parâmetros com Linear Recurrent Unit (LRU) multi-timescale. 12 giros atômicos, latência sub-milissegundo em CPU pura, treinado overnight (100M passos) até D10 (D1-D4 100%, D5-D6 94%, D7 76%, D12 8%, D13 4%).",
       "default": true,
       "file": "s1_rubiks_atomic.onnx",
       "size_mb": 6.97,
       "size_bytes": 7304783,
-      "mtime": 1793494942.3098512,
-      "mtime_str": "31/10/2026 22:02:22",
-      "checkpoint_source": "s1_rubikscube-v0_trained.pt",
+      "mtime": 1793519530.6362119,
+      "mtime_str": "01/11/2026 04:52:10",
+      "checkpoint_source": "s1_rubiks_lru_overnight_10am.pt",
       "checkpoint_version": "v1",
       "action_chunk_size": 1
     },
