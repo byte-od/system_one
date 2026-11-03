@@ -153,6 +153,9 @@ class UniversalRelationalStateEncoder(nn.Module):
 
         # 3. Normalização de Fusão
         self.combine_norm = nn.LayerNorm(out_dim)
+        self.scar_memory = None
+        self._last_delta_slots = None
+        self._last_resonance = None
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
         """Processa vetor de observação [B, T, obs_dim] ou [B, obs_dim]."""
@@ -174,7 +177,18 @@ class UniversalRelationalStateEncoder(nn.Module):
         slots = slots + self.attn(self.slot_norm1(slots))
         slots = slots + self.slot_ffn(self.slot_norm2(slots))
 
+        # Modulação por Cicatriz de Gradiente (Fast-Weights / Hybrid O(1))
+        if self.scar_memory is not None and getattr(self.scar_memory, "has_fast_weights", False):
+            slots, delta = self.scar_memory.modulate_slots(slots)
+            self._last_delta_slots = delta
+            if getattr(self.scar_memory, "mode", "") == "hybrid" and delta is not None:
+                self._last_resonance = self.scar_memory.compute_resonance_hybrid(delta)
+        else:
+            self._last_delta_slots = None
+            self._last_resonance = None
+
         # Achatamento e projeção relacional
+        self._last_slots = slots
         slots_flat = slots.view(b, t, self.num_slots * self.slot_dim)
         z_rel = self.slot_out_proj(slots_flat)
 

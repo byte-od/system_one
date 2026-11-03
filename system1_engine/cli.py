@@ -251,6 +251,10 @@ def train_mode(args: argparse.Namespace) -> None:
             progressive_buffer_capacity=progressive_buffer,
             max_failures_per_depth=max_failures_per_depth,
             min_failures_per_depth=min_failures_per_depth,
+            scar_mode=getattr(args, "scar_mode", "none"),
+            scar_decay=float(getattr(args, "scar_decay", 0.995)),
+            scar_scale=float(getattr(args, "scar_scale", 0.15)),
+            scar_beta=float(getattr(args, "scar_beta", 0.20)),
         )
 
         raw_env = getattr(env, "unwrapped", env)
@@ -793,6 +797,31 @@ def main() -> None:
         type=float,
         default=0.8,
         help="Taxa de decaimento exponencial na vizinhança proximal (padrão: 0.8)",
+    )
+    parser.add_argument(
+        "--scar-mode",
+        type=str,
+        default="none",
+        choices=["none", "fast_weights", "dual_gradient", "hybrid"],
+        help="Modo da Memória de Cicatriz de Gradiente (O(1)): none, fast_weights (Mecanismo 1), dual_gradient (Mecanismo 2), hybrid (Híbrido) (padrão: none)",
+    )
+    parser.add_argument(
+        "--scar-decay",
+        type=float,
+        default=0.995,
+        help="Taxa de decaimento temporal gamma para cicatrizes de gradiente (padrão: 0.995)",
+    )
+    parser.add_argument(
+        "--scar-scale",
+        type=float,
+        default=0.15,
+        help="Fator de escala lambda para modulação Fast-Weights (padrão: 0.15)",
+    )
+    parser.add_argument(
+        "--scar-beta",
+        type=float,
+        default=0.20,
+        help="Fator de escala beta para modulação por ressonância direcional (padrão: 0.20)",
     )
     parser.add_argument(
         "--calibration",

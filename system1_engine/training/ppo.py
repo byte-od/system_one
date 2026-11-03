@@ -84,6 +84,10 @@ class RecurrentPPOTrainer:
         pcgrad_enabled: bool = True,
         gradvac_max_alpha: float = 0.25,
         gradvac_ema_beta: float = 0.99,
+        scar_mode: str = "none",
+        scar_decay: float = 0.995,
+        scar_scale: float = 0.15,
+        scar_beta: float = 0.20,
     ) -> None:
         self.agent = agent.to(device)
         self.env = env
@@ -247,6 +251,24 @@ class RecurrentPPOTrainer:
         # Memória Latente Estéril Auto-Corretiva (Substituída nativamente por c-SIL)
         self.sterility_memory = None
         self.sterility_memory_enabled = False
+
+        # Memória de Cicatriz de Gradiente (Gradient Scar Fast-Weights / Dual-Gradient / Hybrid O(1))
+        self.scar_mode = str(scar_mode).lower()
+        if self.scar_mode != "none":
+            from system1_engine.core.scar_memory import GradientScarMemory
+            slot_dim = getattr(agent.front_end.state_encoder, "slot_dim", 32) if hasattr(agent.front_end, "state_encoder") else 32
+            num_slots = getattr(agent.front_end.state_encoder, "num_slots", 8) if hasattr(agent.front_end, "state_encoder") else 8
+            self.scar_memory = GradientScarMemory(
+                slot_dim=slot_dim,
+                num_slots=num_slots,
+                mode=self.scar_mode,
+                decay=scar_decay,
+                scale=scar_scale,
+                resonance_beta=scar_beta,
+            ).to(self.device)
+            self.agent.set_scar_memory(self.scar_memory)
+        else:
+            self.scar_memory = None
 
         self._active_vec_trajectories: List[deque] = [deque(maxlen=200) for _ in range(self.num_envs)]
         self._active_single_trajectory: deque = deque(maxlen=200)
@@ -1106,7 +1128,7 @@ class RecurrentPPOTrainer:
                 stored_logp[step] = step_logp_np
                 stored_scale[step] = env_scales.view(E, -1)[:, 0].detach().cpu().numpy()
 
-                if self.sil_enabled:
+                if self.sil_enabled or self.scar_mode != "none":
                     has_delta = "delta_obs" in current_obs_dict and current_obs_dict["delta_obs"] is not None
                     for e in range(E):
                         delta_v = (
@@ -1422,7 +1444,7 @@ class RecurrentPPOTrainer:
         4. Nenhuma trajetória de falha ou cauda de degradação é persistida no SuccessReplayBuffer;
            o contraste DPO opera sob demanda contra chunks negativos on-policy frescos do rollout atual.
         """
-        if not self.sil_enabled or len(traj_steps) == 0:
+        if (not self.sil_enabled and self.scar_mode == "none") or len(traj_steps) == 0:
             return
 
         traj_steps = list(traj_steps)
@@ -1455,21 +1477,42 @@ class RecurrentPPOTrainer:
             traj_act = np.array([s["action"] for s in traj_steps])
             traj_logp = np.array([s.get("log_prob", 0.0) for s in traj_steps], dtype=np.float32)
 
-            self.sil_buffer.add(
-                FrontierTransition(
-                    obs=traj_obs,
-                    delta_obs=traj_delta,
-                    prev_actions=traj_prev_act,
-                    prev_rewards=traj_prev_rew,
-                    actions=traj_act,
-                    returns=traj_returns,
-                    depth=cur_d,
-                    length=T_traj,
-                    td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
-                    log_probs=traj_logp,
-                    is_full_win=True,
+            if self.scar_memory is not None:
+                traj_logps = [s.get("log_prob", 0.0) for s in traj_steps]
+                surprise = float(-sum(traj_logps) / max(1, len(traj_logps)))
+                enc = getattr(self.agent.front_end, "state_encoder", None)
+                if enc is not None and hasattr(enc, "slot_proj"):
+                    with torch.inference_mode(False), torch.enable_grad():
+                        s0 = torch.tensor(traj_obs[0], dtype=torch.float32, device=self.device).unsqueeze(0).unsqueeze(1).requires_grad_(True)
+                        delta_dim = 972 if not self.agent.is_visual else None
+                        obs_t = {
+                            "obs": s0,
+                            "prev_action": torch.zeros((1, 1), dtype=torch.long, device=self.device),
+                            "prev_reward": torch.zeros((1, 1, 1), dtype=torch.float32, device=self.device),
+                            "delta_obs": torch.zeros((1, 1, delta_dim), dtype=torch.float32, device=self.device) if delta_dim else None,
+                        }
+                        _, val, _ = self.agent(obs_t)
+                        slots = getattr(enc, "_last_slots", None)
+                        if slots is not None and slots.requires_grad:
+                            g_slots = torch.autograd.grad(val.sum(), slots)[0].detach()
+                            self.scar_memory.record_scar(slots.detach(), g_slots, surprise=surprise)
+
+            if self.scar_mode == "none":
+                self.sil_buffer.add(
+                    FrontierTransition(
+                        obs=traj_obs,
+                        delta_obs=traj_delta,
+                        prev_actions=traj_prev_act,
+                        prev_rewards=traj_prev_rew,
+                        actions=traj_act,
+                        returns=traj_returns,
+                        depth=cur_d,
+                        length=T_traj,
+                        td_error=float(traj_returns[0]) if len(traj_returns) > 0 else 0.0,
+                        log_probs=traj_logp,
+                        is_full_win=True,
+                    )
                 )
-            )
         else:
             # Episódio não resolvido: busca o pico de progresso cumulativo (Peak Slicing)
             cum_rews = np.cumsum([s["reward"] for s in traj_steps])
@@ -1510,21 +1553,42 @@ class RecurrentPPOTrainer:
                 peak_act = np.array([s["action"] for s in peak_slice])
                 peak_logp = np.array([s.get("log_prob", 0.0) for s in peak_slice], dtype=np.float32)
 
-                self.sil_buffer.add(
-                    FrontierTransition(
-                        obs=peak_obs,
-                        delta_obs=peak_delta,
-                        prev_actions=peak_prev_act,
-                        prev_rewards=peak_prev_rew,
-                        actions=peak_act,
-                        returns=slice_returns,
-                        depth=cur_d,
-                        length=L_slice,
-                        td_error=float(slice_returns[0]) if len(slice_returns) > 0 else 0.0,
-                        log_probs=peak_logp,
-                        is_full_win=False,
+                if self.scar_memory is not None:
+                    peak_logps = [s.get("log_prob", 0.0) for s in peak_slice]
+                    surprise = float(-sum(peak_logps) / max(1, len(peak_logps)))
+                    enc = getattr(self.agent.front_end, "state_encoder", None)
+                    if enc is not None and hasattr(enc, "slot_proj"):
+                        with torch.inference_mode(False), torch.enable_grad():
+                            s0 = torch.tensor(peak_obs[0], dtype=torch.float32, device=self.device).unsqueeze(0).unsqueeze(1).requires_grad_(True)
+                            delta_dim = 972 if not self.agent.is_visual else None
+                            obs_t = {
+                                "obs": s0,
+                                "prev_action": torch.zeros((1, 1), dtype=torch.long, device=self.device),
+                                "prev_reward": torch.zeros((1, 1, 1), dtype=torch.float32, device=self.device),
+                                "delta_obs": torch.zeros((1, 1, delta_dim), dtype=torch.float32, device=self.device) if delta_dim else None,
+                            }
+                            _, val, _ = self.agent(obs_t)
+                            slots = getattr(enc, "_last_slots", None)
+                            if slots is not None and slots.requires_grad:
+                                g_slots = torch.autograd.grad(val.sum(), slots)[0].detach()
+                                self.scar_memory.record_scar(slots.detach(), g_slots, surprise=surprise)
+
+                if self.scar_mode == "none":
+                    self.sil_buffer.add(
+                        FrontierTransition(
+                            obs=peak_obs,
+                            delta_obs=peak_delta,
+                            prev_actions=peak_prev_act,
+                            prev_rewards=peak_prev_rew,
+                            actions=peak_act,
+                            returns=slice_returns,
+                            depth=cur_d,
+                            length=L_slice,
+                            td_error=float(slice_returns[0]) if len(slice_returns) > 0 else 0.0,
+                            log_probs=peak_logp,
+                            is_full_win=False,
+                        )
                     )
-                )
 
     def collect_rollouts(
         self,
@@ -1671,7 +1735,7 @@ class RecurrentPPOTrainer:
                 if stored_step_infos is not None:
                     stored_step_infos.append(env_info)
 
-                if self.sil_enabled:
+                if self.sil_enabled or self.scar_mode != "none":
                     delta_v = (
                         current_obs_dict["delta_obs"].copy()
                         if "delta_obs" in current_obs_dict and current_obs_dict["delta_obs"] is not None
@@ -2415,7 +2479,21 @@ class RecurrentPPOTrainer:
                 break
 
         if getattr(self, "best_state_dict", None) is not None:
+            # Preserva os tensores da memória de cicatriz contínua
+            saved_scar_state = None
+            if self.scar_memory is not None:
+                saved_scar_state = {
+                    "W_scar": self.scar_memory.W_scar.clone(),
+                    "g_target": self.scar_memory.g_target.clone(),
+                    "scars_count": self.scar_memory.scars_count.clone(),
+                    "total_surprise_accum": self.scar_memory.total_surprise_accum.clone(),
+                }
             self.agent.load_state_dict(self.best_state_dict)
+            if saved_scar_state is not None:
+                self.scar_memory.W_scar.copy_(saved_scar_state["W_scar"])
+                self.scar_memory.g_target.copy_(saved_scar_state["g_target"])
+                self.scar_memory.scars_count.copy_(saved_scar_state["scars_count"])
+                self.scar_memory.total_surprise_accum.copy_(saved_scar_state["total_surprise_accum"])
             if verbose:
                 restored_ret = best_depth_mean_return if best_depth_mean_return > -float("inf") else best_mean_return
                 if best_state_depth > 0:

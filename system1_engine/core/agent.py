@@ -65,6 +65,7 @@ class UniversalS1Agent(nn.Module):
         self.action_space = action_space
         self.action_chunk_size = max(1, int(action_chunk_size))
         self.relational = bool(relational)
+        self.scar_memory = None
 
         if is_visual is None:
             is_visual = (
@@ -170,6 +171,12 @@ class UniversalS1Agent(nn.Module):
         """Associa um ambiente ao agente para habilitar re-ranqueamento local de valor (Value Re-ranking)."""
         self.default_env = env
 
+    def set_scar_memory(self, scar_memory: Optional[Any]) -> None:
+        """Associa um módulo de Memória de Cicatriz de Gradiente (GradientScarMemory) ao agente."""
+        self.scar_memory = scar_memory
+        if hasattr(self.front_end, "state_encoder") and hasattr(self.front_end.state_encoder, "scar_memory"):
+            self.front_end.state_encoder.scar_memory = scar_memory
+
     @property
     def device(self) -> torch.device:
         """Returns the device on which model parameters currently reside."""
@@ -236,6 +243,21 @@ class UniversalS1Agent(nn.Module):
         dist = self.policy_head(h)
         val = self.value_head(h)
         self._last_latent = h
+
+        # Modulação de Logits por Ressonância (Mecanismo 2 e Híbrido)
+        if getattr(self, "scar_memory", None) is not None and getattr(self.scar_memory, "has_resonance", False):
+            res = None
+            if self.scar_memory.mode == "hybrid" and hasattr(self.front_end, "state_encoder"):
+                res = getattr(self.front_end.state_encoder, "_last_resonance", None)
+            elif self.scar_memory.mode == "dual_gradient":
+                norm_t = self.scar_memory.g_target / (torch.norm(self.scar_memory.g_target) + 1e-6)
+                if torch.is_grad_enabled() and z_in.requires_grad:
+                    g_loc = torch.autograd.grad(val.sum(), z_in, retain_graph=True)[0]
+                    res = torch.matmul(g_loc[..., :32], norm_t)
+
+            if res is not None and hasattr(dist, "logits") and self.is_discrete:
+                new_logits = self.scar_memory.modulate_logits(dist.logits, res)
+                dist = torch.distributions.Categorical(logits=new_logits)
         if return_latent:
             return dist, val, next_hx, h
         if return_value_logits:

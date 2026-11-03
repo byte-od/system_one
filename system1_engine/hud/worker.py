@@ -545,12 +545,23 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     else:
         print("⚡ Teacher-Assisted SIL Rollouts: DESATIVADO (Reflexo puro em 100% dos workers)")
 
+    scar_mode = str(config.get("scar_mode", "none")).lower()
+    scar_decay = float(config.get("scar_decay", 0.995))
+    scar_scale = float(config.get("scar_scale", 0.15))
+    scar_beta = float(config.get("scar_beta", 0.20))
+    if scar_mode != "none":
+        print(f"🧬 Gradient Scar Memory (O(1)): ATIVO (mode={scar_mode}, decay={scar_decay}, scale={scar_scale}, beta={scar_beta})")
+
     if tracker is not None:
         tracker.metrics.action_chunk_size = action_chunk_size
 
     trainer = RecurrentPPOTrainer(
         agent=agent,
         env=env,
+        scar_mode=scar_mode,
+        scar_decay=scar_decay,
+        scar_scale=scar_scale,
+        scar_beta=scar_beta,
         action_chunk_size=action_chunk_size,
         adaptive_chunk=bool(config.get("adaptive_chunk", False)),
         learning_rate=lr,
@@ -720,7 +731,12 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         now = time.time()
         snap = tracker.snapshot()
         snap["grad_norms"] = tracker.metrics.grad_norms
-        if hasattr(trainer, "sil_buffer"):
+        if hasattr(trainer, "scar_memory") and trainer.scar_memory is not None:
+            snap["sil_full_wins"] = int(trainer.scar_memory.scars_count.item())
+            snap["sil_success_slices"] = int(trainer.scar_memory.scars_count.item())
+            snap["sil_memory_mb"] = round(trainer.scar_memory.memory_bytes / (1024 * 1024), 4)
+            snap["sil_tournament_size"] = f"Scar ({trainer.scar_mode})"
+        elif hasattr(trainer, "sil_buffer"):
             snap["sil_full_wins"] = trainer.sil_buffer.count_full_wins()
             snap["sil_success_slices"] = trainer.sil_buffer.count_success_slices()
             snap["sil_memory_mb"] = round(trainer.sil_buffer.memory_bytes / (1024 * 1024), 2)

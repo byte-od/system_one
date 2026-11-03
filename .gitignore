@@ -16,3 +16,5 @@ crates/**/target/
 *.pt
 scratch/
 benchmark_results_*.json
+*.pdf
+uv.lock
