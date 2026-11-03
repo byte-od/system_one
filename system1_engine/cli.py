@@ -159,11 +159,13 @@ def train_mode(args: argparse.Namespace) -> None:
             action_chunk_size = detected_k
             print(f"🧩 Auto-detectado Action Chunk Size k={action_chunk_size} do checkpoint {checkpoint_to_load}")
 
+    relational = getattr(args, "relational", True)
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
         action_space=env.action_space,
         trunk_type=trunk_type,
         action_chunk_size=action_chunk_size,
+        relational=relational,
     )
 
     checkpoint_to_load = getattr(args, "load", None) or getattr(args, "transfer_from", None)
@@ -426,11 +428,13 @@ def run_mode(args: argparse.Namespace) -> None:
                 action_chunk_size = detected_k
                 print(f"🧩 Auto-detectado Action Chunk Size k={action_chunk_size} a partir de {args.load}")
 
+    relational = getattr(args, "relational", True)
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
         action_space=env.action_space,
         trunk_type=trunk_type,
         action_chunk_size=action_chunk_size,
+        relational=relational,
     ).to(device)
 
     if args.load:
@@ -896,6 +900,12 @@ def main() -> None:
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Habilita truncamento adaptativo dinâmico de chunk por incerteza (default: False)",
+    )
+    parser.add_argument(
+        "--relational",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Habilita Universal Relational Perceptual Front-End com Atenção Linear O(N) sobre slots (default: True)",
     )
 
     args = parser.parse_args()

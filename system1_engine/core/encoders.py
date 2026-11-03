@@ -4,6 +4,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from system1_engine.core.relational import UniversalRelationalStateEncoder
+
 
 class StateEncoder(nn.Module):
     """Encodes raw vector state s_t into z_s in R^256."""
@@ -128,13 +130,18 @@ class VectorFrontEnd(nn.Module):
         action_space: gym.spaces.Space,
         reward_fixed: bool = False,
         tri_compass: bool = True,
+        relational: bool = True,
     ) -> None:
         super().__init__()
         self.obs_dim = obs_dim
         self.action_space = action_space
         self.tri_compass = tri_compass
+        self.relational = bool(relational)
 
-        self.state_encoder = StateEncoder(obs_dim, out_dim=256)
+        if self.relational:
+            self.state_encoder = UniversalRelationalStateEncoder(obs_dim, out_dim=256)
+        else:
+            self.state_encoder = StateEncoder(obs_dim, out_dim=256)
         if tri_compass:
             self.local_delta_encoder = DeltaEncoder(obs_dim, out_dim=64)
             self.origin_delta_encoder = DeltaEncoder(obs_dim, out_dim=64)

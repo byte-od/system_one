@@ -438,12 +438,14 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         print(f"⚡ Action Chunking Temporal (ACT) ATIVO: k={action_chunk_size} macro-ações coordenadas por passo")
 
     tri_compass_cfg = bool(config.get("tri_compass", True))
+    relational_cfg = bool(config.get("relational", True))
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
         action_space=env.action_space,
         trunk_type=trunk_type,
         action_chunk_size=action_chunk_size,
         tri_compass=tri_compass_cfg,
+        relational=relational_cfg,
     )
 
     if checkpoint_to_load:
@@ -678,6 +680,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
                 "final_return": float(getattr(trainer, "final_return", 0.0)),
                 "best_mean_return": float(best_ret),
                 "steps": trainer.total_steps,
+                "relational": getattr(agent, "relational", True),
             }
             if tracker.metrics.curriculum_depth is not None:
                 extra_info["curriculum_depth"] = tracker.metrics.curriculum_depth
@@ -882,12 +885,14 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
         print(f"⚡ Action Chunking Temporal (ACT) ATIVO na Avaliação: k={action_chunk_size}")
 
     tri_compass_cfg = bool(config.get("tri_compass", True))
+    relational_cfg = bool(config.get("relational", True))
     agent = UniversalS1Agent(
         obs_space=env.observation_space,
         action_space=env.action_space,
         trunk_type=trunk_type,
         action_chunk_size=action_chunk_size,
         tri_compass=tri_compass_cfg,
+        relational=relational_cfg,
     ).to(device)
 
     eval_calib_cfg = config.get("eval_calibration", config.get("calibration"))

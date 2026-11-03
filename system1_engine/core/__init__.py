@@ -13,6 +13,10 @@ from system1_engine.core.heads import (
     ValueHead,
 )
 from system1_engine.core.recurrent import LinearRecurrentUnit
+from system1_engine.core.relational import (
+    LinearRelationalAttention,
+    UniversalRelationalStateEncoder,
+)
 from system1_engine.core.trunk import LeanResidualTrunk, LRUResidualTrunk, ResMLPBlock, System1Trunk
 from system1_engine.core.agent import ReflexDecision, UniversalS1Agent
 from system1_engine.core.attention import GradCAMExplainer
@@ -30,6 +34,8 @@ __all__ = [
     "LeanResidualTrunk",
     "LRUResidualTrunk",
     "LinearRecurrentUnit",
+    "LinearRelationalAttention",
+    "UniversalRelationalStateEncoder",
     "CategoricalPolicyHead",
     "GaussianPolicyHead",
     "ValueHead",

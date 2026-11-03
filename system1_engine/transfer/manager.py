@@ -695,6 +695,7 @@ class KnowledgeTransferManager:
         info["trunk_type"] = KnowledgeTransferManager.detect_trunk_type(checkpoint_path, checkpoint_obj=checkpoint)
         info["tri_compass"] = KnowledgeTransferManager.detect_tri_compass(checkpoint_path, checkpoint_obj=checkpoint)
         info["value_head_type"] = KnowledgeTransferManager.detect_value_head_type(checkpoint_path, checkpoint_obj=checkpoint)
+        info["relational"] = KnowledgeTransferManager.detect_relational(checkpoint_path, checkpoint_obj=checkpoint)
         return info
 
     @staticmethod
@@ -800,6 +801,27 @@ class KnowledgeTransferManager:
         except Exception:
             pass
         return "two_hot_symlog"
+
+    @staticmethod
+    def detect_relational(checkpoint_path: str, checkpoint_obj: Optional[Dict[str, Any]] = None) -> bool:
+        """Inspects checkpoint state_dict to detect if relational front-end is present."""
+        try:
+            if checkpoint_obj is not None:
+                checkpoint = checkpoint_obj
+            else:
+                if not os.path.exists(checkpoint_path):
+                    return True
+                checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            extra = checkpoint.get("extra_info", {}) if isinstance(checkpoint, dict) else {}
+            if "relational" in extra:
+                return bool(extra["relational"])
+            sd = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+            if isinstance(sd, dict):
+                if any("state_encoder.slot_proj." in k or "state_encoder.attn." in k for k in sd.keys()):
+                    return True
+        except Exception:
+            pass
+        return False
 
     @staticmethod
     def validate_evaluation_compatibility(

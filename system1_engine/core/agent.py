@@ -55,6 +55,7 @@ class UniversalS1Agent(nn.Module):
         trunk_type: str = "classic",
         action_chunk_size: int = 1,
         tri_compass: Optional[bool] = None,
+        relational: bool = True,
     ) -> None:
         super().__init__()
         raw_obs_space = obs_space
@@ -63,6 +64,7 @@ class UniversalS1Agent(nn.Module):
         self.obs_space = obs_space
         self.action_space = action_space
         self.action_chunk_size = max(1, int(action_chunk_size))
+        self.relational = bool(relational)
 
         if is_visual is None:
             is_visual = (
@@ -102,6 +104,7 @@ class UniversalS1Agent(nn.Module):
                 action_space=action_space,
                 reward_fixed=reward_fixed,
                 tri_compass=self.tri_compass,
+                relational=self.relational,
             )
 
         # 2. Universal Recurrent Trunk (Can be shared or transferred)

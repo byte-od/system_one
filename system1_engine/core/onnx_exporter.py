@@ -496,12 +496,14 @@ def export_checkpoint_to_onnx(
     wrapped_env = UniversalS1Wrapper(raw_env, tri_compass=tri_compass)
     trunk_type = KnowledgeTransferManager.detect_trunk_type(checkpoint_path)
     action_chunk_size = KnowledgeTransferManager.detect_action_chunk_size(checkpoint_path, wrapped_env.action_space)
+    relational = KnowledgeTransferManager.detect_relational(checkpoint_path)
     agent = UniversalS1Agent(
         obs_space=wrapped_env.observation_space,
         action_space=wrapped_env.action_space,
         trunk_type=trunk_type,
         action_chunk_size=action_chunk_size,
         tri_compass=tri_compass,
+        relational=relational,
     )
 
     state_dict = ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt
