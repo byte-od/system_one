@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "updated_at": 1793653201.337612,
-  "updated_at_str": "02/11/2026 18:00:01",
+  "updated_at": 1793728710.658696,
+  "updated_at_str": "03/11/2026 14:58:30",
   "models": {
     "acrobot": {
       "key": "acrobot",
@@ -127,14 +127,14 @@
       "act_dim": 12,
       "hx_dim": 512,
       "discrete": true,
-      "description": "AURA (Sistema 1) — Tronco recorrente de 1.14M parâmetros com Linear Recurrent Unit (LRU) multi-timescale. 12 giros atômicos, latência sub-milissegundo em CPU pura, treinado na maratona de 295M passos (D1-D4 100%, D5 98%, D6 94%, D7 78%, D8 48%, D9 50%, D12 em 7 movs, D15 em 11 movs!).",
+      "description": "AURA (Sistema 1) — Universal Relational Front-End (8 slots, Linear Self-Attention) + LRU Trunk (1.3M parâmetros) + Two-Hot Symlog. 12 giros atômicos, latência sub-milissegundo em CPU pura, treinado com continuação até D10 (75M passos).",
       "default": true,
       "file": "s1_rubiks_atomic.onnx",
-      "size_mb": 6.97,
-      "size_bytes": 7304783,
-      "mtime": 1793653201.154841,
-      "mtime_str": "02/11/2026 18:00:01",
-      "checkpoint_source": "s1_rubiks_lru_deep_continuation_18h.pt",
+      "size_mb": 7.58,
+      "size_bytes": 7950580,
+      "mtime": 1793728710.3484318,
+      "mtime_str": "03/11/2026 14:58:30",
+      "checkpoint_source": "s1_rubiks_lru_relational_continuation_18h30.pt",
       "checkpoint_version": "v1",
       "action_chunk_size": 1
     },

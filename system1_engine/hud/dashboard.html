@@ -1255,11 +1255,13 @@
               </div>
             </div>
             <div class="vessel-metric-row flex flex-col justify-center my-auto w-full">
-              <div class="flex items-baseline gap-1">
+              <div class="flex items-baseline justify-between w-full">
                 <span id="train-metric-winrate" class="text-base sm:text-xl font-black font-mono text-amber-300">0.0%</span>
+                <span id="train-metric-target" class="text-[9.5px] font-mono text-amber-400/90 bg-amber-950/70 px-1.5 py-0.5 rounded border border-amber-800/60" title="Meta para desbloquear o próximo nível">Meta: 50%</span>
               </div>
-              <div id="train-metric-winrate-sub" class="text-[9px] font-mono text-gray-400 mt-0.5 truncate">
-                Win Rate
+              <div id="train-metric-winrate-sub" class="text-[9px] font-mono text-gray-400 mt-0.5 truncate flex items-center justify-between">
+                <span>Média Episódios</span>
+                <span id="train-metric-progress" class="text-amber-300/90 font-medium">0% da meta</span>
               </div>
             </div>
             <!-- Elementos preservados em container oculto para telemetria JS -->
@@ -1469,14 +1471,14 @@
           </div>
         </div>
 
-        <!-- 5. Confiança & Calibração (Recipiente 5: Rosa) -->
+        <!-- 5. Saúde de Exploração & Entropy Floor (Recipiente 5: Rosa) -->
         <div id="vessel-card-5" class="card vessel-container vessel-theme-rose p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between cursor-pointer" onclick="handleVesselCardClick(event, 5)" title="Shift+Clique ou Alt+Clique para alternar teste de Ruptura (Explosão / Colapso)">
           <div class="vessel-scale-ticks" title="Escala de Volume">
-            <span id="vessel-tick-max-5" class="vessel-tick vessel-tick-max" style="top: 15%" title="Máx atingido: 0.0%">
+            <span id="vessel-tick-max-5" class="vessel-tick vessel-tick-max" style="top: 15%" title="Máx atingido: 0.00 nats">
               <span class="vessel-tick-label">
                 <span class="vessel-tick-tag mini-hide">MAX</span>
                 <span class="vessel-tick-arrow">▲</span>
-                <span id="vessel-val-max-5" class="vessel-tick-val">0%</span>
+                <span id="vessel-val-max-5" class="vessel-tick-val">0.00</span>
               </span>
             </span>
             <span class="vessel-tick major" style="top: 25%"></span>
@@ -1484,15 +1486,15 @@
             <span class="vessel-tick major" style="top: 50%"></span>
             <span class="vessel-tick" style="top: 65%"></span>
             <span class="vessel-tick major" style="top: 75%"></span>
-            <span id="vessel-tick-min-5" class="vessel-tick vessel-tick-min" style="top: 85%" title="Mín atingido: 0.0%">
+            <span id="vessel-tick-min-5" class="vessel-tick vessel-tick-min" style="top: 85%" title="Mín atingido: 0.00 nats">
               <span class="vessel-tick-label">
                 <span class="vessel-tick-tag mini-hide">MIN</span>
                 <span class="vessel-tick-arrow">▼</span>
-                <span id="vessel-val-min-5" class="vessel-tick-val">0%</span>
+                <span id="vessel-val-min-5" class="vessel-tick-val">0.00</span>
               </span>
             </span>
           </div>
-          <div class="vessel-liquid-fill" id="vessel-liquid-5" style="height: 15%;">
+          <div class="vessel-liquid-fill" id="vessel-liquid-5" style="height: 25%;">
             <div class="vessel-wave-wrapper">
               <svg class="vessel-wave-svg vessel-wave-back" viewBox="0 0 600 30" preserveAspectRatio="none">
                 <path d="M 0 15 Q 75 25 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
@@ -1511,29 +1513,27 @@
           </div>
           <div class="vessel-content">
             <div class="flex items-center justify-between w-full">
-              <div class="vessel-label" title="Confiança & Calibração">
-                <span class="vessel-tag-icon">🧠</span>
-                <span class="text-[10px] font-bold text-rose-200 uppercase tracking-wider mini-hide">Conf/Calib</span>
+              <div class="vessel-label" title="Saúde de Exploração (Entropia da Política & Piso Dinâmico)">
+                <span class="vessel-tag-icon">🧭</span>
+                <span class="text-[10px] font-bold text-rose-200 uppercase tracking-wider mini-hide">Exploração</span>
               </div>
-              <span id="train-metric-calib-badge" class="vessel-top-badge bg-rose-950/80 text-rose-300 border border-rose-800">Auto</span>
+              <span id="train-metric-entropy-badge" class="vessel-top-badge bg-rose-950/80 text-rose-300 border border-rose-800" title="Status do Piso Dinâmico de Entropia">Piso: 0.30</span>
             </div>
             <div class="vessel-metric-row flex flex-col justify-center my-auto w-full">
-              <div class="flex items-baseline gap-1.5 flex-wrap">
-                <div class="flex items-baseline gap-0.5">
-                  <span id="train-metric-conf" class="text-base sm:text-xl font-black font-mono text-rose-300">--%</span>
-                  <span class="text-[8.5px] text-gray-400 font-mono mini-hide">Conf</span>
-                </div>
-                <div class="flex items-baseline gap-0.5 mini-hide">
-                  <span id="train-metric-calib" class="text-xs sm:text-sm font-bold font-mono text-pink-300">0.00</span>
-                  <span class="text-[8.5px] text-gray-400 font-mono">Cal</span>
-                </div>
+              <div class="flex items-baseline gap-1">
+                <span id="train-metric-entropy" class="text-base sm:text-xl font-black font-mono text-rose-300">0.00</span>
+                <span class="text-[10px] text-gray-400 font-mono mini-hide">nats</span>
               </div>
-              <div class="text-[9px] font-mono text-gray-400 mt-0.5 truncate">
-                Confiança / Calibração
+              <div id="train-metric-entropy-sub" class="text-[9px] font-mono text-gray-400 mt-0.5 truncate flex items-center justify-between">
+                <span>Entropia H(&pi;)</span>
+                <span id="train-metric-entropy-sub-loss" class="text-rose-300/80 font-medium">c: 0.02</span>
               </div>
             </div>
             <!-- Elementos preservados em container oculto para telemetria JS -->
             <div class="hidden">
+              <span id="train-metric-conf"></span>
+              <span id="train-metric-calib"></span>
+              <span id="train-metric-calib-badge"></span>
               <div id="train-metric-conf-bar"></div>
               <div id="train-metric-conf-avg-marker"></div>
               <strong id="train-metric-conf-avg-val">--%</strong>
@@ -1542,13 +1542,6 @@
               <strong id="train-metric-calib-cur-val">0.00</strong>
               <div id="train-metric-calib-bar"></div>
               <div id="train-metric-calib-avg-marker"></div>
-              <span id="train-metric-sil">0</span>
-              <div id="train-metric-sil-bar"></div>
-              <div id="train-metric-sil-avg-marker"></div>
-              <span id="train-metric-sil-cur-val">0</span>
-              <span id="train-metric-sil-avg-val">0</span>
-              <span id="train-metric-sil-min-val">0</span>
-              <span id="train-metric-sil-max-val">0</span>
             </div>
           </div>
           <!-- Efeito de Vidro Quebrado (Explosão / Colapso) -->
@@ -1570,14 +1563,14 @@
           </div>
         </div>
 
-        <!-- 6. Perda DPO Contrastiva (Recipiente 6: Índigo) -->
+        <!-- 6. Memória SIL & Torneio (Recipiente 6: Índigo) -->
         <div id="vessel-card-6" class="card vessel-container vessel-theme-indigo p-2.5 bg-slate-900/80 border-slate-800 flex flex-col justify-between cursor-pointer" onclick="handleVesselCardClick(event, 6)" title="Shift+Clique ou Alt+Clique para alternar teste de Ruptura (Explosão / Colapso)">
           <div class="vessel-scale-ticks" title="Escala de Volume">
-            <span id="vessel-tick-max-6" class="vessel-tick vessel-tick-max" style="top: 15%" title="Máx atingido: 0.00">
+            <span id="vessel-tick-max-6" class="vessel-tick vessel-tick-max" style="top: 15%" title="Escala Visual: 1 GB">
               <span class="vessel-tick-label">
                 <span class="vessel-tick-tag mini-hide">MAX</span>
                 <span class="vessel-tick-arrow">▲</span>
-                <span id="vessel-val-max-6" class="vessel-tick-val">0.00</span>
+                <span id="vessel-val-max-6" class="vessel-tick-val">1 GB</span>
               </span>
             </span>
             <span class="vessel-tick major" style="top: 25%"></span>
@@ -1585,15 +1578,15 @@
             <span class="vessel-tick major" style="top: 50%"></span>
             <span class="vessel-tick" style="top: 65%"></span>
             <span class="vessel-tick major" style="top: 75%"></span>
-            <span id="vessel-tick-min-6" class="vessel-tick vessel-tick-min" style="top: 85%" title="Mín atingido: 0.00">
+            <span id="vessel-tick-min-6" class="vessel-tick vessel-tick-min" style="top: 85%" title="Mínimo: 0 MB">
               <span class="vessel-tick-label">
                 <span class="vessel-tick-tag mini-hide">MIN</span>
                 <span class="vessel-tick-arrow">▼</span>
-                <span id="vessel-val-min-6" class="vessel-tick-val">0.00</span>
+                <span id="vessel-val-min-6" class="vessel-tick-val">0 MB</span>
               </span>
             </span>
           </div>
-          <div class="vessel-liquid-fill" id="vessel-liquid-6" style="height: 15%;">
+          <div class="vessel-liquid-fill" id="vessel-liquid-6" style="height: 35%;">
             <div class="vessel-wave-wrapper">
               <svg class="vessel-wave-svg vessel-wave-back" viewBox="0 0 600 30" preserveAspectRatio="none">
                 <path d="M 0 15 Q 75 25 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
@@ -1612,29 +1605,39 @@
           </div>
           <div class="vessel-content">
             <div class="flex items-center justify-between w-full">
-              <div class="vessel-label" title="Contraste DPO-SIL">
-                <span class="vessel-tag-icon">⚖️</span>
-                <span class="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mini-hide">DPO</span>
+              <div class="vessel-label" title="Memória SIL (Self-Imitation Learning) & Torneio">
+                <span class="vessel-tag-icon">🏛️</span>
+                <span class="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mini-hide">Memória SIL</span>
               </div>
-              <span id="train-metric-dpo-badge" class="vessel-top-badge bg-indigo-950/80 text-indigo-300 border border-indigo-800">c-SIL</span>
+              <span id="train-metric-sil-badge" class="vessel-top-badge bg-indigo-950/80 text-indigo-300 border border-indigo-800" title="Seleção por Torneio (k=5)">k=5 Tourn</span>
             </div>
             <div class="vessel-metric-row flex flex-col justify-center my-auto w-full">
               <div class="flex items-baseline gap-1">
-                <span id="train-metric-dpo-loss" class="text-base sm:text-xl font-black font-mono text-indigo-300">0.00</span>
-                <span class="text-[10px] text-gray-400 font-mono mini-hide">&mu;DPO</span>
+                <span id="train-metric-sil-wins" class="text-base sm:text-xl font-black font-mono text-indigo-300">0</span>
+                <span class="text-[10px] text-gray-400 font-mono mini-hide">vitórias</span>
               </div>
-              <div class="text-[9px] font-mono text-gray-400 mt-0.5 truncate">
-                Perda Contrastiva
+              <div id="train-metric-sil-sub" class="text-[9px] font-mono text-gray-400 mt-0.5 truncate flex items-center justify-between">
+                <span id="train-metric-sil-slices">0 fatias</span>
+                <span id="train-metric-sil-mem" class="text-indigo-300/80 font-medium">0 MB</span>
               </div>
             </div>
             <!-- Elementos preservados em container oculto para telemetria JS -->
             <div class="hidden">
+              <span id="train-metric-dpo-loss"></span>
+              <span id="train-metric-dpo-badge"></span>
               <div id="train-metric-dpo-bar"></div>
               <div id="train-metric-dpo-avg-marker"></div>
               <strong id="train-metric-dpo-cur-val">0.00</strong>
               <strong id="train-metric-dpo-avg-val">0.00</strong>
               <strong id="train-metric-dpo-min-val">0.00</strong>
               <strong id="train-metric-dpo-max-val">0.00</strong>
+              <span id="train-metric-sil">0</span>
+              <div id="train-metric-sil-bar"></div>
+              <div id="train-metric-sil-avg-marker"></div>
+              <span id="train-metric-sil-cur-val">0</span>
+              <span id="train-metric-sil-avg-val">0</span>
+              <span id="train-metric-sil-min-val">0</span>
+              <span id="train-metric-sil-max-val">0</span>
             </div>
           </div>
           <!-- Efeito de Vidro Quebrado (Explosão / Colapso) -->
@@ -2590,6 +2593,10 @@
       minLoss: null,
       maxConf: null,
       minConf: null,
+      maxEntropy: null,
+      minEntropy: null,
+      maxSilWins: null,
+      minSilWins: null,
       maxDpo: null,
       minDpo: null,
       lastLevel: null,
@@ -2637,33 +2644,33 @@
       }
     }
 
+    function getLevelTargetWinRate(levelKey) {
+      const d = parseInt((levelKey || 'D1').replace(/\D/g, ''), 10) || 1;
+      if (d <= 4) return 85;
+      if (d <= 7) return 70;
+      if (d <= 10) return 50;
+      if (d <= 14) return 40;
+      return 35;
+    }
+
     function getLevelMetrics(levelKey) {
       if (!_totalTrainMetrics) _totalTrainMetrics = { ..._defaultTotalMetrics };
       if (!_totalTrainMetrics.byLevel) _totalTrainMetrics.byLevel = {};
       const key = levelKey || getEffectiveCurriculumLevel();
       if (!_totalTrainMetrics.byLevel[key]) {
         _totalTrainMetrics.byLevel[key] = {
-          minWinRate: null,
-          maxWinRate: null,
-          curWinRate: null,
+          minWinRate: 0.0,
+          maxWinRate: 0.0,
+          curWinRate: 0.0,
           minReturn: null,
           maxReturn: null,
           curReturn: null,
-          targetReturn: null
+          targetReturn: null,
+          targetWinRate: getLevelTargetWinRate(key),
+          peakEpisodeSolved: false
         };
       }
-      const lm = _totalTrainMetrics.byLevel[key];
-      // Sanitização de anomalias: em níveis combinatórios (D5+), MAX em 100% decorre de janela com 1 amostra inicial
-      const depthNum = parseInt((key || 'D1').replace(/\D/g, ''), 10) || 1;
-      if (depthNum >= 5) {
-        if (lm.curWinRate !== null && lm.curWinRate >= 95.0) {
-          lm.curWinRate = null;
-        }
-        if (lm.maxWinRate !== null && lm.maxWinRate >= 95.0) {
-          lm.maxWinRate = (lm.curWinRate !== null && lm.curWinRate < 95.0) ? lm.curWinRate : null;
-        }
-      }
-      return lm;
+      return _totalTrainMetrics.byLevel[key];
     }
 
     function getEffectiveCurriculumLevel() {
@@ -2729,16 +2736,29 @@
         b3.title = isCurrent ? `Nível Atual (${effLevel})` : `Nível Filtrado (${effLevel})`;
       }
 
+      const effDepthNum = parseInt((effLevel || 'D1').replace(/\D/g, ''), 10) || 1;
+      const targetWr = getLevelTargetWinRate(effLevel);
+      const isSolvedSingle = (effLm.peakEpisodeSolved || effLm.maxWinRate === 100.0 || effDepthNum <= 4);
+      const curWr = (effLm.curWinRate !== null) ? effLm.curWinRate : 0;
+      const progressPct = Math.min(100, Math.max(0, Math.round((curWr / targetWr) * 100)));
+
+      const targetBadge = document.getElementById('train-metric-target');
+      if (targetBadge) {
+        targetBadge.innerText = `Meta: ${targetWr}%`;
+        targetBadge.title = `Meta para desbloquear o próximo nível D${effDepthNum + 1} (${progressPct}% alcançado)`;
+      }
+
       const sub2 = document.getElementById('train-metric-winrate-sub');
-      if (sub2) sub2.innerText = `Win Rate (${effLevel})`;
+      if (sub2) {
+        sub2.innerHTML = `<span>Média (${effLevel})</span><span id="train-metric-progress" class="text-amber-300/90 font-medium">${progressPct}% da meta</span>`;
+      }
       const sub3 = document.getElementById('train-metric-return-sub');
       if (sub3) sub3.innerText = `Ganho Médio (${effLevel})`;
 
       if (!isCurrent) {
         const wrEl = document.getElementById('train-metric-winrate');
         if (wrEl) {
-          const wr = (effLm.curWinRate !== null) ? effLm.curWinRate : (effLm.maxWinRate !== null ? effLm.maxWinRate : 0);
-          wrEl.innerText = `${wr.toFixed(1)}%`;
+          wrEl.innerText = `${curWr.toFixed(1)}%`;
         }
 
         const retEl = document.getElementById('train-metric-return');
@@ -2749,8 +2769,7 @@
 
         const vLiq2 = document.getElementById('vessel-liquid-2');
         if (vLiq2) {
-          const wr = (effLm.curWinRate !== null) ? effLm.curWinRate : (effLm.maxWinRate || 0);
-          vLiq2.style.height = `${Math.max(6, Math.min(100, wr))}%`;
+          vLiq2.style.height = `${Math.max(6, Math.min(100, curWr))}%`;
         }
 
         const vLiq3 = document.getElementById('vessel-liquid-3');
@@ -2778,26 +2797,22 @@
           if (el) el.innerText = m.minFps >= 1000 ? (m.minFps / 1000).toFixed(1) + 'k' : m.minFps.toFixed(0);
         }
 
-        // Card 2: Currículo / Win Rate - Filtrado por Nível
+        // Card 2: Currículo / Win Rate - Filtrado por Nível (Pico do Patamar)
         const effDepthNum = parseInt((effLevel || 'D1').replace(/\D/g, ''), 10) || 1;
-        let safeMaxWr = lm.maxWinRate;
-        if (effDepthNum >= 5 && safeMaxWr !== null && safeMaxWr >= 95.0) {
-          safeMaxWr = (lm.curWinRate !== null && lm.curWinRate < 95.0) ? lm.curWinRate : null;
-          lm.maxWinRate = safeMaxWr;
-        }
+        const maxWr = (lm.maxWinRate !== null && lm.maxWinRate !== undefined) ? lm.maxWinRate : 0.0;
 
-        if (safeMaxWr !== null) {
-          const el = document.getElementById('vessel-val-max-2');
-          if (el) el.innerText = `${safeMaxWr.toFixed(1)}%`;
-        }
-        if (lm.minWinRate !== null) {
-          const el = document.getElementById('vessel-val-min-2');
-          if (el) el.innerText = `${lm.minWinRate.toFixed(1)}%`;
-        }
+        const elMax2 = document.getElementById('vessel-val-max-2');
+        if (elMax2) elMax2.innerText = `${maxWr.toFixed(1)}%`;
+        const elMin2 = document.getElementById('vessel-val-min-2');
+        if (elMin2) elMin2.innerText = '0%';
+
         const tMax2 = document.getElementById('vessel-tick-max-2');
-        if (tMax2 && safeMaxWr !== null) tMax2.title = `Máx (${effLevel}): ${safeMaxWr.toFixed(1)}%`;
+        if (tMax2) {
+          const retStr = (lm.maxReturn !== null && lm.maxReturn !== undefined) ? ` | Melhor Ep: +${lm.maxReturn.toFixed(1)}` : '';
+          tMax2.title = `Pico no patamar (${effLevel}): ${maxWr.toFixed(1)}%${retStr}`;
+        }
         const tMin2 = document.getElementById('vessel-tick-min-2');
-        if (tMin2 && lm.minWinRate !== null) tMin2.title = `Mín (${effLevel}): ${lm.minWinRate.toFixed(1)}%`;
+        if (tMin2) tMin2.title = `Mín (${effLevel}): 0%`;
 
         // Card 3: Ganho / Retorno - Filtrado por Nível
         if (lm.maxReturn !== null) {
@@ -2823,25 +2838,21 @@
           if (el) el.innerText = m.minLoss.toFixed(2);
         }
 
-        // Card 5: Confiança & Calibração - Treino Total
-        if (m.maxConf !== null) {
+        // Card 5: Saúde de Exploração (Entropia) - Treino Total
+        if (m.maxEntropy !== null) {
           const el = document.getElementById('vessel-val-max-5');
-          if (el) el.innerText = `${m.maxConf.toFixed(1)}%`;
+          if (el) el.innerText = m.maxEntropy.toFixed(2);
         }
-        if (m.minConf !== null) {
+        if (m.minEntropy !== null) {
           const el = document.getElementById('vessel-val-min-5');
-          if (el) el.innerText = `${m.minConf.toFixed(1)}%`;
+          if (el) el.innerText = m.minEntropy.toFixed(2);
         }
 
-        // Card 6: DPO - Treino Total
-        if (m.maxDpo !== null) {
-          const el = document.getElementById('vessel-val-max-6');
-          if (el) el.innerText = m.maxDpo.toFixed(2);
-        }
-        if (m.minDpo !== null) {
-          const el = document.getElementById('vessel-val-min-6');
-          if (el) el.innerText = m.minDpo.toFixed(2);
-        }
+        // Card 6: Memória SIL (Escala visual de 1 GB)
+        const elMax6 = document.getElementById('vessel-val-max-6');
+        if (elMax6) elMax6.innerText = '1 GB';
+        const elMin6 = document.getElementById('vessel-val-min-6');
+        if (elMin6) elMin6.innerText = '0 MB';
 
         // Badges e rótulos de nível
         const b3 = document.getElementById('train-metric-level-badge-3');
@@ -4771,48 +4782,34 @@
       const trainSilMaxVal = document.getElementById('train-metric-sil-max-val');
       if (trainSilMaxVal) trainSilMaxVal.innerText = '0';
 
-      // Reset dos cards de Confiança & Calibração de Treino
+      // Reset do card de Saúde de Exploração & Entropy Floor
+      const trainEntropy = document.getElementById('train-metric-entropy');
+      if (trainEntropy) trainEntropy.innerText = '0.00';
+      const trainEntropyBadge = document.getElementById('train-metric-entropy-badge');
+      if (trainEntropyBadge) {
+        trainEntropyBadge.className = 'vessel-top-badge bg-rose-950/80 text-rose-300 border border-rose-800';
+        trainEntropyBadge.innerText = 'Piso: 0.30';
+      }
+      const trainEntropySubLoss = document.getElementById('train-metric-entropy-sub-loss');
+      if (trainEntropySubLoss) trainEntropySubLoss.innerText = 'c: 0.02';
+
+      // Reset do card de Memória SIL & Torneio
+      const trainSilWins = document.getElementById('train-metric-sil-wins');
+      if (trainSilWins) trainSilWins.innerText = '0';
+      const trainSilBadge = document.getElementById('train-metric-sil-badge');
+      if (trainSilBadge) trainSilBadge.innerText = 'k=5 Tourn';
+      const trainSilSlices = document.getElementById('train-metric-sil-slices');
+      if (trainSilSlices) trainSilSlices.innerText = '0 fatias';
+      const trainSilMem = document.getElementById('train-metric-sil-mem');
+      if (trainSilMem) trainSilMem.innerText = '0 MB';
+
+      // Reset dos placeholders legados
       const trainConf = document.getElementById('train-metric-conf');
       if (trainConf) trainConf.innerText = '--%';
       const trainCalib = document.getElementById('train-metric-calib');
       if (trainCalib) trainCalib.innerText = '0.00';
-      const trainConfBar = document.getElementById('train-metric-conf-bar');
-      if (trainConfBar) trainConfBar.style.width = '0%';
-      const trainConfMarker = document.getElementById('train-metric-conf-avg-marker');
-      if (trainConfMarker) trainConfMarker.style.left = '0%';
-      const trainCalibBar = document.getElementById('train-metric-calib-bar');
-      if (trainCalibBar) trainCalibBar.style.width = '0%';
-      const trainCalibMarker = document.getElementById('train-metric-calib-avg-marker');
-      if (trainCalibMarker) trainCalibMarker.style.left = '0%';
-      const trainConfCurVal = document.getElementById('train-metric-conf-cur-val');
-      if (trainConfCurVal) trainConfCurVal.innerText = '--%';
-      const trainConfAvgVal = document.getElementById('train-metric-conf-avg-val');
-      if (trainConfAvgVal) trainConfAvgVal.innerText = '--%';
-      const trainCalibCurVal = document.getElementById('train-metric-calib-cur-val');
-      if (trainCalibCurVal) trainCalibCurVal.innerText = '0.00';
-      const trainCalibAvgVal = document.getElementById('train-metric-calib-avg-val');
-      if (trainCalibAvgVal) trainCalibAvgVal.innerText = '0.00';
-      const trainCalibBadge = document.getElementById('train-metric-calib-badge');
-      if (trainCalibBadge) {
-        const isMini = document.body.classList.contains('mini-mode');
-        trainCalibBadge.innerText = isMini ? '0.80' : 'Auto';
-      }
-
-      // Reset dos cards dedicados de Perda DPO Contrastiva
       const trainDpoLoss = document.getElementById('train-metric-dpo-loss');
       if (trainDpoLoss) trainDpoLoss.innerText = '0.00';
-      const trainDpoBar = document.getElementById('train-metric-dpo-bar');
-      if (trainDpoBar) trainDpoBar.style.width = '0%';
-      const trainDpoMarker = document.getElementById('train-metric-dpo-avg-marker');
-      if (trainDpoMarker) trainDpoMarker.style.left = '0%';
-      const trainDpoCurVal = document.getElementById('train-metric-dpo-cur-val');
-      if (trainDpoCurVal) trainDpoCurVal.innerText = '0.00';
-      const trainDpoAvgVal = document.getElementById('train-metric-dpo-avg-val');
-      if (trainDpoAvgVal) trainDpoAvgVal.innerText = '0.00';
-      const trainDpoMinVal = document.getElementById('train-metric-dpo-min-val');
-      if (trainDpoMinVal) trainDpoMinVal.innerText = '0.00';
-      const trainDpoMaxVal = document.getElementById('train-metric-dpo-max-val');
-      if (trainDpoMaxVal) trainDpoMaxVal.innerText = '0.00';
 
       // Preserva e re-renderiza as marcações de Mín/Máx do Treino Total nos recipientes de fluido
       renderImmediateRulerMetrics();
@@ -5622,38 +5619,34 @@
           if (_trainMetricsState.winRateHistory.length > 60) _trainMetricsState.winRateHistory.shift();
 
           // Mínimo e Máximo observados no nível atual (isolamento por nível)
+          const currentDepthNum = parseInt((currentLevelKey || 'D1').replace(/\D/g, ''), 10) || 1;
           const curLevelLm = getLevelMetrics(currentLevelKey);
           curLevelLm.curWinRate = curWinRate;
-          const currentDepthNum = parseInt((currentLevelKey || 'D1').replace(/\D/g, ''), 10) || 1;
 
-          if (curWinRate > 0) {
-            if (curLevelLm.minWinRate === null || curWinRate < curLevelLm.minWinRate) curLevelLm.minWinRate = curWinRate;
-            if (curLevelLm.maxWinRate === null || curWinRate > curLevelLm.maxWinRate) {
-              if (currentDepthNum < 5 || curWinRate < 95.0) {
-                curLevelLm.maxWinRate = curWinRate;
-              }
-            }
+          // Pico Real no Nível Atual (Taxa de Vitória recorde no patamar)
+          const singleEpBestRet = (telemetry.curriculum_depth_best_return !== undefined && telemetry.curriculum_depth_best_return !== null)
+            ? Number(telemetry.curriculum_depth_best_return)
+            : (telemetry.best_return !== undefined ? Number(telemetry.best_return) : null);
+          const hasSingleSolve = (singleEpBestRet !== null && singleEpBestRet >= 10.0);
+          curLevelLm.peakEpisodeSolved = hasSingleSolve;
+
+          const depthBestSr = (telemetry.curriculum_depth_best_success_rate !== undefined && telemetry.curriculum_depth_best_success_rate !== null)
+            ? (Number(telemetry.curriculum_depth_best_success_rate) * 100)
+            : null;
+
+          // O MAX é o maior valor histórico ou instantâneo no patamar: nunca fica congelado ou regride
+          const candMaxWr = Math.max(
+            depthBestSr !== null ? depthBestSr : 0,
+            curWinRate,
+            (curLevelLm.maxWinRate !== null && !isNaN(curLevelLm.maxWinRate) ? curLevelLm.maxWinRate : 0)
+          );
+
+          if (currentDepthNum <= 4) {
+            curLevelLm.maxWinRate = 100.0;
           } else {
-            if (curLevelLm.minWinRate === null) curLevelLm.minWinRate = 0.0;
-            if (curLevelLm.maxWinRate === null) curLevelLm.maxWinRate = 0.0;
+            curLevelLm.maxWinRate = candMaxWr;
           }
-
-          // Máximo observado no patamar atual:
-          let candMaxWr = curWinRate;
-          if (telemetry.curriculum_depth_best_success_rate !== undefined && telemetry.curriculum_depth_best_success_rate !== null) {
-            const backendMaxWr = Number(telemetry.curriculum_depth_best_success_rate) * 100;
-            const isSuspicious = (currentDepthNum >= 5 && backendMaxWr >= 60.0 && curWinRate < 30.0);
-            if (!isSuspicious && (currentDepthNum < 5 || backendMaxWr < 90.0 || curWinRate >= 80.0)) {
-              candMaxWr = Math.max(candMaxWr, backendMaxWr);
-            }
-          }
-
-          if (candMaxWr > (curLevelLm.maxWinRate || 0)) {
-            const isSuspicious = (currentDepthNum >= 5 && candMaxWr >= 60.0 && curWinRate < 30.0);
-            if (!isSuspicious && (currentDepthNum < 5 || candMaxWr < 95.0 || curWinRate >= 80.0)) {
-              curLevelLm.maxWinRate = candMaxWr;
-            }
-          }
+          curLevelLm.minWinRate = 0.0;
 
           const avgWinRate = _trainMetricsState.winRateHistory.length ? (_trainMetricsState.winRateHistory.reduce((a, b) => a + b, 0) / _trainMetricsState.winRateHistory.length) : curWinRate;
 
@@ -5862,97 +5855,116 @@
             ? (_trainMetricsState.trainCalibHistory.reduce((a, b) => a + b, 0) / _trainMetricsState.trainCalibHistory.length)
             : curTrainCalib;
 
-          const isTrainAuto = !calibTrainInput || calibTrainInput.value === 'auto';
-          const trainCalibBadge = document.getElementById('train-metric-calib-badge');
-          if (trainCalibBadge) {
-            if (isMini) {
-              trainCalibBadge.innerText = curTrainCalib.toFixed(2);
-              trainCalibBadge.title = isTrainAuto ? `Calibração Auto: ${curTrainCalib.toFixed(2)}` : `Calibração: ${curTrainCalib.toFixed(2)}`;
+          // 5. Saúde de Exploração & Entropy Floor
+          const curEntropy = (telemetry.mean_entropy !== undefined && telemetry.mean_entropy !== null)
+            ? Number(telemetry.mean_entropy)
+            : 0.0;
+          const floorActive = Boolean(telemetry.entropy_floor_active);
+          const floorTarget = Number(telemetry.entropy_floor || 0.30);
+          const floorLoss = Number(telemetry.entropy_floor_loss || 0.0);
+          const effCoef = Number(telemetry.effective_entropy_coef || 0.02);
+
+          if (curEntropy > 0) {
+            _trainMetricsState.entropyHistory = _trainMetricsState.entropyHistory || [];
+            _trainMetricsState.entropyHistory.push(curEntropy);
+            if (_trainMetricsState.entropyHistory.length > 60) _trainMetricsState.entropyHistory.shift();
+            if (_trainMetricsState.minObservedEntropy === null || curEntropy < _trainMetricsState.minObservedEntropy) {
+              _trainMetricsState.minObservedEntropy = curEntropy;
+            }
+            if (_trainMetricsState.maxObservedEntropy === null || curEntropy > _trainMetricsState.maxObservedEntropy) {
+              _trainMetricsState.maxObservedEntropy = curEntropy;
+            }
+            if (_totalTrainMetrics.minEntropy === null || curEntropy < _totalTrainMetrics.minEntropy) {
+              _totalTrainMetrics.minEntropy = curEntropy;
+            }
+            if (_totalTrainMetrics.maxEntropy === null || curEntropy > _totalTrainMetrics.maxEntropy) {
+              _totalTrainMetrics.maxEntropy = curEntropy;
+            }
+          }
+
+          // Histerese para suavizar a exibição do badge de Piso Ativo
+          _trainMetricsState.floorActiveHistory = _trainMetricsState.floorActiveHistory || [];
+          _trainMetricsState.floorActiveHistory.push(floorActive ? 1 : 0);
+          if (_trainMetricsState.floorActiveHistory.length > 20) _trainMetricsState.floorActiveHistory.shift();
+          const floorActiveRatio = _trainMetricsState.floorActiveHistory.reduce((a, b) => a + b, 0) / _trainMetricsState.floorActiveHistory.length;
+          const isSustainedFloor = floorActiveRatio >= 0.35;
+
+          const trainEntropy = document.getElementById('train-metric-entropy');
+          if (trainEntropy) trainEntropy.innerText = curEntropy > 0 ? curEntropy.toFixed(3) : '--';
+
+          const trainEntropyBadge = document.getElementById('train-metric-entropy-badge');
+          if (trainEntropyBadge) {
+            if (isSustainedFloor) {
+              trainEntropyBadge.className = 'vessel-top-badge bg-amber-950/80 text-amber-300 border border-amber-800/80';
+              trainEntropyBadge.innerText = '🛡️ Piso Ativo';
+              trainEntropyBadge.title = `Piso Dinâmico Ativo (${Math.round(floorActiveRatio * 100)}% da janela recente). Forçando exploração para estabilizar a política em ~0.30 nats e prevenir colapso em D10.`;
             } else {
-              trainCalibBadge.innerText = isTrainAuto ? 'Auto' : (calibTrainInput.value || curTrainCalib.toFixed(2));
-              trainCalibBadge.title = isTrainAuto ? `Modo Auto (Calibração atual: ${curTrainCalib.toFixed(2)})` : `Calibração Fixa: ${curTrainCalib.toFixed(2)}`;
+              trainEntropyBadge.className = 'vessel-top-badge bg-rose-950/80 text-rose-300 border border-rose-800';
+              trainEntropyBadge.innerText = `Piso: ${floorTarget.toFixed(2)}`;
+              trainEntropyBadge.title = `Piso Dinâmico de Entropia configurado em ${floorTarget.toFixed(2)} nats`;
             }
           }
 
+          const trainEntropySubLoss = document.getElementById('train-metric-entropy-sub-loss');
+          if (trainEntropySubLoss) {
+            trainEntropySubLoss.innerText = `c: ${effCoef.toFixed(3)}${floorLoss > 0 ? ' (L: ' + floorLoss.toFixed(2) + ')' : ''}`;
+          }
+
+          // Mantém compatibilidade com campos legados ocultos de Conf/Calib
           const trainConf = document.getElementById('train-metric-conf');
-          if (trainConf) trainConf.innerText = trainConfPct > 0 ? (isMini ? `${Math.round(trainConfPct)}%` : `${trainConfPct.toFixed(1)}%`) : '--%';
+          if (trainConf) trainConf.innerText = trainConfPct > 0 ? `${trainConfPct.toFixed(1)}%` : '--%';
           const trainCalib = document.getElementById('train-metric-calib');
-          if (trainCalib) trainCalib.innerText = isMini ? `${Math.round(curTrainCalib * 100)}%` : curTrainCalib.toFixed(2);
+          if (trainCalib) trainCalib.innerText = curTrainCalib.toFixed(2);
 
-          const trainConfBar = document.getElementById('train-metric-conf-bar');
-          if (trainConfBar) trainConfBar.style.width = `${trainConfPct}%`;
-          const trainConfMarker = document.getElementById('train-metric-conf-avg-marker');
-          if (trainConfMarker) trainConfMarker.style.left = `${Math.min(100, Math.max(0, trainAvgConfPct))}%`;
+          // 6. Memória SIL (Self-Imitation Learning) & Torneio
+          const fullWins = Number(telemetry.sil_full_wins !== undefined ? telemetry.sil_full_wins : (telemetry.sil_trajectories || 0));
+          const silSlices = Number(telemetry.sil_success_slices || 0);
+          const silMemMb = Number(telemetry.sil_memory_mb || 0);
+          const silTourn = Number(telemetry.sil_tournament_size || 5);
+          const silPolLoss = Number(telemetry.sil_policy_loss || 0);
 
-          const trainCalibBar = document.getElementById('train-metric-calib-bar');
-          if (trainCalibBar) trainCalibBar.style.width = `${Math.min(100, Math.max(0, curTrainCalib * 100))}%`;
-          const trainCalibMarker = document.getElementById('train-metric-calib-avg-marker');
-          if (trainCalibMarker) trainCalibMarker.style.left = `${Math.min(100, Math.max(0, avgTrainCalib * 100))}%`;
-
-          const trainConfCurVal = document.getElementById('train-metric-conf-cur-val');
-          if (trainConfCurVal) trainConfCurVal.innerText = trainConfPct > 0 ? `${trainConfPct.toFixed(1)}%` : '--%';
-          const trainConfAvgVal = document.getElementById('train-metric-conf-avg-val');
-          if (trainConfAvgVal) trainConfAvgVal.innerText = trainAvgConfPct > 0 ? `${trainAvgConfPct.toFixed(1)}%` : '--%';
-          const trainCalibCurVal = document.getElementById('train-metric-calib-cur-val');
-          if (trainCalibCurVal) trainCalibCurVal.innerText = curTrainCalib.toFixed(2);
-          const trainCalibAvgVal = document.getElementById('train-metric-calib-avg-val');
-          if (trainCalibAvgVal) trainCalibAvgVal.innerText = avgTrainCalib.toFixed(2);
-
-          // 6. Perda DPO Contrastiva (c-SIL / Online DPO)
-          const rawDpoLoss = telemetry.sil_dpo_loss;
-          const hasDpo = (rawDpoLoss !== undefined && rawDpoLoss !== null);
-          const curDpoNum = hasDpo ? Math.abs(Number(rawDpoLoss)) : 0;
-          if (hasDpo && curDpoNum > 0) {
-            _trainMetricsState.dpoHistory.push(curDpoNum);
-            if (_trainMetricsState.dpoHistory.length > 60) _trainMetricsState.dpoHistory.shift();
-            if (_trainMetricsState.minObservedDpo === null || curDpoNum < _trainMetricsState.minObservedDpo) {
-              _trainMetricsState.minObservedDpo = curDpoNum;
+          if (fullWins > 0) {
+            _trainMetricsState.silWinsHistory = _trainMetricsState.silWinsHistory || [];
+            _trainMetricsState.silWinsHistory.push(fullWins);
+            if (_trainMetricsState.silWinsHistory.length > 60) _trainMetricsState.silWinsHistory.shift();
+            if (_trainMetricsState.minObservedSilWins === null || fullWins < _trainMetricsState.minObservedSilWins) {
+              _trainMetricsState.minObservedSilWins = fullWins;
             }
-            if (_trainMetricsState.maxObservedDpo === null || curDpoNum > _trainMetricsState.maxObservedDpo) {
-              _trainMetricsState.maxObservedDpo = curDpoNum;
+            if (_trainMetricsState.maxObservedSilWins === null || fullWins > _trainMetricsState.maxObservedSilWins) {
+              _trainMetricsState.maxObservedSilWins = fullWins;
             }
-            if (curDpoNum < 50.0) {
-              if (_totalTrainMetrics.minDpo === null || curDpoNum < _totalTrainMetrics.minDpo) {
-                _totalTrainMetrics.minDpo = curDpoNum;
-              }
-              if (_totalTrainMetrics.maxDpo === null || curDpoNum > _totalTrainMetrics.maxDpo) {
-                _totalTrainMetrics.maxDpo = curDpoNum;
-              }
+            if (_totalTrainMetrics.minSilWins === null || fullWins < _totalTrainMetrics.minSilWins) {
+              _totalTrainMetrics.minSilWins = fullWins;
+            }
+            if (_totalTrainMetrics.maxSilWins === null || fullWins > _totalTrainMetrics.maxSilWins) {
+              _totalTrainMetrics.maxSilWins = fullWins;
             }
           }
-          const avgDpoNum = _trainMetricsState.dpoHistory.length 
-            ? (_trainMetricsState.dpoHistory.reduce((a, b) => a + b, 0) / _trainMetricsState.dpoHistory.length) 
-            : curDpoNum;
-          const maxDpoRef = Math.max(_trainMetricsState.maxObservedDpo || 0, curDpoNum, avgDpoNum, 0.05);
 
-          const dpoCurPct = Math.min(100, Math.max(0, (curDpoNum / maxDpoRef) * 100));
-          const dpoAvgPct = Math.min(100, Math.max(0, (avgDpoNum / maxDpoRef) * 100));
+          const trainSilWins = document.getElementById('train-metric-sil-wins');
+          if (trainSilWins) {
+            trainSilWins.innerText = fullWins >= 1000 ? (fullWins / 1000).toFixed(1) + 'k' : fullWins.toLocaleString();
+          }
 
+          const trainSilBadge = document.getElementById('train-metric-sil-badge');
+          if (trainSilBadge) {
+            trainSilBadge.innerText = `k=${silTourn} Tourn`;
+            trainSilBadge.title = `Seleção por Torneio (k=${silTourn}): amostragem competitiva das melhores trajetórias`;
+          }
+
+          const trainSilSlices = document.getElementById('train-metric-sil-slices');
+          if (trainSilSlices) {
+            trainSilSlices.innerText = silSlices >= 1000 ? (silSlices / 1000).toFixed(1) + 'k fatias' : `${silSlices} fatias`;
+          }
+
+          const trainSilMem = document.getElementById('train-metric-sil-mem');
+          if (trainSilMem) {
+            trainSilMem.innerText = silMemMb > 0 ? `${silMemMb.toFixed(0)} MB / 1 GB` : '';
+          }
+
+          // Compatibilidade com placeholders legados de DPO
           const trainDpo = document.getElementById('train-metric-dpo-loss');
-          if (trainDpo) {
-            trainDpo.innerText = hasDpo ? curDpoNum.toFixed(isMini ? 2 : 3) : '--';
-          }
-          const trainDpoBar = document.getElementById('train-metric-dpo-bar');
-          if (trainDpoBar) trainDpoBar.style.width = `${dpoCurPct}%`;
-          const trainDpoMarker = document.getElementById('train-metric-dpo-avg-marker');
-          if (trainDpoMarker) trainDpoMarker.style.left = `${dpoAvgPct}%`;
-
-          const trainDpoCurVal = document.getElementById('train-metric-dpo-cur-val');
-          if (trainDpoCurVal) trainDpoCurVal.innerText = hasDpo ? curDpoNum.toFixed(3) : '--';
-          const trainDpoAvgVal = document.getElementById('train-metric-dpo-avg-val');
-          if (trainDpoAvgVal) trainDpoAvgVal.innerText = hasDpo ? avgDpoNum.toFixed(3) : '--';
-          const trainDpoMinVal = document.getElementById('train-metric-dpo-min-val');
-          if (trainDpoMinVal) {
-            const minDpo = _trainMetricsState.minObservedDpo !== null ? _trainMetricsState.minObservedDpo : (hasDpo ? curDpoNum : 0);
-            trainDpoMinVal.innerText = minDpo.toFixed(3);
-            trainDpoMinVal.title = `Mínimo (${currentLevelKey})`;
-          }
-          const trainDpoMaxVal = document.getElementById('train-metric-dpo-max-val');
-          if (trainDpoMaxVal) {
-            const maxDpo = _trainMetricsState.maxObservedDpo !== null ? _trainMetricsState.maxObservedDpo : (hasDpo ? curDpoNum : 0);
-            trainDpoMaxVal.innerText = maxDpo.toFixed(3);
-            trainDpoMaxVal.title = `Máximo (${currentLevelKey})`;
-          }
+          if (trainDpo) trainDpo.innerText = silPolLoss.toFixed(2);
 
           // =========================================================
           // Atualização dos Recipientes de Líquidos Fluidos (Vessels)
@@ -5973,12 +5985,24 @@
             b3.innerText = effLevel;
             b3.title = isCurrentEff ? `Nível Atual (${effLevel})` : `Nível Filtrado (${effLevel})`;
           }
+          const effDepthNum = parseInt((effLevel || 'D1').replace(/\D/g, ''), 10) || 1;
+          const targetWr = getLevelTargetWinRate(effLevel);
+          const displayWr = isCurrentEff ? curWinRate : (effLm.curWinRate !== null ? effLm.curWinRate : 0);
+          const progressPct = Math.min(100, Math.max(0, Math.round((displayWr / targetWr) * 100)));
+
+          const targetBadge = document.getElementById('train-metric-target');
+          if (targetBadge) {
+            targetBadge.innerText = `Meta: ${targetWr}%`;
+            targetBadge.title = `Meta para desbloquear o próximo nível D${effDepthNum + 1} (${progressPct}% alcançado)`;
+          }
+
           const sub2 = document.getElementById('train-metric-winrate-sub');
-          if (sub2) sub2.innerText = `Win Rate (${effLevel})`;
+          if (sub2) {
+            sub2.innerHTML = `<span>Média (${effLevel})</span><span id="train-metric-progress" class="text-amber-300 font-semibold">${progressPct}% da meta</span>`;
+          }
           const sub3 = document.getElementById('train-metric-return-sub');
           if (sub3) sub3.innerText = `Ganho Médio (${effLevel})`;
 
-          const displayWr = isCurrentEff ? curWinRate : (effLm.curWinRate !== null ? effLm.curWinRate : (effLm.maxWinRate || 0));
           const displayRet = isCurrentEff ? meanRet : (effLm.curReturn !== null ? effLm.curReturn : (effLm.maxReturn || 0));
 
           if (trainWinRate) trainWinRate.innerText = isMini ? `${Math.round(displayWr)}%` : `${displayWr.toFixed(1)}%`;
@@ -6005,15 +6029,17 @@
 
           const vLiquid5 = document.getElementById('vessel-liquid-5');
           if (vLiquid5) {
-            const confLevel = trainConfPct > 0 ? trainConfPct : (curTrainCalib * 100);
-            const lvl5 = Math.max(6, Math.min(100, confLevel));
-            vLiquid5.style.height = `${lvl5}%`;
+            // Entropia normalizada: 0.0 nats = 6%, 0.6 nats = 100%
+            const maxEntRef = Math.max(0.6, _trainMetricsState.maxObservedEntropy || 0.6);
+            const entLvl = Math.max(6, Math.min(100, (curEntropy / maxEntRef) * 100));
+            vLiquid5.style.height = `${entLvl}%`;
           }
 
           const vLiquid6 = document.getElementById('vessel-liquid-6');
           if (vLiquid6) {
-            const lvl6 = hasDpo ? Math.max(6, Math.min(100, dpoCurPct)) : 6;
-            vLiquid6.style.height = `${lvl6}%`;
+            // Barra vertical de uso de memória SIL: escala de referência em 1 GB (1024 MB), apenas visual sem limite real
+            const memPct = Math.max(6, Math.min(100, (silMemMb / 1024) * 100));
+            vLiquid6.style.height = `${memPct}%`;
           }
 
           // =========================================================
@@ -6044,31 +6070,25 @@
             tMin1.title = `Mín Treino Total: ${minFpsFmt} FPS`;
           }
 
-          // Card 2: Win Rate (%) - Régua Filtrada por Nível
-          const effDepthNum = parseInt((effLevel || 'D1').replace(/\D/g, ''), 10) || 1;
-          let safeMaxWr = effLm.maxWinRate !== null ? effLm.maxWinRate : displayWr;
-          if (effDepthNum >= 5 && safeMaxWr >= 95.0 && displayWr < 80.0) {
-            safeMaxWr = displayWr;
-            effLm.maxWinRate = displayWr;
-          }
+          // Card 2: Win Rate (%) - Régua Filtrada por Nível (Pico do Patamar)
+          const effMaxWr = (effLm.maxWinRate !== null && effLm.maxWinRate !== undefined) ? effLm.maxWinRate : 0.0;
 
           const valMax2 = document.getElementById('vessel-val-max-2');
           if (valMax2) {
-            valMax2.innerText = isMini ? `${Math.round(safeMaxWr)}%` : `${safeMaxWr.toFixed(1)}%`;
+            valMax2.innerText = `${effMaxWr.toFixed(1)}%`;
           }
           const valMin2 = document.getElementById('vessel-val-min-2');
           if (valMin2) {
-            const minWr = effLm.minWinRate !== null ? effLm.minWinRate : 0;
-            valMin2.innerText = isMini ? `${Math.round(minWr)}%` : `${minWr.toFixed(1)}%`;
+            valMin2.innerText = '0%';
           }
           const tMax2 = document.getElementById('vessel-tick-max-2');
           if (tMax2) {
-            tMax2.title = `Máx (${effLevel}): ${safeMaxWr.toFixed(1)}%`;
+            const bestRetStr = (effLm.maxReturn !== null && effLm.maxReturn !== undefined) ? ` | Melhor Ep: +${effLm.maxReturn.toFixed(1)}` : '';
+            tMax2.title = `Pico no patamar (${effLevel}): ${effMaxWr.toFixed(1)}%${bestRetStr}`;
           }
           const tMin2 = document.getElementById('vessel-tick-min-2');
           if (tMin2) {
-            const minWr = effLm.minWinRate !== null ? effLm.minWinRate : 0;
-            tMin2.title = `Mín (${effLevel}): ${minWr.toFixed(1)}%`;
+            tMin2.title = `Mín (${effLevel}): 0%`;
           }
 
           // Card 3: Retorno - Régua Filtrada por Nível
@@ -6115,56 +6135,44 @@
             tMin4.title = `Mín Treino Total: ${minL.toFixed(3)}`;
           }
 
-          // Card 5: Confiança & Calibração
-          if (trainConfPct > 0) {
-            if (_trainMetricsState.trainMinConf === null || trainConfPct < _trainMetricsState.trainMinConf) {
-              _trainMetricsState.trainMinConf = trainConfPct;
-            }
-            if (_trainMetricsState.trainMaxConf === null || trainConfPct > _trainMetricsState.trainMaxConf) {
-              _trainMetricsState.trainMaxConf = trainConfPct;
-            }
-          }
+          // Card 5: Saúde de Exploração (Entropia)
           const valMax5 = document.getElementById('vessel-val-max-5');
           if (valMax5) {
-            const maxConf = _totalTrainMetrics.maxConf !== null ? _totalTrainMetrics.maxConf : (_trainMetricsState.trainMaxConf !== null ? _trainMetricsState.trainMaxConf : (trainConfPct || 0));
-            valMax5.innerText = isMini ? `${Math.round(maxConf)}%` : `${maxConf.toFixed(1)}%`;
+            const maxEnt = _totalTrainMetrics.maxEntropy !== null ? _totalTrainMetrics.maxEntropy : (_trainMetricsState.maxObservedEntropy !== null ? _trainMetricsState.maxObservedEntropy : curEntropy);
+            valMax5.innerText = maxEnt.toFixed(2);
           }
           const valMin5 = document.getElementById('vessel-val-min-5');
           if (valMin5) {
-            const minConf = _totalTrainMetrics.minConf !== null ? _totalTrainMetrics.minConf : (_trainMetricsState.trainMinConf !== null ? _trainMetricsState.trainMinConf : (trainConfPct || 0));
-            valMin5.innerText = isMini ? `${Math.round(minConf)}%` : `${minConf.toFixed(1)}%`;
+            const minEnt = _totalTrainMetrics.minEntropy !== null ? _totalTrainMetrics.minEntropy : (_trainMetricsState.minObservedEntropy !== null ? _trainMetricsState.minObservedEntropy : curEntropy);
+            valMin5.innerText = minEnt.toFixed(2);
           }
           const tMax5 = document.getElementById('vessel-tick-max-5');
           if (tMax5) {
-            const maxConf = _totalTrainMetrics.maxConf !== null ? _totalTrainMetrics.maxConf : (_trainMetricsState.trainMaxConf !== null ? _trainMetricsState.trainMaxConf : (trainConfPct || 0));
-            tMax5.title = `Máx Treino Total: ${maxConf.toFixed(1)}%`;
+            const maxEnt = _totalTrainMetrics.maxEntropy !== null ? _totalTrainMetrics.maxEntropy : (_trainMetricsState.maxObservedEntropy !== null ? _trainMetricsState.maxObservedEntropy : curEntropy);
+            tMax5.title = `Máx Entropia Observada: ${maxEnt.toFixed(3)} nats`;
           }
           const tMin5 = document.getElementById('vessel-tick-min-5');
           if (tMin5) {
-            const minConf = _totalTrainMetrics.minConf !== null ? _totalTrainMetrics.minConf : (_trainMetricsState.trainMinConf !== null ? _trainMetricsState.trainMinConf : (trainConfPct || 0));
-            tMin5.title = `Mín Treino Total: ${minConf.toFixed(1)}%`;
+            const minEnt = _totalTrainMetrics.minEntropy !== null ? _totalTrainMetrics.minEntropy : (_trainMetricsState.minObservedEntropy !== null ? _trainMetricsState.minObservedEntropy : curEntropy);
+            tMin5.title = `Mín Entropia Observada: ${minEnt.toFixed(3)} nats`;
           }
 
-          // Card 6: Perda DPO Contrastiva
+          // Card 6: Memória SIL (Uso de Memória com referência visual de 1 GB)
           const valMax6 = document.getElementById('vessel-val-max-6');
           if (valMax6) {
-            const maxDpo = _totalTrainMetrics.maxDpo !== null ? _totalTrainMetrics.maxDpo : (_trainMetricsState.maxObservedDpo !== null ? _trainMetricsState.maxObservedDpo : (hasDpo ? curDpoNum : 0));
-            valMax6.innerText = isMini ? maxDpo.toFixed(2) : maxDpo.toFixed(3);
+            valMax6.innerText = isMini ? '1G' : '1 GB';
           }
           const valMin6 = document.getElementById('vessel-val-min-6');
           if (valMin6) {
-            const minDpo = _totalTrainMetrics.minDpo !== null ? _totalTrainMetrics.minDpo : (_trainMetricsState.minObservedDpo !== null ? _trainMetricsState.minObservedDpo : (hasDpo ? curDpoNum : 0));
-            valMin6.innerText = isMini ? minDpo.toFixed(2) : minDpo.toFixed(3);
+            valMin6.innerText = isMini ? '0' : '0 MB';
           }
           const tMax6 = document.getElementById('vessel-tick-max-6');
           if (tMax6) {
-            const maxDpo = _totalTrainMetrics.maxDpo !== null ? _totalTrainMetrics.maxDpo : (_trainMetricsState.maxObservedDpo !== null ? _trainMetricsState.maxObservedDpo : (hasDpo ? curDpoNum : 0));
-            tMax6.title = `Máx Treino Total: ${maxDpo.toFixed(3)}`;
+            tMax6.title = `Escala de Memória SIL: 1 GB (Uso atual: ${silMemMb.toFixed(1)} MB - sem limite real)`;
           }
           const tMin6 = document.getElementById('vessel-tick-min-6');
           if (tMin6) {
-            const minDpo = _totalTrainMetrics.minDpo !== null ? _totalTrainMetrics.minDpo : (_trainMetricsState.minObservedDpo !== null ? _trainMetricsState.minObservedDpo : (hasDpo ? curDpoNum : 0));
-            tMin6.title = `Mín Treino Total: ${minDpo.toFixed(3)}`;
+            tMin6.title = `Mínimo de Memória: 0 MB`;
           }
 
           // Persiste métricas cumulativas do Treino Total com throttling seguro
