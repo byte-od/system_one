@@ -75,10 +75,32 @@ class HUDProcessRunner:
 
         return True, f"Treino externo (PID {pid}) acoplado com sucesso ao HUD."
 
+    @staticmethod
+    def _is_valid_training_log(log_path: Optional[str]) -> bool:
+        """Verifica se um caminho de log corresponde de fato a uma sessão de treino do System 1."""
+        if not log_path or not os.path.exists(log_path):
+            return False
+        try:
+            if os.path.getsize(log_path) < 100:
+                return False
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                head = f.read(8192)
+                # Rejeita logs do próprio servidor HUD ou de outros comandos
+                if "VISUAL CONTROL HUD INICIALIZADO" in head:
+                    return False
+                return any(k in head for k in (
+                    "run_hybrid_v2", "Universal S1 Agent", "marathon", "Maratona",
+                    "INICIANDO MARATONA", "RecurrentPPOTrainer", "[Step "
+                ))
+        except Exception:
+            return False
+
     def auto_detect_external_training(self) -> bool:
         """Verifica se há algum script de treino do System 1 rodando no sistema e conecta automaticamente."""
-        if self.is_running():
-            return False
+        with self._lock:
+            # Se já está conectado ao PID e possui log válido, mantém conexão ativa
+            if self.is_running() and self.external_log_path and self._is_valid_training_log(self.external_log_path):
+                return True
 
         try:
             res = subprocess.run(["ps", "-eo", "pid,command"], capture_output=True, text=True, timeout=2.0)
@@ -88,7 +110,7 @@ class HUDProcessRunner:
             target_pid = None
             target_cmd = ""
             for line in res.stdout.splitlines():
-                if "python" in line and ("run_hybrid_v2" in line or "run_three_mechanisms" in line or "marathon" in line):
+                if "python" in line and ("run_hybrid_v2" in line or "run_three_mechanisms" in line or "marathon" in line or "scratch/run_" in line):
                     parts = line.strip().split(None, 1)
                     if len(parts) >= 2:
                         try:
@@ -103,11 +125,14 @@ class HUDProcessRunner:
             if target_pid is None:
                 return False
 
-            # Localiza o arquivo de log mais recente
+            # Localiza o arquivo de log mais recente que seja autenticamente do treino (e não do HUD)
             log_candidates = glob.glob(os.path.expanduser("~/.gemini/antigravity/brain/*/.system_generated/tasks/task-*.log"))
+            sorted_candidates = sorted(log_candidates, key=os.path.getmtime, reverse=True)
             latest_log = None
-            if log_candidates:
-                latest_log = max(log_candidates, key=os.path.getmtime)
+            for cand in sorted_candidates:
+                if self._is_valid_training_log(cand):
+                    latest_log = cand
+                    break
 
             cfg = {
                 "mode": "train",
@@ -117,6 +142,16 @@ class HUDProcessRunner:
                 "scar_memory": "hybrid_v2",
                 "cmd": target_cmd,
             }
+
+            with self._lock:
+                if self.external_pid == target_pid:
+                    # Já associado ao PID, atualiza ponteiro de log se estava incorreto
+                    if latest_log and self.external_log_path != latest_log:
+                        self.external_log_path = latest_log
+                        self._reader_thread = threading.Thread(target=self._tail_external_log, args=(latest_log,), daemon=True)
+                        self._reader_thread.start()
+                    return True
+
             success, _ = self.attach_external(target_pid, latest_log, cfg)
             return success
         except Exception:

@@ -379,8 +379,9 @@ class HUDServer:
         action_counter = 0
 
         while not self._stop_event.is_set():
-            if not self.runner.is_running() or not getattr(self.runner, "external_log_path", None):
-                time.sleep(0.5)
+            if not self.runner.is_running() or not getattr(self.runner, "external_log_path", None) or not getattr(self.runner, "_is_valid_training_log", lambda x: True)(self.runner.external_log_path):
+                self.runner.auto_detect_external_training()
+                time.sleep(1.0)
                 continue
 
             log_path = self.runner.external_log_path
@@ -389,23 +390,24 @@ class HUDServer:
                     with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
                         f.seek(0, os.SEEK_END)
                         size = f.tell()
-                        # Lê os últimos 32 KB para histórico recente
-                        f.seek(max(0, size - 32768))
+                        # Lê os últimos 128 KB para histórico recente e dados de maratona
+                        f.seek(max(0, size - 131072))
                         lines = f.readlines()
 
-                    current_steps = None
-                    current_return = 0.0
-                    current_calib = 1.0
-                    current_depth = 8
-                    current_scars = 0
-                    current_fps = 1759.0
-                    current_eta = "14.0h"
-                    current_w_norm = 2.32
-                    current_z_norm = 7.04
-                    current_g_norm = 18.93
-                    current_depth_best_return = 0.0
-                    promotions_count = 0
+                    current_steps = getattr(self, "_ext_steps", None)
+                    current_return = getattr(self, "_ext_return", 0.0)
+                    current_calib = getattr(self, "_ext_calib", 1.0)
+                    current_depth = getattr(self, "_ext_depth", 8)
+                    current_scars = getattr(self, "_ext_scars", 440000)
+                    current_fps = getattr(self, "_ext_fps", 1750.0)
+                    current_eta = getattr(self, "_ext_eta", "13.0h")
+                    current_w_norm = getattr(self, "_ext_w_norm", 2.26)
+                    current_z_norm = getattr(self, "_ext_z_norm", 7.18)
+                    current_g_norm = getattr(self, "_ext_g_norm", 19.70)
+                    current_depth_best_return = getattr(self, "_ext_best_ret", 0.0)
+                    promotions_count = getattr(self, "_ext_promos", 7)
 
+                    found_new_step = False
                     for line in reversed(lines):
                         m_step = step_pattern.search(line)
                         if m_step:
@@ -413,31 +415,46 @@ class HUDServer:
                             ret = float(m_step.group(2))
                             calib = float(m_step.group(3))
                             depth = int(m_step.group(4))
-                            if current_steps is None:
+                            if not found_new_step:
                                 current_steps = steps
                                 current_return = ret
                                 current_calib = calib
                                 current_depth = depth
-                                current_depth_best_return = ret
+                                current_depth_best_return = max(current_depth_best_return, ret)
+                                found_new_step = True
                             elif depth == current_depth:
                                 current_depth_best_return = max(current_depth_best_return, ret)
 
-                        if current_scars == 0:
-                            m_mar = marathon_pattern.search(line)
-                            if m_mar:
-                                if current_steps is None:
-                                    current_steps = int(m_mar.group(1).replace(",", ""))
-                                current_depth = int(m_mar.group(4))
-                                current_scars = int(m_mar.group(5).replace(",", ""))
-                                current_fps = float(m_mar.group(6))
-                                current_eta = m_mar.group(7)
-                                current_w_norm = float(m_mar.group(8))
-                                current_z_norm = float(m_mar.group(9))
-                                current_g_norm = float(m_mar.group(10))
+                        m_mar = marathon_pattern.search(line)
+                        if m_mar:
+                            if current_steps is None:
+                                current_steps = int(m_mar.group(1).replace(",", ""))
+                            current_depth = int(m_mar.group(4))
+                            current_scars = int(m_mar.group(5).replace(",", ""))
+                            current_fps = float(m_mar.group(6))
+                            current_eta = m_mar.group(7)
+                            current_w_norm = float(m_mar.group(8))
+                            current_z_norm = float(m_mar.group(9))
+                            current_g_norm = float(m_mar.group(10))
 
                     for line in lines:
                         if promo_pattern.search(line):
                             promotions_count += 1
+
+                    if current_steps is not None:
+                        # Salva estado persistente para amortecer oscilações de leitura
+                        self._ext_steps = current_steps
+                        self._ext_return = current_return
+                        self._ext_calib = current_calib
+                        self._ext_depth = current_depth
+                        self._ext_scars = current_scars
+                        self._ext_fps = current_fps
+                        self._ext_eta = current_eta
+                        self._ext_w_norm = current_w_norm
+                        self._ext_z_norm = current_z_norm
+                        self._ext_g_norm = current_g_norm
+                        self._ext_best_ret = current_depth_best_return
+                        self._ext_promos = promotions_count
 
                     if current_steps is not None:
                         # Taxa estimada de vitórias no patamar atual:
