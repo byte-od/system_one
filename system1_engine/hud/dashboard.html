@@ -2629,6 +2629,13 @@
               res.byLevel[k].maxWinRate = 0.0;
             }
           });
+          // Sanitização preventiva de FPS espúrio (>5000) oriundo de loops simulados
+          if (res.maxFps !== null && res.maxFps > 5000) {
+            res.maxFps = null;
+          }
+          if (res.minFps !== null && res.minFps > 5000) {
+            res.minFps = null;
+          }
           return res;
         }
       } catch (e) {
@@ -2795,13 +2802,20 @@
         const lm = getLevelMetrics(effLevel);
 
         // Card 1: Throughput (FPS) - Treino Total
-        if (m.maxFps !== null) {
-          const el = document.getElementById('vessel-val-max-1');
-          if (el) el.innerText = m.maxFps >= 1000 ? (m.maxFps / 1000).toFixed(1) + 'k' : m.maxFps.toFixed(0);
+        const maxFpsRef = Math.max(2500, (m.maxFps && m.maxFps <= 5000) ? m.maxFps : 0);
+        const el1 = document.getElementById('vessel-val-max-1');
+        if (el1) el1.innerText = maxFpsRef >= 1000 ? (maxFpsRef / 1000).toFixed(1) + 'k' : maxFpsRef.toFixed(0);
+        const elMin1 = document.getElementById('vessel-val-min-1');
+        if (elMin1) elMin1.innerText = '0';
+        const tMax1 = document.getElementById('vessel-tick-max-1');
+        if (tMax1) {
+          tMax1.title = `Escala de Throughput: ${maxFpsRef.toFixed(0)} FPS`;
+          tMax1.style.top = '12%';
         }
-        if (m.minFps !== null) {
-          const el = document.getElementById('vessel-val-min-1');
-          if (el) el.innerText = m.minFps >= 1000 ? (m.minFps / 1000).toFixed(1) + 'k' : m.minFps.toFixed(0);
+        const tMin1 = document.getElementById('vessel-tick-min-1');
+        if (tMin1) {
+          tMin1.title = 'Mínimo: 0 FPS';
+          tMin1.style.top = '88%';
         }
 
         // Card 2: Currículo / Win Rate - Filtrado por Nível (Pico do Patamar)
@@ -2821,49 +2835,71 @@
         if (tMax2) {
           const retStr = (lm.maxReturn !== null && lm.maxReturn !== undefined) ? ` | Melhor Ep: +${lm.maxReturn.toFixed(1)}` : '';
           tMax2.title = `Pico no patamar (${effLevel}): ${maxWr.toFixed(1)}%${retStr}`;
+          const wrRatio = Math.max(0.05, Math.min(1.0, maxWr / 100.0));
+          tMax2.style.top = `${100 - (12 + 76 * wrRatio)}%`;
         }
         const tMin2 = document.getElementById('vessel-tick-min-2');
-        if (tMin2) tMin2.title = `Mín (${effLevel}): 0%`;
+        if (tMin2) {
+          tMin2.title = `Mín (${effLevel}): 0%`;
+          tMin2.style.top = '88%';
+        }
 
         // Card 3: Ganho / Retorno - Filtrado por Nível
-        if (lm.maxReturn !== null) {
-          const el = document.getElementById('vessel-val-max-3');
-          if (el) el.innerText = `${lm.maxReturn >= 0 ? '+' : ''}${lm.maxReturn.toFixed(1)}`;
-        }
-        if (lm.minReturn !== null) {
-          const el = document.getElementById('vessel-val-min-3');
-          if (el) el.innerText = `${lm.minReturn >= 0 ? '+' : ''}${lm.minReturn.toFixed(1)}`;
-        }
+        const maxRet = (lm.maxReturn !== null && lm.maxReturn !== undefined) ? lm.maxReturn : 0.0;
+        const elMax3 = document.getElementById('vessel-val-max-3');
+        if (elMax3) elMax3.innerText = `${maxRet >= 0 ? '+' : ''}${maxRet.toFixed(1)}`;
+        const elMin3 = document.getElementById('vessel-val-min-3');
+        if (elMin3) elMin3.innerText = '0.0';
         const tMax3 = document.getElementById('vessel-tick-max-3');
-        if (tMax3 && lm.maxReturn !== null) tMax3.title = `Máx (${effLevel}): ${lm.maxReturn >= 0 ? '+' : ''}${lm.maxReturn.toFixed(2)}`;
+        if (tMax3) {
+          tMax3.title = `Máx (${effLevel}): ${maxRet >= 0 ? '+' : ''}${maxRet.toFixed(2)}`;
+          const retRatio = Math.max(0.05, Math.min(1.0, Math.max(0, maxRet) / 12.0));
+          tMax3.style.top = `${100 - (12 + 76 * retRatio)}%`;
+        }
         const tMin3 = document.getElementById('vessel-tick-min-3');
-        if (tMin3 && lm.minReturn !== null) tMin3.title = `Mín (${effLevel}): ${lm.minReturn >= 0 ? '+' : ''}${lm.minReturn.toFixed(2)}`;
+        if (tMin3) {
+          tMin3.title = `Base (${effLevel}): 0.0`;
+          tMin3.style.top = '88%';
+        }
 
         // Card 4: Loss (PPO) - Treino Total
-        if (m.maxLoss !== null) {
-          const el = document.getElementById('vessel-val-max-4');
-          if (el) el.innerText = m.maxLoss.toFixed(2);
-        }
-        if (m.minLoss !== null) {
-          const el = document.getElementById('vessel-val-min-4');
-          if (el) el.innerText = m.minLoss.toFixed(2);
-        }
+        const elMax4 = document.getElementById('vessel-val-max-4');
+        if (elMax4) elMax4.innerText = '0.100';
+        const elMin4 = document.getElementById('vessel-val-min-4');
+        if (elMin4) elMin4.innerText = '0.000';
+        const tMax4 = document.getElementById('vessel-tick-max-4');
+        if (tMax4) tMax4.style.top = '12%';
+        const tMin4 = document.getElementById('vessel-tick-min-4');
+        if (tMin4) tMin4.style.top = '88%';
 
         // Card 5: Saúde de Exploração (Entropia) - Treino Total
-        if (m.maxEntropy !== null) {
-          const el = document.getElementById('vessel-val-max-5');
-          if (el) el.innerText = m.maxEntropy.toFixed(2);
-        }
-        if (m.minEntropy !== null) {
-          const el = document.getElementById('vessel-val-min-5');
-          if (el) el.innerText = m.minEntropy.toFixed(2);
-        }
+        const elMax5 = document.getElementById('vessel-val-max-5');
+        if (elMax5) elMax5.innerText = '2.48';
+        const elMin5 = document.getElementById('vessel-val-min-5');
+        if (elMin5) elMin5.innerText = '0.00';
+        const tMax5 = document.getElementById('vessel-tick-max-5');
+        if (tMax5) tMax5.style.top = '12%';
+        const tMin5 = document.getElementById('vessel-tick-min-5');
+        if (tMin5) tMin5.style.top = '88%';
 
-        // Card 6: Memória SIL (Escala visual de 1 GB)
+        // Card 6: Memória de Cicatrizes O(1) / SIL
         const elMax6 = document.getElementById('vessel-val-max-6');
-        if (elMax6) elMax6.innerText = '1 GB';
         const elMin6 = document.getElementById('vessel-val-min-6');
-        if (elMin6) elMin6.innerText = '0 MB';
+        const tMax6 = document.getElementById('vessel-tick-max-6');
+        const tMin6 = document.getElementById('vessel-tick-min-6');
+        const curScars = m.maxSilWins || 0;
+        if (curScars > 0) {
+          const maxRef = curScars > 500000 ? '1M' : '500k';
+          if (elMax6) elMax6.innerText = maxRef;
+          if (elMin6) elMin6.innerText = '0';
+          if (tMax6) tMax6.title = `Capacidade da Escala: ${maxRef} cicatrizes O(1)`;
+          if (tMin6) tMin6.title = 'Base: 0 cicatrizes';
+        } else {
+          if (elMax6) elMax6.innerText = '1 GB';
+          if (elMin6) elMin6.innerText = '0 MB';
+        }
+        if (tMax6) tMax6.style.top = '12%';
+        if (tMin6) tMin6.style.top = '88%';
 
         // Badges e rótulos de nível
         const b3 = document.getElementById('train-metric-level-badge-3');
@@ -6042,9 +6078,15 @@
           // =========================================================
           // Atualização dos Recipientes de Líquidos Fluidos (Vessels)
           // =========================================================
+          // A faixa graduada do recipiente vai de 12% (base) até 88% (topo).
+          // Fórmula unificada: height = 12% + 76% * clamp(norm, 0, 1)
+
+          // 1. Throughput (FPS)
+          const maxFpsRef = Math.max(2500, (_totalTrainMetrics.maxFps && _totalTrainMetrics.maxFps <= 5000) ? _totalTrainMetrics.maxFps : 0, curFps * 1.25);
           const vLiquid1 = document.getElementById('vessel-liquid-1');
           if (vLiquid1) {
-            const lvl1 = Math.max(6, Math.min(100, pct));
+            const fpsNorm = Math.max(0, Math.min(1.0, curFps / maxFpsRef));
+            const lvl1 = Math.max(8, Math.min(94, 12 + 76 * fpsNorm));
             vLiquid1.style.height = `${lvl1}%`;
           }
 
@@ -6081,44 +6123,54 @@
           if (trainWinRate) trainWinRate.innerText = isMini ? `${Math.round(displayWr)}%` : `${displayWr.toFixed(1)}%`;
           if (trainRet) trainRet.innerText = isMini ? `${displayRet >= 0 ? '+' : ''}${displayRet.toFixed(1)}` : displayRet.toFixed(2);
 
+          // 2. Win Rate (0% a 100%)
           const vLiquid2 = document.getElementById('vessel-liquid-2');
           if (vLiquid2) {
-            const lvl2 = Math.max(6, Math.min(100, displayWr));
+            const wrNorm = Math.max(0, Math.min(1.0, displayWr / 100.0));
+            const lvl2 = Math.max(8, Math.min(94, 12 + 76 * wrNorm));
             vLiquid2.style.height = `${lvl2}%`;
           }
 
+          // 3. Retorno (0.0 a 12.0)
+          const cap3 = Math.max(12.0, effLm.maxReturn || 12.0);
           const vLiquid3 = document.getElementById('vessel-liquid-3');
           if (vLiquid3) {
-            const cap3 = Math.max(targetRet, effLm.maxReturn || targetRet);
-            const lvl3 = Math.max(6, Math.min(100, (Math.max(0, displayRet) / cap3) * 100));
+            const retNorm = Math.max(0, Math.min(1.0, Math.max(0, displayRet) / cap3));
+            const lvl3 = Math.max(8, Math.min(94, 12 + 76 * retNorm));
             vLiquid3.style.height = `${lvl3}%`;
           }
 
+          // 4. Perda PPO (0.000 a 0.100)
+          const maxLRef = Math.max(0.100, curLossNum * 1.5, avgLossNum * 1.5);
           const vLiquid4 = document.getElementById('vessel-liquid-4');
           if (vLiquid4) {
-            const lvl4 = Math.max(6, Math.min(100, lossCurPct));
+            const lossNorm = Math.max(0, Math.min(1.0, curLossNum / maxLRef));
+            const lvl4 = Math.max(8, Math.min(94, 12 + 76 * lossNorm));
             vLiquid4.style.height = `${lvl4}%`;
           }
 
+          // 5. Saúde de Exploração (0.00 a 2.485 nats)
           const vLiquid5 = document.getElementById('vessel-liquid-5');
           if (vLiquid5) {
-            // Entropia normalizada: 0.0 nats = 6%, 0.6 nats = 100%
-            const maxEntRef = Math.max(0.6, _trainMetricsState.maxObservedEntropy || 0.6);
-            const entLvl = Math.max(6, Math.min(100, (curEntropy / maxEntRef) * 100));
-            vLiquid5.style.height = `${entLvl}%`;
+            const maxEntRef = 2.485;
+            const entNorm = Math.max(0, Math.min(1.0, curEntropy / maxEntRef));
+            const lvl5 = Math.max(8, Math.min(94, 12 + 76 * entNorm));
+            vLiquid5.style.height = `${lvl5}%`;
           }
 
+          // 6. Memória de Cicatrizes O(1) ou SIL
           const vLiquid6 = document.getElementById('vessel-liquid-6');
           if (vLiquid6) {
             if (isScarMem) {
               const scars = Number(telemetry.scars_count !== undefined ? telemetry.scars_count : fullWins);
               const maxRef = scars > 500000 ? 1000000 : 500000;
-              const scarPct = Math.max(12, Math.min(100, (scars / maxRef) * 100));
-              vLiquid6.style.height = `${scarPct}%`;
+              const scarNorm = Math.max(0, Math.min(1.0, scars / maxRef));
+              const lvl6 = Math.max(8, Math.min(94, 12 + 76 * scarNorm));
+              vLiquid6.style.height = `${lvl6}%`;
             } else {
-              // Barra vertical de uso de memória SIL: escala de referência em 1 GB (1024 MB), apenas visual sem limite real
-              const memPct = Math.max(6, Math.min(100, (silMemMb / 1024) * 100));
-              vLiquid6.style.height = `${memPct}%`;
+              const memNorm = Math.max(0, Math.min(1.0, silMemMb / 1024));
+              const lvl6 = Math.max(8, Math.min(94, 12 + 76 * memNorm));
+              vLiquid6.style.height = `${lvl6}%`;
             }
           }
 
@@ -6129,25 +6181,19 @@
           // Card 1: Throughput (FPS)
           const valMax1 = document.getElementById('vessel-val-max-1');
           if (valMax1) {
-            const maxFps = _totalTrainMetrics.maxFps !== null ? _totalTrainMetrics.maxFps : (_trainMetricsState.maxObservedFps !== null ? _trainMetricsState.maxObservedFps : curFps);
-            valMax1.innerText = maxFps >= 1000 ? (maxFps / 1000).toFixed(1) + 'k' : maxFps.toFixed(0);
+            valMax1.innerText = maxFpsRef >= 1000 ? (maxFpsRef / 1000).toFixed(1) + 'k' : maxFpsRef.toFixed(0);
           }
           const valMin1 = document.getElementById('vessel-val-min-1');
-          if (valMin1) {
-            const minFps = _totalTrainMetrics.minFps !== null ? _totalTrainMetrics.minFps : (_trainMetricsState.minObservedFps !== null ? _trainMetricsState.minObservedFps : curFps);
-            valMin1.innerText = minFps >= 1000 ? (minFps / 1000).toFixed(1) + 'k' : minFps.toFixed(0);
-          }
+          if (valMin1) valMin1.innerText = '0';
           const tMax1 = document.getElementById('vessel-tick-max-1');
           if (tMax1) {
-            const maxFps = _totalTrainMetrics.maxFps !== null ? _totalTrainMetrics.maxFps : (_trainMetricsState.maxObservedFps !== null ? _trainMetricsState.maxObservedFps : curFps);
-            const maxFpsFmt = maxFps >= 1000 ? (maxFps / 1000).toFixed(1) + 'k' : maxFps.toFixed(0);
-            tMax1.title = `Máx Treino Total: ${maxFpsFmt} FPS`;
+            tMax1.title = `Escala de Throughput: ${maxFpsRef.toFixed(0)} FPS (Atual: ${curFps.toFixed(0)} FPS)`;
+            tMax1.style.top = '12%';
           }
           const tMin1 = document.getElementById('vessel-tick-min-1');
           if (tMin1) {
-            const minFps = _totalTrainMetrics.minFps !== null ? _totalTrainMetrics.minFps : (_trainMetricsState.minObservedFps !== null ? _trainMetricsState.minObservedFps : curFps);
-            const minFpsFmt = minFps >= 1000 ? (minFps / 1000).toFixed(1) + 'k' : minFps.toFixed(0);
-            tMin1.title = `Mín Treino Total: ${minFpsFmt} FPS`;
+            tMin1.title = 'Mínimo: 0 FPS';
+            tMin1.style.top = '88%';
           }
 
           // Card 2: Win Rate (%) - Régua Filtrada por Nível (Pico do Patamar)
@@ -6169,94 +6215,107 @@
           if (tMax2) {
             const bestRetStr = (effLm.maxReturn !== null && effLm.maxReturn !== undefined) ? ` | Melhor Ep: +${effLm.maxReturn.toFixed(1)}` : '';
             tMax2.title = `Pico no patamar (${effLevel}): ${effMaxWr.toFixed(1)}%${bestRetStr}`;
+            // Posiciona o tick no ponto exato do pico alcançado
+            const wrRatio = Math.max(0.05, Math.min(1.0, effMaxWr / 100.0));
+            tMax2.style.top = `${100 - (12 + 76 * wrRatio)}%`;
           }
           const tMin2 = document.getElementById('vessel-tick-min-2');
           if (tMin2) {
             tMin2.title = `Mín (${effLevel}): 0%`;
+            tMin2.style.top = '88%';
           }
 
           // Card 3: Retorno - Régua Filtrada por Nível
           const valMax3 = document.getElementById('vessel-val-max-3');
+          const maxRet = effLm.maxReturn !== null ? effLm.maxReturn : displayRet;
           if (valMax3) {
-            const maxRet = effLm.maxReturn !== null ? effLm.maxReturn : displayRet;
             valMax3.innerText = isMini ? `${maxRet >= 0 ? '+' : ''}${maxRet.toFixed(1)}` : `${maxRet >= 0 ? '+' : ''}${maxRet.toFixed(2)}`;
           }
           const valMin3 = document.getElementById('vessel-val-min-3');
           if (valMin3) {
-            const minRet = effLm.minReturn !== null ? effLm.minReturn : displayRet;
-            valMin3.innerText = isMini ? `${minRet >= 0 ? '+' : ''}${minRet.toFixed(1)}` : `${minRet >= 0 ? '+' : ''}${minRet.toFixed(2)}`;
+            valMin3.innerText = '0.0';
           }
           const tMax3 = document.getElementById('vessel-tick-max-3');
           if (tMax3) {
-            const maxRet = effLm.maxReturn !== null ? effLm.maxReturn : displayRet;
-            tMax3.title = `Máx (${effLevel}): ${maxRet.toFixed(2)}`;
+            tMax3.title = `Máx (${effLevel}): ${maxRet >= 0 ? '+' : ''}${maxRet.toFixed(2)}`;
+            const retRatio = Math.max(0.05, Math.min(1.0, Math.max(0, maxRet) / cap3));
+            tMax3.style.top = `${100 - (12 + 76 * retRatio)}%`;
           }
           const tMin3 = document.getElementById('vessel-tick-min-3');
           if (tMin3) {
-            const minRet = effLm.minReturn !== null ? effLm.minReturn : displayRet;
-            tMin3.title = `Mín (${effLevel}): ${minRet.toFixed(2)}`;
+            tMin3.title = `Base (${effLevel}): 0.0`;
+            tMin3.style.top = '88%';
           }
 
           // Card 4: Loss (Perdas PPO)
           const valMax4 = document.getElementById('vessel-val-max-4');
           if (valMax4) {
-            const maxL = _totalTrainMetrics.maxLoss !== null ? _totalTrainMetrics.maxLoss : (_trainMetricsState.maxObservedLoss !== null ? _trainMetricsState.maxObservedLoss : curLossNum);
-            valMax4.innerText = isMini ? maxL.toFixed(2) : maxL.toFixed(3);
+            valMax4.innerText = maxLRef.toFixed(3);
           }
           const valMin4 = document.getElementById('vessel-val-min-4');
           if (valMin4) {
-            const minL = _totalTrainMetrics.minLoss !== null ? _totalTrainMetrics.minLoss : (_trainMetricsState.minObservedLoss !== null ? _trainMetricsState.minObservedLoss : curLossNum);
-            valMin4.innerText = isMini ? minL.toFixed(2) : minL.toFixed(3);
+            valMin4.innerText = '0.000';
           }
           const tMax4 = document.getElementById('vessel-tick-max-4');
           if (tMax4) {
-            const maxL = _totalTrainMetrics.maxLoss !== null ? _totalTrainMetrics.maxLoss : (_trainMetricsState.maxObservedLoss !== null ? _trainMetricsState.maxObservedLoss : curLossNum);
-            tMax4.title = `Máx Treino Total: ${maxL.toFixed(3)}`;
+            tMax4.title = `Escala de Perda: ${valMax4 ? valMax4.innerText : '0.100'} (Atual: ${curLossNum.toFixed(3)})`;
+            tMax4.style.top = '12%';
           }
           const tMin4 = document.getElementById('vessel-tick-min-4');
           if (tMin4) {
-            const minL = _totalTrainMetrics.minLoss !== null ? _totalTrainMetrics.minLoss : (_trainMetricsState.minObservedLoss !== null ? _trainMetricsState.minObservedLoss : curLossNum);
-            tMin4.title = `Mín Treino Total: ${minL.toFixed(3)}`;
+            tMin4.title = 'Mínimo de Perda: 0.000';
+            tMin4.style.top = '88%';
           }
 
           // Card 5: Saúde de Exploração (Entropia)
           const valMax5 = document.getElementById('vessel-val-max-5');
           if (valMax5) {
-            const maxEnt = _totalTrainMetrics.maxEntropy !== null ? _totalTrainMetrics.maxEntropy : (_trainMetricsState.maxObservedEntropy !== null ? _trainMetricsState.maxObservedEntropy : curEntropy);
-            valMax5.innerText = maxEnt.toFixed(2);
+            valMax5.innerText = '2.48';
           }
           const valMin5 = document.getElementById('vessel-val-min-5');
           if (valMin5) {
-            const minEnt = _totalTrainMetrics.minEntropy !== null ? _totalTrainMetrics.minEntropy : (_trainMetricsState.minObservedEntropy !== null ? _trainMetricsState.minObservedEntropy : curEntropy);
-            valMin5.innerText = minEnt.toFixed(2);
+            valMin5.innerText = '0.00';
           }
           const tMax5 = document.getElementById('vessel-tick-max-5');
           if (tMax5) {
-            const maxEnt = _totalTrainMetrics.maxEntropy !== null ? _totalTrainMetrics.maxEntropy : (_trainMetricsState.maxObservedEntropy !== null ? _trainMetricsState.maxObservedEntropy : curEntropy);
-            tMax5.title = `Máx Entropia Observada: ${maxEnt.toFixed(3)} nats`;
+            tMax5.title = `Entropia Teórica Máxima: ln(12) = 2.485 nats (política uniforme)`;
+            tMax5.style.top = '12%';
           }
           const tMin5 = document.getElementById('vessel-tick-min-5');
           if (tMin5) {
-            const minEnt = _totalTrainMetrics.minEntropy !== null ? _totalTrainMetrics.minEntropy : (_trainMetricsState.minObservedEntropy !== null ? _trainMetricsState.minObservedEntropy : curEntropy);
-            tMin5.title = `Mín Entropia Observada: ${minEnt.toFixed(3)} nats`;
+            tMin5.title = `Colapso Determinístico: 0.00 nats (Piso ativo em 0.30)`;
+            tMin5.style.top = '88%';
           }
 
-          // Card 6: Memória SIL (Uso de Memória com referência visual de 1 GB)
+          // Card 6: Memória SIL ou Cicatrizes O(1)
           const valMax6 = document.getElementById('vessel-val-max-6');
-          if (valMax6) {
-            valMax6.innerText = isMini ? '1G' : '1 GB';
-          }
           const valMin6 = document.getElementById('vessel-val-min-6');
-          if (valMin6) {
-            valMin6.innerText = isMini ? '0' : '0 MB';
-          }
           const tMax6 = document.getElementById('vessel-tick-max-6');
-          if (tMax6) {
-            tMax6.title = `Escala de Memória SIL: 1 GB (Uso atual: ${silMemMb.toFixed(1)} MB - sem limite real)`;
-          }
           const tMin6 = document.getElementById('vessel-tick-min-6');
-          if (tMin6) {
-            tMin6.title = `Mínimo de Memória: 0 MB`;
+          if (isScarMem) {
+            const scars = Number(telemetry.scars_count !== undefined ? telemetry.scars_count : fullWins);
+            const maxRef = scars > 500000 ? 1000000 : 500000;
+            if (valMax6) valMax6.innerText = maxRef >= 1000000 ? '1M' : '500k';
+            if (valMin6) valMin6.innerText = '0';
+            if (tMax6) {
+              tMax6.title = `Escala de Cicatrizes: ${maxRef.toLocaleString()} (Atual: ${scars.toLocaleString()} cicatrizes O(1))`;
+              tMax6.style.top = '12%';
+            }
+            if (tMin6) {
+              tMin6.title = 'Zero cicatrizes';
+              tMin6.style.top = '88%';
+            }
+          } else {
+            if (valMax6) valMax6.innerText = isMini ? '1G' : '1 GB';
+            if (valMin6) valMin6.innerText = isMini ? '0' : '0 MB';
+            if (tMax6) {
+              tMax6.title = `Escala de Memória SIL: 1 GB (Uso atual: ${silMemMb.toFixed(1)} MB - sem limite real)`;
+              tMax6.style.top = '12%';
+            }
+            if (tMin6) {
+              tMin6.title = 'Mínimo de Memória: 0 MB';
+              tMin6.style.top = '88%';
+            }
           }
 
           // Persiste métricas cumulativas do Treino Total com throttling seguro
