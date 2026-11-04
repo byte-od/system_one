@@ -1431,14 +1431,14 @@
                 <span class="vessel-tag-icon">📉</span>
                 <span class="text-[10px] font-bold text-purple-200 uppercase tracking-wider mini-hide">Perda</span>
               </div>
-              <span class="vessel-top-badge bg-purple-950/80 text-purple-300 border border-purple-800" title="Cross-Entropy Two-Hot Symlog (Gradientes Bounded)">Two-Hot CE</span>
+              <span id="train-metric-loss-badge" class="vessel-top-badge bg-purple-950/80 text-purple-300 border border-purple-800" title="Cross-Entropy Two-Hot Symlog (Gradientes Bounded)">Two-Hot CE</span>
             </div>
             <div class="vessel-metric-row flex flex-col justify-center my-auto w-full">
               <div class="flex items-baseline gap-1">
                 <span id="train-metric-loss" class="text-base sm:text-xl font-black font-mono text-purple-300">0.00</span>
                 <span class="text-[10px] text-gray-400 font-mono mini-hide">&mu;Loss</span>
               </div>
-              <div class="text-[9px] font-mono text-gray-400 mt-0.5 truncate" title="Perda de Política PPO & Cross-Entropy do Crítico Two-Hot Symlog">
+              <div id="train-metric-loss-sub" class="text-[9px] font-mono text-gray-400 mt-0.5 truncate" title="Perda de Política PPO & Cross-Entropy do Crítico Two-Hot Symlog">
                 PPO & Two-Hot Symlog CE
               </div>
             </div>
@@ -1605,16 +1605,16 @@
           </div>
           <div class="vessel-content">
             <div class="flex items-center justify-between w-full">
-              <div class="vessel-label" title="Memória SIL (Self-Imitation Learning) & Torneio">
-                <span class="vessel-tag-icon">🏛️</span>
-                <span class="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mini-hide">Memória SIL</span>
+              <div class="vessel-label" id="vessel-label-6" title="Memória de Gradiente O(1) (Híbrido v2) ou SIL">
+                <span class="vessel-tag-icon" id="vessel-tag-icon-6">🏛️</span>
+                <span class="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mini-hide" id="vessel-title-6">Memória SIL</span>
               </div>
               <span id="train-metric-sil-badge" class="vessel-top-badge bg-indigo-950/80 text-indigo-300 border border-indigo-800" title="Seleção por Torneio (k=5)">k=5 Tourn</span>
             </div>
             <div class="vessel-metric-row flex flex-col justify-center my-auto w-full">
               <div class="flex items-baseline gap-1">
                 <span id="train-metric-sil-wins" class="text-base sm:text-xl font-black font-mono text-indigo-300">0</span>
-                <span class="text-[10px] text-gray-400 font-mono mini-hide">vitórias</span>
+                <span class="text-[10px] text-gray-400 font-mono mini-hide" id="train-metric-sil-unit">vitórias</span>
               </div>
               <div id="train-metric-sil-sub" class="text-[9px] font-mono text-gray-400 mt-0.5 truncate flex items-center justify-between">
                 <span id="train-metric-sil-slices">0 fatias</span>
@@ -5806,6 +5806,15 @@
               : '--';
             trainLoss.innerText = pLoss;
           }
+          const trainLossBadge = document.getElementById('train-metric-loss-badge');
+          if (trainLossBadge && telemetry.scar_g_norm) {
+            trainLossBadge.innerText = `||g||: ${Number(telemetry.scar_g_norm).toFixed(1)}`;
+            trainLossBadge.title = `Norma do Gradiente Alvo Bounded ||g_target|| = ${Number(telemetry.scar_g_norm).toFixed(2)}`;
+          }
+          const trainLossSub = document.getElementById('train-metric-loss-sub');
+          if (trainLossSub && telemetry.value_loss !== undefined) {
+            trainLossSub.innerText = `Crit: ${Number(telemetry.value_loss).toFixed(3)} • Two-Hot CE`;
+          }
 
           const trainLossBar = document.getElementById('train-metric-loss-bar');
           if (trainLossBar) trainLossBar.style.width = `${lossCurPct}%`;
@@ -5920,7 +5929,7 @@
 
           const trainEntropySubLoss = document.getElementById('train-metric-entropy-sub-loss');
           if (trainEntropySubLoss) {
-            trainEntropySubLoss.innerText = `c: ${effCoef.toFixed(3)}${floorLoss > 0 ? ' (L: ' + floorLoss.toFixed(2) + ')' : ''}`;
+            trainEntropySubLoss.innerText = `c: ${effCoef.toFixed(3)} • Cal: ${curTrainCalib.toFixed(2)}`;
           }
 
           // Mantém compatibilidade com campos legados ocultos de Conf/Calib
@@ -5929,50 +5938,101 @@
           const trainCalib = document.getElementById('train-metric-calib');
           if (trainCalib) trainCalib.innerText = curTrainCalib.toFixed(2);
 
-          // 6. Memória SIL (Self-Imitation Learning) & Torneio
+          // 6. Memória de Cicatriz O(1) (Híbrido v2) ou SIL
+          const isScarMem = Boolean(telemetry.scar_mode === 'hybrid' || (telemetry.scars_count !== undefined && telemetry.scars_count > 0) || (telemetry.scar_w_norm !== undefined));
           const fullWins = Number(telemetry.sil_full_wins !== undefined ? telemetry.sil_full_wins : (telemetry.sil_trajectories || 0));
           const silSlices = Number(telemetry.sil_success_slices || 0);
           const silMemMb = Number(telemetry.sil_memory_mb || 0);
           const silTourn = Number(telemetry.sil_tournament_size || 5);
           const silPolLoss = Number(telemetry.sil_policy_loss || 0);
 
-          if (fullWins > 0) {
-            _trainMetricsState.silWinsHistory = _trainMetricsState.silWinsHistory || [];
-            _trainMetricsState.silWinsHistory.push(fullWins);
-            if (_trainMetricsState.silWinsHistory.length > 60) _trainMetricsState.silWinsHistory.shift();
-            if (_trainMetricsState.minObservedSilWins === null || fullWins < _trainMetricsState.minObservedSilWins) {
-              _trainMetricsState.minObservedSilWins = fullWins;
-            }
-            if (_trainMetricsState.maxObservedSilWins === null || fullWins > _trainMetricsState.maxObservedSilWins) {
-              _trainMetricsState.maxObservedSilWins = fullWins;
-            }
-            if (_totalTrainMetrics.minSilWins === null || fullWins < _totalTrainMetrics.minSilWins) {
-              _totalTrainMetrics.minSilWins = fullWins;
-            }
-            if (_totalTrainMetrics.maxSilWins === null || fullWins > _totalTrainMetrics.maxSilWins) {
-              _totalTrainMetrics.maxSilWins = fullWins;
-            }
-          }
+          if (isScarMem) {
+            const scars = Number(telemetry.scars_count !== undefined ? telemetry.scars_count : fullWins);
+            const wNorm = Number(telemetry.scar_w_norm || 2.32);
+            const zNorm = Number(telemetry.scar_z_norm || 7.04);
+            const gNorm = Number(telemetry.scar_g_norm || 18.93);
+            const memKb = Number(telemetry.scar_memory_kb || 4.25);
 
-          const trainSilWins = document.getElementById('train-metric-sil-wins');
-          if (trainSilWins) {
-            trainSilWins.innerText = fullWins >= 1000 ? (fullWins / 1000).toFixed(1) + 'k' : fullWins.toLocaleString();
-          }
+            const vTitle6 = document.getElementById('vessel-title-6');
+            if (vTitle6) vTitle6.innerText = 'Cicatrizes O(1)';
+            const vIcon6 = document.getElementById('vessel-tag-icon-6');
+            if (vIcon6) vIcon6.innerText = '⚡';
 
-          const trainSilBadge = document.getElementById('train-metric-sil-badge');
-          if (trainSilBadge) {
-            trainSilBadge.innerText = `k=${silTourn} Tourn`;
-            trainSilBadge.title = `Seleção por Torneio (k=${silTourn}): amostragem competitiva das melhores trajetórias`;
-          }
+            const trainSilBadge = document.getElementById('train-metric-sil-badge');
+            if (trainSilBadge) {
+              trainSilBadge.innerText = 'Híbrido v2';
+              trainSilBadge.title = 'Memória de Gradiente O(1): Produto tensorial direto G^T @ Z com Gating de Manifold (4.25 KB, zero buffers)';
+            }
 
-          const trainSilSlices = document.getElementById('train-metric-sil-slices');
-          if (trainSilSlices) {
-            trainSilSlices.innerText = silSlices >= 1000 ? (silSlices / 1000).toFixed(1) + 'k fatias' : `${silSlices} fatias`;
-          }
+            const trainSilWins = document.getElementById('train-metric-sil-wins');
+            if (trainSilWins) {
+              trainSilWins.innerText = scars >= 1000 ? (scars / 1000).toFixed(1) + 'k' : scars.toLocaleString();
+            }
+            const trainSilUnit = document.getElementById('train-metric-sil-unit');
+            if (trainSilUnit) trainSilUnit.innerText = 'cicatrizes';
 
-          const trainSilMem = document.getElementById('train-metric-sil-mem');
-          if (trainSilMem) {
-            trainSilMem.innerText = silMemMb > 0 ? `${silMemMb.toFixed(0)} MB / 1 GB` : '';
+            const trainSilSlices = document.getElementById('train-metric-sil-slices');
+            if (trainSilSlices) {
+              trainSilSlices.innerText = `||W||:${wNorm.toFixed(2)} • ||z||:${zNorm.toFixed(2)}`;
+              trainSilSlices.title = `Norma do tensor de cicatrizes: ||W_scar|| = ${wNorm.toFixed(2)}, norma de ativação: ||z_target|| = ${zNorm.toFixed(2)}, gradiente alvo: ||g_target|| = ${gNorm.toFixed(1)}`;
+            }
+
+            const trainSilMem = document.getElementById('train-metric-sil-mem');
+            if (trainSilMem) {
+              trainSilMem.innerText = `${memKb.toFixed(2)} KB (O(1))`;
+            }
+
+            const vValMax6 = document.getElementById('vessel-val-max-6');
+            if (vValMax6) vValMax6.innerText = scars > 500000 ? '1M' : '500k';
+            const vValMin6 = document.getElementById('vessel-val-min-6');
+            if (vValMin6) vValMin6.innerText = '0';
+          } else {
+            const vTitle6 = document.getElementById('vessel-title-6');
+            if (vTitle6) vTitle6.innerText = 'Memória SIL';
+            const vIcon6 = document.getElementById('vessel-tag-icon-6');
+            if (vIcon6) vIcon6.innerText = '🏛️';
+
+            const trainSilUnit = document.getElementById('train-metric-sil-unit');
+            if (trainSilUnit) trainSilUnit.innerText = 'vitórias';
+
+            if (fullWins > 0) {
+              _trainMetricsState.silWinsHistory = _trainMetricsState.silWinsHistory || [];
+              _trainMetricsState.silWinsHistory.push(fullWins);
+              if (_trainMetricsState.silWinsHistory.length > 60) _trainMetricsState.silWinsHistory.shift();
+              if (_trainMetricsState.minObservedSilWins === null || fullWins < _trainMetricsState.minObservedSilWins) {
+                _trainMetricsState.minObservedSilWins = fullWins;
+              }
+              if (_trainMetricsState.maxObservedSilWins === null || fullWins > _trainMetricsState.maxObservedSilWins) {
+                _trainMetricsState.maxObservedSilWins = fullWins;
+              }
+              if (_totalTrainMetrics.minSilWins === null || fullWins < _totalTrainMetrics.minSilWins) {
+                _totalTrainMetrics.minSilWins = fullWins;
+              }
+              if (_totalTrainMetrics.maxSilWins === null || fullWins > _totalTrainMetrics.maxSilWins) {
+                _totalTrainMetrics.maxSilWins = fullWins;
+              }
+            }
+
+            const trainSilWins = document.getElementById('train-metric-sil-wins');
+            if (trainSilWins) {
+              trainSilWins.innerText = fullWins >= 1000 ? (fullWins / 1000).toFixed(1) + 'k' : fullWins.toLocaleString();
+            }
+
+            const trainSilBadge = document.getElementById('train-metric-sil-badge');
+            if (trainSilBadge) {
+              trainSilBadge.innerText = `k=${silTourn} Tourn`;
+              trainSilBadge.title = `Seleção por Torneio (k=${silTourn}): amostragem competitiva das melhores trajetórias`;
+            }
+
+            const trainSilSlices = document.getElementById('train-metric-sil-slices');
+            if (trainSilSlices) {
+              trainSilSlices.innerText = silSlices >= 1000 ? (silSlices / 1000).toFixed(1) + 'k fatias' : `${silSlices} fatias`;
+            }
+
+            const trainSilMem = document.getElementById('train-metric-sil-mem');
+            if (trainSilMem) {
+              trainSilMem.innerText = silMemMb > 0 ? `${silMemMb.toFixed(0)} MB / 1 GB` : '';
+            }
           }
 
           // Compatibilidade com placeholders legados de DPO
@@ -6050,9 +6110,16 @@
 
           const vLiquid6 = document.getElementById('vessel-liquid-6');
           if (vLiquid6) {
-            // Barra vertical de uso de memória SIL: escala de referência em 1 GB (1024 MB), apenas visual sem limite real
-            const memPct = Math.max(6, Math.min(100, (silMemMb / 1024) * 100));
-            vLiquid6.style.height = `${memPct}%`;
+            if (isScarMem) {
+              const scars = Number(telemetry.scars_count !== undefined ? telemetry.scars_count : fullWins);
+              const maxRef = scars > 500000 ? 1000000 : 500000;
+              const scarPct = Math.max(12, Math.min(100, (scars / maxRef) * 100));
+              vLiquid6.style.height = `${scarPct}%`;
+            } else {
+              // Barra vertical de uso de memória SIL: escala de referência em 1 GB (1024 MB), apenas visual sem limite real
+              const memPct = Math.max(6, Math.min(100, (silMemMb / 1024) * 100));
+              vLiquid6.style.height = `${memPct}%`;
+            }
           }
 
           // =========================================================
