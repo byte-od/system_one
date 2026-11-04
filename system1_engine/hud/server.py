@@ -452,7 +452,8 @@ class HUDServer:
                                 if current_steps is None:
                                     current_steps = mar_steps
                                 marathon_base_steps = mar_steps
-                                current_depth = int(m_mar.group(4))
+                                if not found_new_step:
+                                    current_depth = int(m_mar.group(4))
                                 current_scars = int(m_mar.group(5).replace(",", ""))
                                 current_eta = m_mar.group(7)
                                 current_w_norm = float(m_mar.group(8))
@@ -526,11 +527,11 @@ class HUDServer:
                         if recent_returns_current_depth:
                             sample_window = recent_returns_current_depth[-15:]
                             mean_ret_window = sum(sample_window) / len(sample_window)
-                            base_win_rate = min(1.0, max(0.0, mean_ret_window / 10.0))
+                            base_win_rate = min(1.0, max(0.0, (mean_ret_window - 1.0) / 10.0))
                             best_ret_curr_depth = max(recent_returns_current_depth)
-                            best_sr = min(1.0, max(base_win_rate, best_ret_curr_depth / 10.0))
+                            best_sr = min(1.0, max(base_win_rate, (best_ret_curr_depth - 1.0) / 10.0))
                         else:
-                            base_win_rate = min(1.0, max(0.0, current_return / 10.0))
+                            base_win_rate = min(1.0, max(0.0, (current_return - 1.0) / 10.0))
                             best_sr = base_win_rate
 
                         cur_sr = min(1.0, max(0.0, base_win_rate))
