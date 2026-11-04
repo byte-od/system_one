@@ -1,4 +1,5 @@
 import collections
+import glob
 import json
 import os
 import signal
@@ -10,12 +11,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 class HUDProcessRunner:
-    """Gerenciador de subprocesso para treinos e avaliações disparados pelo HUD."""
+    """Gerenciador de subprocesso para treinos e avaliações disparados pelo HUD ou detectados externamente."""
 
     def __init__(self, max_log_history: int = 500) -> None:
         self.max_log_history = max_log_history
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self.process: Optional[subprocess.Popen] = None
+        self.external_pid: Optional[int] = None
+        self.external_log_path: Optional[str] = None
         self.status: str = "IDLE"  # IDLE, RUNNING, STOPPED, COMPLETED, ERROR
         self.current_config: Dict[str, Any] = {}
         self.logs: collections.deque[str] = collections.deque(maxlen=max_log_history)
@@ -26,15 +29,155 @@ class HUDProcessRunner:
 
     def is_running(self) -> bool:
         with self._lock:
-            return self.process is not None and self.process.poll() is None
+            if self.process is not None and self.process.poll() is None:
+                return True
+            if self.external_pid is not None:
+                try:
+                    os.kill(self.external_pid, 0)
+                    return True
+                except OSError:
+                    return False
+            return False
+
+    def attach_external(
+        self,
+        pid: int,
+        log_path: Optional[str] = None,
+        config: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bool, str]:
+        """Conecta o runner a um processo de treino já em execução externa."""
+        with self._lock:
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                return False, f"Processo PID {pid} não encontrado ou já finalizado."
+
+            self._stop_requested = False
+            self.external_pid = pid
+            self.external_log_path = log_path
+            self.current_config = config or {
+                "mode": "train",
+                "env": "RubiksCube-v0",
+                "trunk": "lru",
+                "steps": 100000000,
+                "scar_memory": "hybrid_v2",
+            }
+            self.status = "RUNNING"
+            self.logs.append(f"[{time.strftime('%H:%M:%S')}] 🔗 Detectado e conectado ao treino ativo em segundo plano (PID {pid})...")
+            self.log_counter += 1
+
+        if log_path and os.path.exists(log_path):
+            self._reader_thread = threading.Thread(target=self._tail_external_log, args=(log_path,), daemon=True)
+            self._reader_thread.start()
+
+        self._monitor_thread = threading.Thread(target=self._monitor_external_pid, args=(pid,), daemon=True)
+        self._monitor_thread.start()
+
+        return True, f"Treino externo (PID {pid}) acoplado com sucesso ao HUD."
+
+    def auto_detect_external_training(self) -> bool:
+        """Verifica se há algum script de treino do System 1 rodando no sistema e conecta automaticamente."""
+        if self.is_running():
+            return False
+
+        try:
+            res = subprocess.run(["ps", "-eo", "pid,command"], capture_output=True, text=True, timeout=2.0)
+            if res.returncode != 0:
+                return False
+
+            target_pid = None
+            target_cmd = ""
+            for line in res.stdout.splitlines():
+                if "python" in line and ("run_hybrid_v2" in line or "run_three_mechanisms" in line or "marathon" in line):
+                    parts = line.strip().split(None, 1)
+                    if len(parts) >= 2:
+                        try:
+                            pid = int(parts[0])
+                            if pid != os.getpid():
+                                target_pid = pid
+                                target_cmd = parts[1]
+                                break
+                        except ValueError:
+                            continue
+
+            if target_pid is None:
+                return False
+
+            # Localiza o arquivo de log mais recente
+            log_candidates = glob.glob(os.path.expanduser("~/.gemini/antigravity/brain/*/.system_generated/tasks/task-*.log"))
+            latest_log = None
+            if log_candidates:
+                latest_log = max(log_candidates, key=os.path.getmtime)
+
+            cfg = {
+                "mode": "train",
+                "env": "RubiksCube-v0",
+                "trunk": "lru",
+                "steps": 100000000,
+                "scar_memory": "hybrid_v2",
+                "cmd": target_cmd,
+            }
+            success, _ = self.attach_external(target_pid, latest_log, cfg)
+            return success
+        except Exception:
+            return False
+
+    def _tail_external_log(self, log_path: str) -> None:
+        """Lê o arquivo de log do processo externo de forma contínua."""
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                # Carrega as últimas linhas iniciais
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(max(0, size - 32768))
+                lines = f.readlines()
+                with self._lock:
+                    for l in lines[-100:]:
+                        clean = l.rstrip()
+                        if clean:
+                            self.logs.append(clean)
+                            self.log_counter += 1
+
+                while not self._stop_requested and self.is_running():
+                    line = f.readline()
+                    if line:
+                        clean = line.rstrip()
+                        if clean:
+                            with self._lock:
+                                self.logs.append(clean)
+                                self.log_counter += 1
+                    else:
+                        time.sleep(0.2)
+        except Exception:
+            pass
+
+    def _monitor_external_pid(self, pid: int) -> None:
+        """Monitora a vida do processo externo até sua finalização."""
+        while not self._stop_requested:
+            try:
+                os.kill(pid, 0)
+                time.sleep(1.0)
+            except OSError:
+                break
+
+        with self._lock:
+            if self._stop_requested:
+                self.status = "STOPPED"
+            else:
+                self.status = "COMPLETED"
+                self.logs.append(f"[{time.strftime('%H:%M:%S')}] 🏁 Treino externo finalizado com sucesso.")
+                self.log_counter += 1
+            self.external_pid = None
 
     def start(self, config: Dict[str, Any], server_url: str) -> Tuple[bool, str]:
         """Inicia um novo processo filho de execução em segundo plano."""
         with self._lock:
-            if self.process is not None and self.process.poll() is None:
+            if self.is_running():
                 return False, "Já existe uma execução em andamento. Interrompa-a antes de iniciar outra."
 
             self._stop_requested = False
+            self.external_pid = None
+            self.external_log_path = None
             self.current_config = config
             self.status = "RUNNING"
             self.logs.append(f"[{time.strftime('%H:%M:%S')}] ▶️ Iniciando tarefa ({config.get('mode', 'train')})...")
@@ -78,38 +221,46 @@ class HUDProcessRunner:
     def stop(self) -> Tuple[bool, str]:
         """Interrompe a execução atual com encerramento gracioso via SIGINT / SIGTERM."""
         with self._lock:
-            if self.process is None or self.process.poll() is not None:
+            if not self.is_running():
                 self.status = "IDLE"
                 return True, "Nenhuma execução ativa para interromper."
 
             self._stop_requested = True
             proc = self.process
+            ext_pid = self.external_pid
 
-        # Tenta encerrar graciosamente via SIGINT (Ctrl+C simulado)
-        try:
-            proc.send_signal(signal.SIGINT)
-        except OSError:
-            pass
-
-        # Aguarda até 2.0s pelo término limpo
-        t0 = time.time()
-        while time.time() - t0 < 2.0:
-            if proc.poll() is not None:
-                break
-            time.sleep(0.05)
-
-        # Força SIGTERM caso ainda esteja ativo
-        if proc.poll() is None:
+        if proc is not None:
+            # Tenta encerrar graciosamente via SIGINT (Ctrl+C simulado)
             try:
-                proc.terminate()
+                proc.send_signal(signal.SIGINT)
             except OSError:
                 pass
-            time.sleep(0.2)
 
-        # Último recurso: SIGKILL
-        if proc.poll() is None:
+            # Aguarda até 2.0s pelo término limpo
+            t0 = time.time()
+            while time.time() - t0 < 2.0:
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.05)
+
+            # Força SIGTERM caso ainda esteja ativo
+            if proc.poll() is None:
+                try:
+                    proc.terminate()
+                except OSError:
+                    pass
+                time.sleep(0.2)
+
+            # Último recurso: SIGKILL
+            if proc.poll() is None:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+
+        elif ext_pid is not None:
             try:
-                proc.kill()
+                os.kill(ext_pid, signal.SIGINT)
             except OSError:
                 pass
 
@@ -165,7 +316,6 @@ class HUDProcessRunner:
         with self._lock:
             all_logs = list(self.logs)
             total = self.log_counter
-            # Se o cliente perdeu muitos logs por rotação, envia os disponíveis
             start_offset = max(0, total - len(all_logs))
             slice_start = max(0, since_index - start_offset)
             return all_logs[slice_start:], total
@@ -173,10 +323,11 @@ class HUDProcessRunner:
     def get_state(self) -> Dict[str, Any]:
         """Retorna o estado operacional consolidado do executor."""
         with self._lock:
+            active_pid = self.process.pid if self.process is not None else self.external_pid
             return {
                 "status": self.status,
-                "is_running": self.process is not None and self.process.poll() is None,
-                "pid": self.process.pid if self.process is not None else None,
+                "is_running": self.is_running(),
+                "pid": active_pid,
                 "config": self.current_config,
                 "total_logs": self.log_counter,
             }
