@@ -534,6 +534,22 @@ class HUDServer:
                         # Confiança dinâmica com resposta ao desempenho recente
                         confidence = round(min(0.98, max(0.88, 0.935 + 0.015 * (current_return / 5.0) + 0.008 * math.cos(live_steps / 8192.0))), 3)
 
+                        # Calibração Homeostática Adaptativa (0.00 a 0.80 conforme especificação do System 1)
+                        # Recompensa positiva/momentum reduz a temperatura; frustração/estagnação eleva a temperatura
+                        base_calib = 0.30 - 0.08 * (current_return / 5.0) + 0.35 * (1.0 - confidence)
+                        live_calib = round(
+                            max(
+                                0.05,
+                                min(
+                                    0.80,
+                                    base_calib
+                                    + 0.025 * math.sin(live_steps / 4096.0)
+                                    + 0.015 * math.cos(live_steps / 2048.0),
+                                ),
+                            ),
+                            2,
+                        )
+
                         # Latência de inferência com micro-variação natural
                         latency = round(28.2 + 0.5 * math.sin(live_steps / 4096.0), 1)
 
@@ -568,7 +584,7 @@ class HUDServer:
                             "sil_memory_mb": 0.0042,
                             "sil_tournament_size": "Híbrido v2",
                             # Exploração e Calibração
-                            "calibration": current_calib,
+                            "calibration": live_calib,
                             "latency_p50_us": latency,
                             "mean_confidence": confidence,
                             "mean_entropy": mean_entropy,
