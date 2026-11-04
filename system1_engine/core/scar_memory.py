@@ -11,8 +11,9 @@ Implementa as três abordagens proprietárias:
   2. mode="dual_gradient" (Mecanismo 2):
      Vetor acumulado g_alvo* in R^D de direções de sucesso. Avalia gradiente local
      g_local = grad_z V(z) em tempo de decisão e computa produto cruzado / cosseno.
-  3. mode="hybrid" (Opção Híbrida):
-     Combina W_scar com g_alvo*. Modula o espaço de slots via W_scar e calcula a
+  3. mode="hybrid" (Opção Híbrida v2 Refinada):
+     Combina W_scar com g_alvo* e z_alvo*. Modula o espaço de slots via W_scar condicional
+     à similaridade com o manifold de vitórias (Gated Activation) e calcula a
      ressonância escalar diretamente a partir de Delta z sem exigir backward no rollout.
 """
 
@@ -51,6 +52,7 @@ class GradientScarMemory(nn.Module):
         # Buffers constantes O(1)
         self.register_buffer("W_scar", torch.zeros(slot_dim, slot_dim))
         self.register_buffer("g_target", torch.zeros(slot_dim))
+        self.register_buffer("z_target", torch.zeros(slot_dim))
         self.register_buffer("scars_count", torch.tensor(0, dtype=torch.long))
         self.register_buffer("total_surprise_accum", torch.tensor(0.0, dtype=torch.float32))
 
@@ -63,8 +65,8 @@ class GradientScarMemory(nn.Module):
             return int(self.W_scar.numel() * 4)  # 4.096 bytes (4.1 KB)
         if self.mode == "dual_gradient":
             return int(self.g_target.numel() * 4)  # 128 bytes
-        # hybrid
-        return int((self.W_scar.numel() + self.g_target.numel()) * 4)  # 4.224 bytes
+        # hybrid v2: W_scar (4096) + g_target (128) + z_target (128) = 4352 bytes (4.25 KB)
+        return int((self.W_scar.numel() + self.g_target.numel() + self.z_target.numel()) * 4)
 
     @property
     def has_fast_weights(self) -> bool:
@@ -80,47 +82,89 @@ class GradientScarMemory(nn.Module):
         grad_slots: torch.Tensor,
         surprise: float,
     ) -> None:
-        """Acumula a cicatriz de uma vitória com ponderação por surpresa de Shannon."""
+        """Acumula a cicatriz de uma vitória com ponderação por surpresa de Shannon.
+        
+        Solução Fricção A: Usa Produto Tensorial Direto (G^T @ Z) entre slots para
+        eliminar o cancelamento destrutivo de gradientes opostos e projeção construtiva.
+        """
         if self.mode == "none":
             return
 
         with torch.no_grad():
-            # Média sobre dimensões batch/time/slots se presentes
-            z_mean = slots
-            while z_mean.dim() > 1:
-                z_mean = z_mean.mean(dim=0)
-            
-            g_mean = grad_slots
-            while g_mean.dim() > 1:
-                g_mean = g_mean.mean(dim=0)
+            # slots: [..., num_slots, slot_dim] -> achata batch/tempo se presentes
+            if slots.dim() > 2:
+                z_slots = slots.reshape(-1, self.num_slots, self.slot_dim).mean(dim=0)
+                g_slots = grad_slots.reshape(-1, self.num_slots, self.slot_dim).mean(dim=0)
+            elif slots.dim() == 2:
+                z_slots = slots
+                g_slots = grad_slots
+            else:
+                z_slots = slots.unsqueeze(0)
+                g_slots = grad_slots.unsqueeze(0)
 
-            norm_z = z_mean / (torch.norm(z_mean) + 1e-6)
-            norm_g = g_mean / (torch.norm(g_mean) + 1e-6)
+            # Normalização L2 por slot: shape [num_slots, slot_dim]
+            norm_z = z_slots / (torch.norm(z_slots, dim=-1, keepdim=True) + 1e-6)
+            norm_g = g_slots / (torch.norm(g_slots, dim=-1, keepdim=True) + 1e-6)
 
             # Ponderação pela surpresa de Shannon (bits de informação)
             weight = float(min(max(surprise, 0.1), 5.0) * 0.05)
 
             if self.has_fast_weights:
-                dW = torch.outer(norm_g, norm_z)
+                # Solução Fricção A: dW = (1/K) * G^T @ Z
+                # norm_g.t() [32, 8] @ norm_z [8, 32] -> dW [32, 32]
+                # Preserva o contraste relacional individual de cada slot sem cancelamento mútuo!
+                dW = torch.matmul(norm_g.t(), norm_z) / float(self.num_slots)
                 self.W_scar.mul_(self.decay).add_(dW, alpha=weight)
 
             if self.has_resonance:
-                self.g_target.mul_(self.decay).add_(norm_g, alpha=weight)
+                # Projeção construtiva (estilo PCGrad) dos slots para o vetor consenso g_target
+                norm_current_t = self.g_target / (torch.norm(self.g_target) + 1e-6)
+                g_consensus = torch.zeros(self.slot_dim, device=slots.device, dtype=torch.float32)
+                for k in range(self.num_slots):
+                    gk = norm_g[k]
+                    if int(self.scars_count.item()) > 0:
+                        cos_sim = torch.dot(gk, norm_current_t)
+                        if cos_sim < 0.0:
+                            # Projeta ortogonalmente para não subtrair da direção consensual de vitória
+                            gk = gk - cos_sim * norm_current_t
+                    g_consensus.add_(gk)
+                g_consensus = g_consensus / float(self.num_slots)
+                norm_g_c = g_consensus / (torch.norm(g_consensus) + 1e-6)
+                self.g_target.mul_(self.decay).add_(norm_g_c, alpha=weight)
+
+            # Solução Fricção B: Atualiza o centróide do manifold de estado de vitória z_target
+            z_consensus = norm_z.mean(dim=0)
+            norm_z_c = z_consensus / (torch.norm(z_consensus) + 1e-6)
+            self.z_target.mul_(self.decay).add_(norm_z_c, alpha=weight)
 
             self.scars_count.add_(1)
             self.total_surprise_accum.add_(float(surprise))
 
     def modulate_slots(self, slots: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        """Aplica modulação Fast-Weights sobre os slots relacionais [..., slot_dim].
+        """Aplica modulação Fast-Weights condicional ao reconhecimento do manifold de vitória.
         
-        Retorna (slots_guiados, delta_slots).
+        Solução Fricção B: Se o estado atual não apresenta afinidade com o manifold de vitórias
+        (afinidade <= 0), a injeção é 0 (slots permanecem 100% puros e blindados contra OOD).
+        Se afinidade > 0, injeta Fast-Weights proporcionalmente à proximidade.
         """
         if not self.has_fast_weights or int(self.scars_count.item()) == 0:
             return slots, None
 
-        # Projeção linear rápida O(1): slots @ W_scar^T
+        # Projeção linear rápida O(1): slots @ W_scar^T -> [..., num_slots, slot_dim]
         delta = torch.matmul(slots, self.W_scar.t())
-        slots_guided = slots + self.scale * delta
+
+        # Gating de Manifold (Fricção B): Afinidade com o centróide z_target
+        if self.mode == "hybrid" and torch.norm(self.z_target).item() > 1e-6:
+            norm_z_ref = self.z_target / (torch.norm(self.z_target) + 1e-6)
+            norm_s = slots / (torch.norm(slots, dim=-1, keepdim=True) + 1e-6)
+            # Similaridade cosseno por slot: [..., num_slots]
+            affinity = torch.matmul(norm_s, norm_z_ref)
+            # Gate ReLU suave: só ativa quando a afinidade for positiva (> 0)
+            gate = torch.clamp(affinity, min=0.0).unsqueeze(-1)  # [..., num_slots, 1]
+            slots_guided = slots + self.scale * gate * delta
+        else:
+            slots_guided = slots + self.scale * delta
+
         return slots_guided, delta
 
     def compute_resonance_hybrid(self, delta_slots: torch.Tensor) -> torch.Tensor:
@@ -139,12 +183,12 @@ class GradientScarMemory(nn.Module):
         logits: torch.Tensor,
         resonance: torch.Tensor,
     ) -> torch.Tensor:
-        """Modula a distribuição de logits com base no sinal de ressonância direcional."""
+        """Modula a distribuição de logits com base no sinal de ressonância direcional (Intuição Sistema 1)."""
         if not self.has_resonance or int(self.scars_count.item()) == 0:
             return logits
 
-        # Se resonance > 0: aumenta a nitidez (temperatura mais fria / boost de certeza)
-        # Se resonance < 0: aumenta a incerteza (temperatura mais quente / estimula desvio)
+        # Se resonance > 0: aumenta a nitidez (temperatura mais fria / certeza sem hesitação)
+        # Se resonance < 0: aumenta a incerteza (temperatura mais quente / estimula exploração)
         res_scalar = resonance.mean() if resonance.dim() > 0 else resonance
         clamped_res = torch.clamp(res_scalar, -1.0, 1.0)
         

@@ -2485,6 +2485,7 @@ class RecurrentPPOTrainer:
                 saved_scar_state = {
                     "W_scar": self.scar_memory.W_scar.clone(),
                     "g_target": self.scar_memory.g_target.clone(),
+                    "z_target": getattr(self.scar_memory, "z_target", torch.zeros_like(self.scar_memory.g_target)).clone(),
                     "scars_count": self.scar_memory.scars_count.clone(),
                     "total_surprise_accum": self.scar_memory.total_surprise_accum.clone(),
                 }
@@ -2492,6 +2493,8 @@ class RecurrentPPOTrainer:
             if saved_scar_state is not None:
                 self.scar_memory.W_scar.copy_(saved_scar_state["W_scar"])
                 self.scar_memory.g_target.copy_(saved_scar_state["g_target"])
+                if hasattr(self.scar_memory, "z_target") and "z_target" in saved_scar_state:
+                    self.scar_memory.z_target.copy_(saved_scar_state["z_target"])
                 self.scar_memory.scars_count.copy_(saved_scar_state["scars_count"])
                 self.scar_memory.total_surprise_accum.copy_(saved_scar_state["total_surprise_accum"])
             if verbose:
