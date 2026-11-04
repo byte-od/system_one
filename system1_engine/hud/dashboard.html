@@ -561,7 +561,7 @@
           <span class="text-xs font-mono font-semibold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
             <span>🎯</span> Fronteira Curricular
           </span>
-          <span id="kpi-depth-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-800">Nível D10 • Meta: 50%</span>
+          <span id="kpi-depth-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-800">Nível D1 • Meta: 85%</span>
         </div>
         <div class="flex items-baseline justify-between">
           <div>
@@ -1060,8 +1060,11 @@
       const elKpiDepth = document.getElementById('kpi-depth');
       if (elKpiDepth) elKpiDepth.innerText = `${curWinRate.toFixed(1)}%`;
       
+      const targetPct = telemetry.target_success_rate !== undefined 
+        ? Math.round(telemetry.target_success_rate * 100) 
+        : (depth <= 4 ? 85 : (depth <= 6 ? 65 : (depth <= 10 ? 50 : 40)));
       const elDepthBadge = document.getElementById('kpi-depth-badge');
-      if (elDepthBadge) elDepthBadge.innerText = `Nível D${depth} • Meta: 50%`;
+      if (elDepthBadge) elDepthBadge.innerText = `Nível D${depth} • Meta: ${targetPct}%`;
 
       const elDepthLevel = document.getElementById('kpi-depth-level');
       if (elDepthLevel) elDepthLevel.innerText = `D${depth}`;

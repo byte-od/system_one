@@ -420,6 +420,7 @@ class HUDServer:
 
                     found_new_step = False
                     found_new_marathon = False
+                    prev_tracked_depth = getattr(self, "_ext_depth", None)
 
                     for line in reversed(lines):
                         if not found_new_step:
@@ -433,7 +434,11 @@ class HUDServer:
                                 current_return = ret
                                 current_calib = calib
                                 current_depth = depth
-                                current_depth_best_return = max(current_depth_best_return, ret)
+                                if prev_tracked_depth is not None and depth != prev_tracked_depth:
+                                    # Reset do pico ao mudar de nível curricular
+                                    current_depth_best_return = ret
+                                else:
+                                    current_depth_best_return = max(current_depth_best_return, ret)
                                 found_new_step = True
                         else:
                             m_step = step_pattern.search(line)
@@ -521,12 +526,26 @@ class HUDServer:
                         if recent_returns_current_depth:
                             sample_window = recent_returns_current_depth[-15:]
                             mean_ret_window = sum(sample_window) / len(sample_window)
-                            base_win_rate = min(1.0, max(0.0, mean_ret_window / 12.0))
+                            base_win_rate = min(1.0, max(0.0, mean_ret_window / 10.0))
+                            best_ret_curr_depth = max(recent_returns_current_depth)
+                            best_sr = min(1.0, max(base_win_rate, best_ret_curr_depth / 10.0))
                         else:
-                            base_win_rate = min(1.0, max(0.0, current_return / 12.0))
+                            base_win_rate = min(1.0, max(0.0, current_return / 10.0))
+                            best_sr = base_win_rate
 
-                        cur_sr = min(1.0, max(0.0, base_win_rate + 0.003 * math.sin(live_steps / 8192.0)))
-                        best_sr = min(1.0, max(cur_sr, current_depth_best_return / 12.0))
+                        cur_sr = min(1.0, max(0.0, base_win_rate))
+
+                        # Meta curricular elástica dinâmica por nível
+                        if current_depth <= 4:
+                            target_sr = 0.85
+                        elif current_depth <= 6:
+                            target_sr = 0.65
+                        elif current_depth <= 10:
+                            target_sr = 0.50
+                        elif current_depth <= 14:
+                            target_sr = 0.40
+                        else:
+                            target_sr = 0.35
 
                         # Dinâmica viva de entropia (oscila organicamente com passos e retornos)
                         base_entropy = 1.05 + 0.035 * math.sin(live_steps / 8192.0) - 0.02 * (current_return / 5.0)
@@ -570,6 +589,7 @@ class HUDServer:
                             "curriculum_promotions": promotions_count,
                             "curriculum_success_rate": cur_sr,
                             "curriculum_depth_best_success_rate": best_sr,
+                            "target_success_rate": target_sr,
                             "curriculum_depth_best_return": current_depth_best_return,
                             "mean_return_20": current_return,
                             # Memória de Cicatriz O(1) (Híbrido v2)
