@@ -117,6 +117,146 @@
       box-shadow: inset 0 2px 10px var(--vessel-glow);
     }
 
+    /* Bolhas ultra-realistas com refração esférica, brilho especular e oscilação hidrodinâmica */
+    .vessel-bubble {
+      position: absolute;
+      bottom: -6px;
+      border-radius: 50%;
+      pointer-events: none;
+      background: radial-gradient(circle at 35% 28%,
+        rgba(255, 255, 255, 0.95) 0%,
+        rgba(255, 255, 255, 0.45) 20%,
+        rgba(255, 255, 255, 0.08) 55%,
+        rgba(255, 255, 255, 0.35) 85%,
+        rgba(255, 255, 255, 0.7) 100%
+      );
+      border: 0.5px solid rgba(255, 255, 255, 0.4);
+      box-shadow:
+        inset 0.5px 1px 1.5px rgba(255, 255, 255, 0.85),
+        inset -0.5px -1px 1px rgba(0, 0, 0, 0.25),
+        0 0 4px var(--vessel-glow, rgba(255, 255, 255, 0.35));
+      will-change: transform, opacity, bottom;
+    }
+    .vessel-bubble::after {
+      content: '';
+      position: absolute;
+      top: 16%;
+      left: 18%;
+      width: 28%;
+      height: 28%;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.95);
+      filter: blur(0.2px);
+    }
+    .vessel-bubble.b1 { left: 16%; width: 5px; height: 5px; animation: bubbleRisePathA 3.2s infinite ease-in; animation-delay: 0.2s; }
+    .vessel-bubble.b2 { left: 38%; width: 3px; height: 3px; animation: bubbleRisePathC 2.4s infinite ease-in; animation-delay: 0.9s; }
+    .vessel-bubble.b3 { left: 62%; width: 6px; height: 6px; animation: bubbleRisePathB 3.8s infinite ease-in; animation-delay: 0.4s; }
+    .vessel-bubble.b4 { left: 82%; width: 3.5px; height: 3.5px; animation: bubbleRisePathC 2.1s infinite ease-in; animation-delay: 1.6s; }
+    .vessel-bubble.b5 { left: 28%; width: 4.5px; height: 4.5px; animation: bubbleRisePathB 3.0s infinite ease-in; animation-delay: 2.1s; }
+
+    @keyframes bubbleRisePathA {
+      0% {
+        bottom: -4px;
+        transform: translate3d(0, 0, 0) scale(0.65, 0.75);
+        opacity: 0;
+      }
+      10% {
+        opacity: 0.88;
+        transform: translate3d(1.5px, 0, 0) scale(0.85, 0.8);
+      }
+      35% {
+        transform: translate3d(-2px, 0, 0) scale(1.05, 0.95);
+      }
+      65% {
+        transform: translate3d(2.5px, 0, 0) scale(0.96, 1.04);
+        opacity: 0.85;
+      }
+      85% {
+        bottom: 84%;
+        transform: translate3d(-1px, 0, 0) scale(1.08, 0.96);
+        opacity: 0.8;
+      }
+      94% {
+        bottom: 93%;
+        transform: translate3d(0.5px, 0, 0) scale(1.2, 0.9);
+        opacity: 0.55;
+      }
+      98% {
+        bottom: 96%;
+        transform: translate3d(0, 0, 0) scale(1.4, 0.8);
+        opacity: 0.25;
+      }
+      100% {
+        bottom: 98%;
+        transform: translate3d(0, 0, 0) scale(1.6, 0.6);
+        opacity: 0;
+      }
+    }
+
+    @keyframes bubbleRisePathB {
+      0% {
+        bottom: -5px;
+        transform: translate3d(0, 0, 0) scale(0.55, 0.65);
+        opacity: 0;
+      }
+      12% {
+        opacity: 0.9;
+        transform: translate3d(-2px, 0, 0) scale(0.85, 0.8);
+      }
+      40% {
+        transform: translate3d(3px, 0, 0) scale(1.04, 0.96);
+      }
+      70% {
+        transform: translate3d(-2.5px, 0, 0) scale(0.95, 1.05);
+        opacity: 0.85;
+      }
+      88% {
+        bottom: 86%;
+        transform: translate3d(1.5px, 0, 0) scale(1.12, 0.95);
+        opacity: 0.75;
+      }
+      95% {
+        bottom: 94%;
+        transform: translate3d(0, 0, 0) scale(1.3, 0.85);
+        opacity: 0.35;
+      }
+      100% {
+        bottom: 97%;
+        transform: translate3d(0, 0, 0) scale(1.55, 0.7);
+        opacity: 0;
+      }
+    }
+
+    @keyframes bubbleRisePathC {
+      0% {
+        bottom: -3px;
+        transform: translate3d(0, 0, 0) scale(0.6);
+        opacity: 0;
+      }
+      15% {
+        opacity: 0.95;
+        transform: translate3d(1px, 0, 0) scale(0.9);
+      }
+      45% {
+        transform: translate3d(-1.5px, 0, 0) scale(1.0);
+      }
+      75% {
+        bottom: 80%;
+        transform: translate3d(1.5px, 0, 0) scale(1.05);
+        opacity: 0.8;
+      }
+      92% {
+        bottom: 92%;
+        transform: translate3d(-0.5px, 0, 0) scale(1.2);
+        opacity: 0.5;
+      }
+      100% {
+        bottom: 97%;
+        transform: translate3d(0, 0, 0) scale(1.45);
+        opacity: 0;
+      }
+    }
+
     /* Temas de Cor para Cada Card */
     .theme-emerald {
       --vessel-wave-front: rgba(16, 185, 129, 0.38);
@@ -250,7 +390,13 @@
             <path d="M 0 15 Q 75 5 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
           </svg>
         </div>
-        <div class="vessel-liquid-body"></div>
+        <div class="vessel-liquid-body">
+          <div class="vessel-bubble b1"></div>
+          <div class="vessel-bubble b2"></div>
+          <div class="vessel-bubble b3"></div>
+          <div class="vessel-bubble b4"></div>
+          <div class="vessel-bubble b5"></div>
+        </div>
       </div>
       <div class="vessel-card-content space-y-3">
         <div class="flex items-center justify-between">
@@ -284,7 +430,13 @@
             <path d="M 0 15 Q 75 5 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
           </svg>
         </div>
-        <div class="vessel-liquid-body"></div>
+        <div class="vessel-liquid-body">
+          <div class="vessel-bubble b1"></div>
+          <div class="vessel-bubble b2"></div>
+          <div class="vessel-bubble b3"></div>
+          <div class="vessel-bubble b4"></div>
+          <div class="vessel-bubble b5"></div>
+        </div>
       </div>
       <div class="vessel-card-content space-y-3">
         <div class="flex items-center justify-between">
@@ -318,7 +470,13 @@
             <path d="M 0 15 Q 75 5 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
           </svg>
         </div>
-        <div class="vessel-liquid-body"></div>
+        <div class="vessel-liquid-body">
+          <div class="vessel-bubble b1"></div>
+          <div class="vessel-bubble b2"></div>
+          <div class="vessel-bubble b3"></div>
+          <div class="vessel-bubble b4"></div>
+          <div class="vessel-bubble b5"></div>
+        </div>
       </div>
       <div class="vessel-card-content space-y-3">
         <div class="flex items-center justify-between">
@@ -353,7 +511,13 @@
             <path d="M 0 15 Q 75 5 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
           </svg>
         </div>
-        <div class="vessel-liquid-body"></div>
+        <div class="vessel-liquid-body">
+          <div class="vessel-bubble b1"></div>
+          <div class="vessel-bubble b2"></div>
+          <div class="vessel-bubble b3"></div>
+          <div class="vessel-bubble b4"></div>
+          <div class="vessel-bubble b5"></div>
+        </div>
       </div>
       <div class="vessel-card-content space-y-3">
         <div class="flex items-center justify-between">
@@ -387,7 +551,13 @@
             <path d="M 0 15 Q 75 5 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
           </svg>
         </div>
-        <div class="vessel-liquid-body"></div>
+        <div class="vessel-liquid-body">
+          <div class="vessel-bubble b1"></div>
+          <div class="vessel-bubble b2"></div>
+          <div class="vessel-bubble b3"></div>
+          <div class="vessel-bubble b4"></div>
+          <div class="vessel-bubble b5"></div>
+        </div>
       </div>
       <div class="vessel-card-content space-y-3">
         <div class="flex items-center justify-between">
@@ -421,7 +591,13 @@
             <path d="M 0 15 Q 75 5 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
           </svg>
         </div>
-        <div class="vessel-liquid-body"></div>
+        <div class="vessel-liquid-body">
+          <div class="vessel-bubble b1"></div>
+          <div class="vessel-bubble b2"></div>
+          <div class="vessel-bubble b3"></div>
+          <div class="vessel-bubble b4"></div>
+          <div class="vessel-bubble b5"></div>
+        </div>
       </div>
       <div class="vessel-card-content space-y-3">
         <div class="flex items-center justify-between">
