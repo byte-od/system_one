@@ -88,6 +88,7 @@ class RecurrentPPOTrainer:
         scar_decay: float = 0.995,
         scar_scale: float = 0.15,
         scar_beta: float = 0.20,
+        pure_scars: bool = True,
     ) -> None:
         self.agent = agent.to(device)
         self.env = env
@@ -269,6 +270,8 @@ class RecurrentPPOTrainer:
             self.agent.set_scar_memory(self.scar_memory)
         else:
             self.scar_memory = None
+
+        self.pure_scars = bool(pure_scars)
 
         self._active_vec_trajectories: List[deque] = [deque(maxlen=200) for _ in range(self.num_envs)]
         self._active_single_trajectory: deque = deque(maxlen=200)
@@ -1553,7 +1556,9 @@ class RecurrentPPOTrainer:
                 peak_act = np.array([s["action"] for s in peak_slice])
                 peak_logp = np.array([s.get("log_prob", 0.0) for s in peak_slice], dtype=np.float32)
 
-                if self.scar_memory is not None:
+                # Mecanismo Puríssimo: Cicatrizes são registradas ESTRITAMENTE para vitórias completas (is_win=True).
+                # Peak Slicing de episódios incompletos/não-resolvidos NUNCA contamina o tensor de cicatrizes quando pure_scars=True.
+                if self.scar_memory is not None and not self.pure_scars:
                     peak_logps = [s.get("log_prob", 0.0) for s in peak_slice]
                     surprise = float(-sum(peak_logps) / max(1, len(peak_logps)))
                     enc = getattr(self.agent.front_end, "state_encoder", None)
