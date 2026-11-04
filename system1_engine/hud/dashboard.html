@@ -970,7 +970,8 @@
       _lastDataTimestamp = Date.now();
 
       const steps = telemetry.total_steps || 0;
-      const fps = telemetry.fps || 0;
+      const rawFps = telemetry.fps || 0;
+      const fps = Math.max(0, Math.min(3000, Number(rawFps) || 0));
       const depth = telemetry.curriculum_depth || 1;
       const meanRet = telemetry.mean_return_20 !== undefined ? telemetry.mean_return_20 : 0.0;
       const bestRetRaw = telemetry.curriculum_depth_best_return !== undefined ? telemetry.curriculum_depth_best_return : meanRet;
@@ -1153,29 +1154,34 @@
       // =========================================================
       // Card 5: Throughput & Passos
       // =========================================================
-      _maxObservedFps = Math.max(_maxObservedFps || 2000, fps);
+      const cleanFps = Math.max(0, Math.min(3000, Number(fps) || 0));
+      _maxObservedFps = Math.max(2000, Math.min(2500, Math.max(_maxObservedFps || 2000, cleanFps)));
+      if (_maxObservedFps > 3000) _maxObservedFps = 2000;
+
       const elFpsCard = document.getElementById('kpi-fps');
-      if (elFpsCard) elFpsCard.innerText = Math.round(fps).toLocaleString();
+      if (elFpsCard) elFpsCard.innerText = Math.round(cleanFps).toLocaleString();
       const elSteps = document.getElementById('kpi-steps');
       if (elSteps) elSteps.innerText = `${pct.toFixed(1)}%`;
       const elRawSteps = document.getElementById('kpi-raw-steps');
       if (elRawSteps) elRawSteps.innerText = steps.toLocaleString();
       
-      // Altura do Líquido Card 5
+      // Altura do Líquido Card 5: Throughput em tempo real (0 a 2500 FPS nos 128 ambientes)
       const liqSteps = document.getElementById('vessel-liquid-steps');
       if (liqSteps) {
-        liqSteps.style.height = `${15 + (pct / 100.0) * 75}%`;
+        const normFps = Math.min(1.0, Math.max(0.05, cleanFps / 2500.0));
+        liqSteps.style.height = `${15 + normFps * 75}%`;
       }
 
-      // Marcadores da Ala Lateral Direita Card 5
+      // Marcadores da Ala Lateral Direita Card 5 (Escala de Throughput)
       const valMax5 = document.getElementById('vessel-val-max-5');
-      if (valMax5) {
-        valMax5.innerText = _maxObservedFps >= 1000 ? (_maxObservedFps / 1000).toFixed(1) + 'k' : Math.round(_maxObservedFps);
-      }
+      if (valMax5) valMax5.innerText = '2.5k';
       const valMin5 = document.getElementById('vessel-val-min-5');
       if (valMin5) valMin5.innerText = '0';
       const tickMax5 = document.getElementById('vessel-tick-max-5');
-      if (tickMax5) tickMax5.style.top = '12%';
+      if (tickMax5) {
+        const normPeak = Math.min(1.0, Math.max(0.05, _maxObservedFps / 2500.0));
+        tickMax5.style.top = `${100 - (15 + normPeak * 75)}%`;
+      }
       const tickMin5 = document.getElementById('vessel-tick-min-5');
       if (tickMin5) tickMin5.style.top = '88%';
 
