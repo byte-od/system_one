@@ -11,15 +11,6 @@
       darkMode: 'class',
       theme: {
         extend: {
-          colors: {
-            brand: {
-              50: '#ecfeff',
-              100: '#cffafe',
-              500: '#06b6d4',
-              600: '#0891b2',
-              900: '#164e63',
-            }
-          },
           fontFamily: {
             mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
           }
@@ -47,6 +38,129 @@
       height: 0.5rem;
       border-radius: 9999px;
     }
+
+    /* LIQUID EFFECT & SLOSH PHYSICS */
+    .vessel-card {
+      position: relative;
+      overflow: hidden !important;
+      background-color: #0d1118;
+      border: 1px solid #1a2233;
+      border-radius: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .vessel-card:hover {
+      border-color: #2b3954;
+    }
+    .vessel-card-content {
+      position: relative;
+      z-index: 10;
+      pointer-events: auto;
+    }
+    .vessel-liquid-fill {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 20%;
+      pointer-events: none;
+      z-index: 1;
+      transition: height 0.85s cubic-bezier(0.34, 1.25, 0.64, 1);
+      border-bottom-left-radius: inherit;
+      border-bottom-right-radius: inherit;
+    }
+    .vessel-wave-wrapper {
+      position: absolute;
+      top: -14px;
+      left: 0;
+      width: 100%;
+      height: 15px;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .vessel-wave-svg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 200%;
+      height: 100%;
+      will-change: transform;
+      transform: translate3d(0, 0, 0);
+    }
+    .vessel-wave-front {
+      fill: var(--vessel-wave-front);
+      animation: waveSloshFront 2.8s linear infinite;
+    }
+    .vessel-wave-back {
+      fill: var(--vessel-wave-back);
+      animation: waveSloshBack 4.2s linear infinite;
+    }
+    @keyframes waveSloshFront {
+      0% { transform: translate3d(0, 0, 0); }
+      100% { transform: translate3d(-50%, 0, 0); }
+    }
+    @keyframes waveSloshBack {
+      0% { transform: translate3d(-50%, 0, 0); }
+      100% { transform: translate3d(0, 0, 0); }
+    }
+    .vessel-liquid-body {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      overflow: hidden;
+      border-radius: 0 0 0.75rem 0.75rem;
+      background: linear-gradient(180deg, var(--vessel-color-top) 0%, var(--vessel-color-bot) 100%);
+      box-shadow: inset 0 2px 10px var(--vessel-glow);
+    }
+
+    /* Temas de Cor para Cada Card */
+    .theme-emerald {
+      --vessel-wave-front: rgba(16, 185, 129, 0.38);
+      --vessel-wave-back: rgba(16, 185, 129, 0.20);
+      --vessel-color-top: rgba(16, 185, 129, 0.22);
+      --vessel-color-bot: rgba(6, 78, 59, 0.35);
+      --vessel-glow: rgba(16, 185, 129, 0.25);
+    }
+    .theme-indigo {
+      --vessel-wave-front: rgba(99, 102, 241, 0.38);
+      --vessel-wave-back: rgba(99, 102, 241, 0.20);
+      --vessel-color-top: rgba(99, 102, 241, 0.22);
+      --vessel-color-bot: rgba(49, 46, 129, 0.35);
+      --vessel-glow: rgba(99, 102, 241, 0.25);
+    }
+    .theme-purple {
+      --vessel-wave-front: rgba(168, 85, 247, 0.38);
+      --vessel-wave-back: rgba(168, 85, 247, 0.20);
+      --vessel-color-top: rgba(168, 85, 247, 0.22);
+      --vessel-color-bot: rgba(88, 28, 135, 0.35);
+      --vessel-glow: rgba(168, 85, 247, 0.25);
+    }
+    .theme-amber {
+      --vessel-wave-front: rgba(245, 158, 11, 0.38);
+      --vessel-wave-back: rgba(245, 158, 11, 0.20);
+      --vessel-color-top: rgba(245, 158, 11, 0.22);
+      --vessel-color-bot: rgba(120, 53, 15, 0.35);
+      --vessel-glow: rgba(245, 158, 11, 0.25);
+    }
+    .theme-cyan {
+      --vessel-wave-front: rgba(6, 182, 212, 0.38);
+      --vessel-wave-back: rgba(6, 182, 212, 0.20);
+      --vessel-color-top: rgba(6, 182, 212, 0.22);
+      --vessel-color-bot: rgba(22, 78, 99, 0.35);
+      --vessel-glow: rgba(6, 182, 212, 0.25);
+    }
+    .theme-sky {
+      --vessel-wave-front: rgba(14, 165, 233, 0.38);
+      --vessel-wave-back: rgba(14, 165, 233, 0.20);
+      --vessel-color-top: rgba(14, 165, 233, 0.22);
+      --vessel-color-bot: rgba(12, 74, 110, 0.35);
+      --vessel-glow: rgba(14, 165, 233, 0.25);
+    }
+
     ::-webkit-scrollbar {
       width: 6px;
       height: 6px;
@@ -78,9 +192,9 @@
         </div>
         <div class="flex items-center gap-2 mt-0.5">
           <span id="global-status-dot" class="status-dot bg-emerald-500 animate-pulse"></span>
-          <span id="global-status-text" class="text-xs font-mono font-medium text-emerald-400">ONLINE</span>
+          <span id="global-status-text" class="text-xs font-mono font-medium text-emerald-400">CONECTADO</span>
           <span class="text-gray-600">•</span>
-          <span id="header-pid-badge" class="text-xs font-mono text-gray-400">PID: --</span>
+          <span id="header-pid-badge" class="text-xs font-mono text-gray-400">PID: 40903</span>
         </div>
       </div>
     </div>
@@ -122,121 +236,211 @@
     </div>
   </section>
 
-  <!-- 6 HIGH-PRECISION KPI CARDS -->
+  <!-- 6 HIGH-PRECISION LIQUID VESSEL CARDS -->
   <section id="train-status-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 
-    <!-- Card 1: Retorno & Recompensa -->
-    <div class="hud-card p-4 space-y-3">
-      <div class="flex items-center justify-between">
-        <span class="text-xs font-mono font-semibold text-gray-400 uppercase tracking-wider">Retorno Médio</span>
-        <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">Últimos 20 ep</span>
-      </div>
-      <div class="flex items-baseline justify-between">
-        <div id="kpi-return" class="text-3xl font-mono font-black text-white">0.00</div>
-        <div class="text-right font-mono text-xs">
-          <div class="text-gray-500 text-[10px]">PICO NO NÍVEL</div>
-          <div id="kpi-best-return" class="text-cyan-400 font-bold">0.00</div>
+    <!-- Card 1: Retorno & Recompensa (Emerald Liquid) -->
+    <div class="vessel-card theme-emerald p-4">
+      <div class="vessel-liquid-fill" id="vessel-liquid-return" style="height: 35%;">
+        <div class="vessel-wave-wrapper">
+          <svg class="vessel-wave-svg vessel-wave-back" viewBox="0 0 600 30" preserveAspectRatio="none">
+            <path d="M 0 15 Q 75 25 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
+          </svg>
+          <svg class="vessel-wave-svg vessel-wave-front" viewBox="0 0 600 30" preserveAspectRatio="none">
+            <path d="M 0 15 Q 75 5 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
+          </svg>
         </div>
+        <div class="vessel-liquid-body"></div>
       </div>
-      <div class="text-xs text-gray-400 flex items-center justify-between border-t border-[#1a2233] pt-2">
-        <span>Taxa de Vitória Estimada</span>
-        <span id="kpi-win-rate" class="font-mono text-emerald-400 font-bold">0.0%</span>
+      <div class="vessel-card-content space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-mono font-semibold text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+            <span>📈</span> Retorno Médio
+          </span>
+          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800">20 ep</span>
+        </div>
+        <div class="flex items-baseline justify-between">
+          <div id="kpi-return" class="text-3xl font-mono font-black text-white">0.00</div>
+          <div class="text-right font-mono text-xs">
+            <div class="text-gray-400 text-[10px]">PICO NO NÍVEL</div>
+            <div id="kpi-best-return" class="text-emerald-400 font-bold">0.00</div>
+          </div>
+        </div>
+        <div class="text-xs text-gray-300 flex items-center justify-between border-t border-emerald-900/40 pt-2 font-mono">
+          <span>Taxa de Vitória</span>
+          <span id="kpi-win-rate" class="text-emerald-300 font-bold">0.0%</span>
+        </div>
       </div>
     </div>
 
-    <!-- Card 2: Fronteira Curricular -->
-    <div class="hud-card p-4 space-y-3">
-      <div class="flex items-center justify-between">
-        <span class="text-xs font-mono font-semibold text-gray-400 uppercase tracking-wider">Fronteira Curricular</span>
-        <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">Meta: 50%</span>
-      </div>
-      <div class="flex items-baseline justify-between">
-        <div id="kpi-depth" class="text-3xl font-mono font-black text-cyan-400">D10</div>
-        <div class="text-right font-mono text-xs">
-          <div class="text-gray-500 text-[10px]">PROMOÇÕES</div>
-          <div id="kpi-promotions" class="text-gray-300 font-bold">9</div>
+    <!-- Card 2: Fronteira Curricular (Indigo Liquid) -->
+    <div class="vessel-card theme-indigo p-4">
+      <div class="vessel-liquid-fill" id="vessel-liquid-depth" style="height: 50%;">
+        <div class="vessel-wave-wrapper">
+          <svg class="vessel-wave-svg vessel-wave-back" viewBox="0 0 600 30" preserveAspectRatio="none">
+            <path d="M 0 15 Q 75 25 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
+          </svg>
+          <svg class="vessel-wave-svg vessel-wave-front" viewBox="0 0 600 30" preserveAspectRatio="none">
+            <path d="M 0 15 Q 75 5 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
+          </svg>
         </div>
+        <div class="vessel-liquid-body"></div>
       </div>
-      <div class="text-xs text-gray-400 flex items-center justify-between border-t border-[#1a2233] pt-2">
-        <span>Amostras na Janela</span>
-        <span id="kpi-curriculum-samples" class="font-mono text-gray-300">64</span>
+      <div class="vessel-card-content space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-mono font-semibold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🎯</span> Fronteira Curricular
+          </span>
+          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-800">Meta: 50%</span>
+        </div>
+        <div class="flex items-baseline justify-between">
+          <div id="kpi-depth" class="text-3xl font-mono font-black text-indigo-200">D10</div>
+          <div class="text-right font-mono text-xs">
+            <div class="text-gray-400 text-[10px]">PROMOÇÕES</div>
+            <div id="kpi-promotions" class="text-indigo-300 font-bold">9</div>
+          </div>
+        </div>
+        <div class="text-xs text-gray-300 flex items-center justify-between border-t border-indigo-900/40 pt-2 font-mono">
+          <span>Janela de Avaliação</span>
+          <span id="kpi-curriculum-samples" class="text-indigo-300">64 eps</span>
+        </div>
       </div>
     </div>
 
-    <!-- Card 3: Memória de Cicatriz O(1) -->
-    <div class="hud-card p-4 space-y-3">
-      <div class="flex items-center justify-between">
-        <span class="text-xs font-mono font-semibold text-gray-400 uppercase tracking-wider">Memória Cicatriz O(1)</span>
-        <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800">Híbrido v2</span>
-      </div>
-      <div class="flex items-baseline justify-between">
-        <div id="kpi-scars" class="text-3xl font-mono font-black text-purple-300">0</div>
-        <div class="text-right font-mono text-xs">
-          <div class="text-gray-500 text-[10px]">MEMÓRIA RAM</div>
-          <div class="text-emerald-400 font-bold">4.25 KB</div>
+    <!-- Card 3: Memória de Cicatriz O(1) (Purple Liquid) -->
+    <div class="vessel-card theme-purple p-4">
+      <div class="vessel-liquid-fill" id="vessel-liquid-scars" style="height: 60%;">
+        <div class="vessel-wave-wrapper">
+          <svg class="vessel-wave-svg vessel-wave-back" viewBox="0 0 600 30" preserveAspectRatio="none">
+            <path d="M 0 15 Q 75 25 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
+          </svg>
+          <svg class="vessel-wave-svg vessel-wave-front" viewBox="0 0 600 30" preserveAspectRatio="none">
+            <path d="M 0 15 Q 75 5 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
+          </svg>
         </div>
+        <div class="vessel-liquid-body"></div>
       </div>
-      <div class="text-xs text-gray-400 flex items-center justify-between border-t border-[#1a2233] pt-2 font-mono">
-        <span>||W||: <strong id="kpi-w-norm" class="text-purple-300">0.00</strong></span>
-        <span>||z||: <strong id="kpi-z-norm" class="text-blue-300">0.00</strong></span>
-        <span>||g||: <strong id="kpi-g-norm" class="text-pink-300">0.00</strong></span>
+      <div class="vessel-card-content space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-mono font-semibold text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🧬</span> Cicatrizes O(1)
+          </span>
+          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-800">Híbrido v2</span>
+        </div>
+        <div class="flex items-baseline justify-between">
+          <div id="kpi-scars" class="text-3xl font-mono font-black text-purple-200">0</div>
+          <div class="text-right font-mono text-xs">
+            <div class="text-gray-400 text-[10px]">MEMÓRIA RAM</div>
+            <div class="text-emerald-400 font-bold">4.25 KB</div>
+          </div>
+        </div>
+        <div class="text-xs text-gray-300 flex items-center justify-between border-t border-purple-900/40 pt-2 font-mono">
+          <span>||W||: <strong id="kpi-w-norm" class="text-purple-300">0.00</strong></span>
+          <span>||z||: <strong id="kpi-z-norm" class="text-blue-300">0.00</strong></span>
+          <span>||g||: <strong id="kpi-g-norm" class="text-pink-300">0.00</strong></span>
+        </div>
       </div>
     </div>
 
-    <!-- Card 4: Exploração & Entropia -->
-    <div class="hud-card p-4 space-y-3">
-      <div class="flex items-center justify-between">
-        <span class="text-xs font-mono font-semibold text-gray-400 uppercase tracking-wider">Exploração (Entropia)</span>
-        <span id="kpi-entropy-health" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">Saudável</span>
-      </div>
-      <div class="flex items-baseline justify-between">
-        <div id="kpi-entropy" class="text-3xl font-mono font-black text-amber-300">1.050</div>
-        <div class="text-right font-mono text-xs">
-          <div class="text-gray-500 text-[10px]">PISO COLAPSO</div>
-          <div class="text-rose-400 font-bold">0.300 nats</div>
+    <!-- Card 4: Exploração & Entropia (Amber Liquid) -->
+    <div class="vessel-card theme-amber p-4">
+      <div class="vessel-liquid-fill" id="vessel-liquid-entropy" style="height: 45%;">
+        <div class="vessel-wave-wrapper">
+          <svg class="vessel-wave-svg vessel-wave-back" viewBox="0 0 600 30" preserveAspectRatio="none">
+            <path d="M 0 15 Q 75 25 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
+          </svg>
+          <svg class="vessel-wave-svg vessel-wave-front" viewBox="0 0 600 30" preserveAspectRatio="none">
+            <path d="M 0 15 Q 75 5 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
+          </svg>
         </div>
+        <div class="vessel-liquid-body"></div>
       </div>
-      <div class="text-xs text-gray-400 flex items-center justify-between border-t border-[#1a2233] pt-2 font-mono">
-        <span>Coef. Entropia</span>
-        <span id="kpi-entropy-coef" class="text-gray-300 font-bold">0.007</span>
+      <div class="vessel-card-content space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-mono font-semibold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🔥</span> Exploração (Entropia)
+          </span>
+          <span id="kpi-entropy-health" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">Saudável</span>
+        </div>
+        <div class="flex items-baseline justify-between">
+          <div id="kpi-entropy" class="text-3xl font-mono font-black text-amber-200">1.050</div>
+          <div class="text-right font-mono text-xs">
+            <div class="text-gray-400 text-[10px]">PISO COLAPSO</div>
+            <div class="text-rose-400 font-bold">0.300 nats</div>
+          </div>
+        </div>
+        <div class="text-xs text-gray-300 flex items-center justify-between border-t border-amber-900/40 pt-2 font-mono">
+          <span>Coef. Entropia</span>
+          <span id="kpi-entropy-coef" class="text-amber-300 font-bold">0.007</span>
+        </div>
       </div>
     </div>
 
-    <!-- Card 5: Throughput & Passos -->
-    <div class="hud-card p-4 space-y-3">
-      <div class="flex items-center justify-between">
-        <span id="kpi-steps-label" class="text-xs font-mono font-semibold text-gray-400 uppercase tracking-wider">Throughput</span>
-        <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">128 Envs</span>
-      </div>
-      <div class="flex items-baseline justify-between">
-        <div id="kpi-fps" class="text-3xl font-mono font-black text-emerald-400">0</div>
-        <div class="text-right font-mono text-xs">
-          <div class="text-gray-500 text-[10px]">PROGRESSO</div>
-          <div id="kpi-steps" class="text-cyan-400 font-bold">0.0%</div>
+    <!-- Card 5: Throughput & Passos (Cyan Liquid) -->
+    <div class="vessel-card theme-cyan p-4">
+      <div class="vessel-liquid-fill" id="vessel-liquid-steps" style="height: 25%;">
+        <div class="vessel-wave-wrapper">
+          <svg class="vessel-wave-svg vessel-wave-back" viewBox="0 0 600 30" preserveAspectRatio="none">
+            <path d="M 0 15 Q 75 25 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
+          </svg>
+          <svg class="vessel-wave-svg vessel-wave-front" viewBox="0 0 600 30" preserveAspectRatio="none">
+            <path d="M 0 15 Q 75 5 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
+          </svg>
         </div>
+        <div class="vessel-liquid-body"></div>
       </div>
-      <div class="text-xs text-gray-400 flex items-center justify-between border-t border-[#1a2233] pt-2 font-mono">
-        <span>Passos Totais</span>
-        <span id="kpi-raw-steps" class="text-gray-300 font-bold">0</span>
+      <div class="vessel-card-content space-y-3">
+        <div class="flex items-center justify-between">
+          <span id="kpi-steps-label" class="text-xs font-mono font-semibold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+            <span>⚡</span> Throughput
+          </span>
+          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800">128 Envs</span>
+        </div>
+        <div class="flex items-baseline justify-between">
+          <div id="kpi-fps" class="text-3xl font-mono font-black text-cyan-300">0</div>
+          <div class="text-right font-mono text-xs">
+            <div class="text-gray-400 text-[10px]">PROGRESSO</div>
+            <div id="kpi-steps" class="text-emerald-400 font-bold">0.0%</div>
+          </div>
+        </div>
+        <div class="text-xs text-gray-300 flex items-center justify-between border-t border-cyan-900/40 pt-2 font-mono">
+          <span>Passos Totais</span>
+          <span id="kpi-raw-steps" class="text-cyan-300 font-bold">0</span>
+        </div>
       </div>
     </div>
 
-    <!-- Card 6: Calibração & Dispositivo -->
-    <div class="hud-card p-4 space-y-3">
-      <div class="flex items-center justify-between">
-        <span class="text-xs font-mono font-semibold text-gray-400 uppercase tracking-wider">Calibração & Hardware</span>
-        <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-800 text-gray-300 border border-gray-700">MPS / CPU</span>
-      </div>
-      <div class="flex items-baseline justify-between">
-        <div id="kpi-calibration" class="text-3xl font-mono font-black text-white">1.00</div>
-        <div class="text-right font-mono text-xs">
-          <div class="text-gray-500 text-[10px]">CONFIANÇA MÉDIA</div>
-          <div id="kpi-confidence" class="text-cyan-400 font-bold">94.0%</div>
+    <!-- Card 6: Calibração & Dispositivo (Sky Blue Liquid) -->
+    <div class="vessel-card theme-sky p-4">
+      <div class="vessel-liquid-fill" id="vessel-liquid-calib" style="height: 80%;">
+        <div class="vessel-wave-wrapper">
+          <svg class="vessel-wave-svg vessel-wave-back" viewBox="0 0 600 30" preserveAspectRatio="none">
+            <path d="M 0 15 Q 75 25 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
+          </svg>
+          <svg class="vessel-wave-svg vessel-wave-front" viewBox="0 0 600 30" preserveAspectRatio="none">
+            <path d="M 0 15 Q 75 5 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
+          </svg>
         </div>
+        <div class="vessel-liquid-body"></div>
       </div>
-      <div class="text-xs text-gray-400 flex items-center justify-between border-t border-[#1a2233] pt-2 font-mono">
-        <span>Latência p50</span>
-        <span id="kpi-latency" class="text-gray-300">28.2 μs</span>
+      <div class="vessel-card-content space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-mono font-semibold text-sky-300 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🛡️</span> Calibração & Hardware
+          </span>
+          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-800">MPS / CPU</span>
+        </div>
+        <div class="flex items-baseline justify-between">
+          <div id="kpi-calibration" class="text-3xl font-mono font-black text-white">1.00</div>
+          <div class="text-right font-mono text-xs">
+            <div class="text-gray-400 text-[10px]">CONFIANÇA</div>
+            <div id="kpi-confidence" class="text-sky-300 font-bold">94.0%</div>
+          </div>
+        </div>
+        <div class="text-xs text-gray-300 flex items-center justify-between border-t border-sky-900/40 pt-2 font-mono">
+          <span>Latência p50</span>
+          <span id="kpi-latency" class="text-sky-300">28.2 μs</span>
+        </div>
       </div>
     </div>
 
@@ -274,7 +478,7 @@
       </div>
     </div>
     <div id="terminal-logs" class="flex-1 font-mono text-xs text-gray-300 bg-[#07090e] p-3 rounded border border-[#161f30] overflow-y-auto space-y-0.5 leading-relaxed selection:bg-cyan-900 selection:text-white">
-      <div class="text-gray-500 italic">[Aguardando conexão com o fluxo de telemetria...]</div>
+      <div class="text-gray-500 italic">[Conectando ao fluxo de telemetria...]</div>
     </div>
   </section>
 
@@ -312,7 +516,7 @@
     <a href="https://gymnasium.farama.org/environments/">Gym Docs</a>
   </div>
 
-  <!-- JAVASCRIPT PRINCIPAL (ZERO DEPENDÊNCIAS, ULTRA-RÁPIDO) -->
+  <!-- JAVASCRIPT PRINCIPAL (DUAL-ENGINE SSE + POLLING HEARTBEAT) -->
   <script>
     // Configurações e Contrato de Nomenclatura Formal
     const suffix = 'trained';
@@ -322,6 +526,7 @@
     let _sseSource = null;
     let _chartPoints = [];
     let _maxStepsTarget = 100000000;
+    let _lastDataTimestamp = Date.now();
 
     // Inicialização do Canvas
     const canvas = document.getElementById('learning-chart');
@@ -387,9 +592,10 @@
       ctx.fill();
     }
 
-    // Atualização de UI via Telemetria
+    // Atualização de UI & Animação das Alturas dos Líquidos
     function handleTelemetryUpdate(telemetry, runner) {
       if (!telemetry) return;
+      _lastDataTimestamp = Date.now();
 
       const steps = telemetry.total_steps || 0;
       const fps = telemetry.fps || 0;
@@ -402,7 +608,17 @@
       const gNorm = telemetry.scar_g_norm || 0;
       const calib = telemetry.calibration !== undefined ? telemetry.calibration : 1.0;
       const entropy = telemetry.mean_entropy !== undefined ? telemetry.mean_entropy : 1.05;
+      const confidence = telemetry.mean_confidence !== undefined ? telemetry.mean_confidence : 0.94;
       const pct = Math.min(100, (steps / _maxStepsTarget) * 100);
+
+      // Status Indicator
+      const dot = document.getElementById('global-status-dot');
+      const txt = document.getElementById('global-status-text');
+      if (dot && txt) {
+        dot.className = 'status-dot bg-emerald-500 animate-pulse';
+        txt.className = 'text-xs font-mono font-medium text-emerald-400';
+        txt.innerText = 'CONECTADO';
+      }
 
       // Header Badges
       const elDepth = document.getElementById('header-depth-badge');
@@ -422,7 +638,7 @@
       const elHeroBar = document.getElementById('hero-progress-bar');
       if (elHeroBar) elHeroBar.style.width = `${pct}%`;
 
-      // Card 1: Retorno
+      // Card 1: Retorno Médio & Recompensa
       const elRet = document.getElementById('kpi-return');
       if (elRet) elRet.innerText = meanRet.toFixed(2);
       const elBestRet = document.getElementById('kpi-best-return');
@@ -430,6 +646,12 @@
       const estWinRate = Math.min(100, Math.max(0, (meanRet / 10.0) * 100));
       const elWinRate = document.getElementById('kpi-win-rate');
       if (elWinRate) elWinRate.innerText = `${estWinRate.toFixed(1)}%`;
+      // Altura do Líquido Card 1
+      const liqRet = document.getElementById('vessel-liquid-return');
+      if (liqRet) {
+        const normRet = Math.min(1.0, Math.max(0.0, meanRet / 10.0));
+        liqRet.style.height = `${15 + normRet * 75}%`;
+      }
 
       // Card 2: Fronteira Curricular
       const elKpiDepth = document.getElementById('kpi-depth');
@@ -437,7 +659,13 @@
       const elPromos = document.getElementById('kpi-promotions');
       if (elPromos) elPromos.innerText = telemetry.curriculum_promotions !== undefined ? telemetry.curriculum_promotions : (depth - 1);
       const elSamples = document.getElementById('kpi-curriculum-samples');
-      if (elSamples) elSamples.innerText = telemetry.curriculum_samples || 64;
+      if (elSamples) elSamples.innerText = `${telemetry.curriculum_samples || 64} eps`;
+      // Altura do Líquido Card 2
+      const liqDepth = document.getElementById('vessel-liquid-depth');
+      if (liqDepth) {
+        const normDepth = Math.min(1.0, Math.max(0.05, depth / 20.0));
+        liqDepth.style.height = `${15 + normDepth * 75}%`;
+      }
 
       // Card 3: Cicatrizes O(1)
       const elScars = document.getElementById('kpi-scars');
@@ -448,8 +676,14 @@
       if (elZ) elZ.innerText = Number(zNorm).toFixed(2);
       const elG = document.getElementById('kpi-g-norm');
       if (elG) elG.innerText = Number(gNorm).toFixed(2);
+      // Altura do Líquido Card 3
+      const liqScars = document.getElementById('vessel-liquid-scars');
+      if (liqScars) {
+        const normScars = Math.min(1.0, Math.max(0.05, scars / 500000.0));
+        liqScars.style.height = `${15 + normScars * 75}%`;
+      }
 
-      // Card 4: Entropia
+      // Card 4: Exploração & Entropia
       const elEntropy = document.getElementById('kpi-entropy');
       if (elEntropy) elEntropy.innerText = Number(entropy).toFixed(3);
       const elEntCoef = document.getElementById('kpi-entropy-coef');
@@ -464,22 +698,39 @@
           healthBadge.className = 'text-[10px] font-mono px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 animate-pulse';
         }
       }
+      // Altura do Líquido Card 4 (escala natural 0 a 2.485 nats)
+      const liqEnt = document.getElementById('vessel-liquid-entropy');
+      if (liqEnt) {
+        const normEnt = Math.min(1.0, Math.max(0.05, entropy / 2.485));
+        liqEnt.style.height = `${15 + normEnt * 75}%`;
+      }
 
-      // Card 5: Throughput
+      // Card 5: Throughput & Passos
       const elFpsCard = document.getElementById('kpi-fps');
       if (elFpsCard) elFpsCard.innerText = Math.round(fps).toLocaleString();
       const elSteps = document.getElementById('kpi-steps');
       if (elSteps) elSteps.innerText = `${pct.toFixed(1)}%`;
       const elRawSteps = document.getElementById('kpi-raw-steps');
       if (elRawSteps) elRawSteps.innerText = steps.toLocaleString();
+      // Altura do Líquido Card 5
+      const liqSteps = document.getElementById('vessel-liquid-steps');
+      if (liqSteps) {
+        liqSteps.style.height = `${15 + (pct / 100.0) * 75}%`;
+      }
 
-      // Card 6: Calibração & Dispositivo
+      // Card 6: Calibração & Hardware
       const elCalib = document.getElementById('kpi-calibration');
       if (elCalib) elCalib.innerText = Number(calib).toFixed(2);
       const elConf = document.getElementById('kpi-confidence');
-      if (elConf) elConf.innerText = `${((telemetry.mean_confidence || 0.94) * 100).toFixed(1)}%`;
+      if (elConf) elConf.innerText = `${(confidence * 100).toFixed(1)}%`;
       const elLat = document.getElementById('kpi-latency');
       if (elLat) elLat.innerText = `${telemetry.latency_p50_us || 28.2} μs`;
+      // Altura do Líquido Card 6
+      const liqCalib = document.getElementById('vessel-liquid-calib');
+      if (liqCalib) {
+        const normConf = Math.min(1.0, Math.max(0.05, confidence));
+        liqCalib.style.height = `${15 + normConf * 75}%`;
+      }
 
       // Histórico do Gráfico
       if (steps > 0) {
@@ -496,7 +747,7 @@
       if (!term) return;
 
       const firstChild = term.firstElementChild;
-      if (firstChild && firstChild.innerText.includes('Aguardando')) {
+      if (firstChild && firstChild.innerText.includes('Conectando')) {
         term.innerHTML = '';
       }
 
@@ -529,7 +780,7 @@
       if (term) term.innerHTML = '<div class="text-gray-500 italic">[Logs limpos pelo operador]</div>';
     }
 
-    // Conexão SSE Contínua e Resiliente
+    // Motor 1: Conexão SSE Server-Sent Events
     function startSSEConnection() {
       if (_sseSource) {
         _sseSource.close();
@@ -561,6 +812,29 @@
       };
 
       _sseSource.onerror = function() {
+        // Fallback imediato para polling se SSE oscilar
+        triggerPollingFallback();
+      };
+    }
+
+    // Motor 2: Polling de Fallback Resiliente (Garante que os cards NUNCA parem)
+    async function triggerPollingFallback() {
+      try {
+        const resp = await fetch('/api/state');
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.telemetry) {
+            handleTelemetryUpdate(data.telemetry, data.runner);
+          }
+          const dot = document.getElementById('global-status-dot');
+          if (dot) dot.className = 'status-dot bg-emerald-500 animate-pulse';
+          const txt = document.getElementById('global-status-text');
+          if (txt) {
+            txt.className = 'text-xs font-mono font-medium text-emerald-400';
+            txt.innerText = 'CONECTADO';
+          }
+        }
+      } catch (err) {
         const dot = document.getElementById('global-status-dot');
         if (dot) dot.className = 'status-dot bg-amber-500';
         const txt = document.getElementById('global-status-text');
@@ -568,8 +842,16 @@
           txt.className = 'text-xs font-mono font-medium text-amber-400';
           txt.innerText = 'RECONECTANDO...';
         }
-      };
+      }
     }
+
+    // Loop Guardião: Se não receber dados SSE por mais de 2.0s, força polling
+    setInterval(() => {
+      const idle = Date.now() - _lastDataTimestamp;
+      if (idle > 2000) {
+        triggerPollingFallback();
+      }
+    }, 1500);
 
     // Gerenciador de Checkpoints
     async function loadCheckpoints() {
@@ -620,6 +902,8 @@
     window.addEventListener('DOMContentLoaded', () => {
       resizeCanvas();
       startSSEConnection();
+      // Leitura imediata ao abrir a página
+      triggerPollingFallback();
     });
   </script>
 </body>

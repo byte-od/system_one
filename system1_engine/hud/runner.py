@@ -101,11 +101,6 @@ class HUDProcessRunner:
         if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
             return False
 
-        with self._lock:
-            # Se já está conectado ao PID e possui log válido, mantém conexão ativa
-            if self.is_running() and self.external_log_path and self._is_valid_training_log(self.external_log_path):
-                return True
-
         try:
             res = subprocess.run(["ps", "-eo", "pid,command"], capture_output=True, text=True, timeout=2.0)
             if res.returncode != 0:
@@ -127,6 +122,14 @@ class HUDProcessRunner:
                             continue
 
             if target_pid is None:
+                with self._lock:
+                    if self.external_pid is not None:
+                        try:
+                            os.kill(self.external_pid, 0)
+                        except OSError:
+                            self.external_pid = None
+                            self.external_log_path = None
+                            self.status = "IDLE"
                 return False
 
             # Localiza o arquivo de log mais recente que seja autenticamente do treino (e não do HUD)
@@ -149,7 +152,7 @@ class HUDProcessRunner:
 
             with self._lock:
                 if self.external_pid == target_pid:
-                    # Já associado ao PID, atualiza ponteiro de log se estava incorreto
+                    # Já associado ao PID, atualiza ponteiro de log se estava desatualizado ou divergente
                     if latest_log and self.external_log_path != latest_log:
                         self.external_log_path = latest_log
                         self._reader_thread = threading.Thread(target=self._tail_external_log, args=(latest_log,), daemon=True)

@@ -372,7 +372,12 @@ class HUDServer:
             r"Sucesso\s+([\d.]+)%\s+>=\s+([\d.]+)%!\s+Profundidade promovida:\s+(\d+)\s+->\s+(\d+)"
         )
 
+        tick = 0
         while not self._stop_event.is_set():
+            tick += 1
+            if tick % 4 == 0:
+                self.runner.auto_detect_external_training()
+
             if not self.runner.is_running() or not getattr(self.runner, "external_log_path", None) or not getattr(self.runner, "_is_valid_training_log", lambda x: True)(self.runner.external_log_path):
                 self.runner.auto_detect_external_training()
                 time.sleep(1.0)
@@ -645,12 +650,12 @@ class HUDServer:
                             data_line = f"data: {json.dumps(payload)}\n\n"
                             self.wfile.write(data_line.encode("utf-8"))
 
-                            # Heartbeat comment SSE a cada ~3 segundos (36 ticks @ ~12 Hz) para manter sockets e proxies vivos
-                            if tick_count % 36 == 0:
+                            # Heartbeat comment SSE a cada ~3.5 segundos (10 ticks @ ~3 Hz) para manter sockets vivos
+                            if tick_count % 10 == 0:
                                 self.wfile.write(b": heartbeat\n\n")
 
                             self.wfile.flush()
-                            time.sleep(0.08)  # ~12 Hz
+                            time.sleep(0.35)  # ~3 Hz (estabilidade total contra BrokenPipe)
                     except (BrokenPipeError, ConnectionResetError, OSError):
                         pass
 
