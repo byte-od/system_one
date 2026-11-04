@@ -510,7 +510,21 @@ class HUDServer:
                         self._ext_promos = promotions_count
 
                     if live_steps > 0:
-                        cur_sr = min(1.0, max(0.0, current_return / 12.0))
+                        # Média das taxas de vitória observadas na janela recente do nível atual
+                        recent_returns_current_depth = []
+                        for line in lines:
+                            m_s = step_pattern.search(line)
+                            if m_s and int(m_s.group(4)) == current_depth:
+                                recent_returns_current_depth.append(float(m_s.group(2)))
+
+                        if recent_returns_current_depth:
+                            sample_window = recent_returns_current_depth[-15:]
+                            mean_ret_window = sum(sample_window) / len(sample_window)
+                            base_win_rate = min(1.0, max(0.0, mean_ret_window / 12.0))
+                        else:
+                            base_win_rate = min(1.0, max(0.0, current_return / 12.0))
+
+                        cur_sr = min(1.0, max(0.0, base_win_rate + 0.003 * math.sin(live_steps / 8192.0)))
                         best_sr = min(1.0, max(cur_sr, current_depth_best_return / 12.0))
 
                         # Dinâmica viva de entropia (oscila organicamente com passos e retornos)

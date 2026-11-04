@@ -561,17 +561,20 @@
           <span class="text-xs font-mono font-semibold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
             <span>🎯</span> Fronteira Curricular
           </span>
-          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-800">Meta: 50%</span>
+          <span id="kpi-depth-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-800">Nível D10 • Meta: 50%</span>
         </div>
         <div class="flex items-baseline justify-between">
-          <div id="kpi-depth" class="text-3xl font-mono font-black text-indigo-200">D10</div>
+          <div>
+            <div id="kpi-depth" class="text-3xl font-mono font-black text-indigo-200">0.0%</div>
+            <div class="text-[10px] font-mono text-indigo-400 font-semibold tracking-wider uppercase">Média de Vitórias</div>
+          </div>
           <div class="text-right font-mono text-xs">
-            <div class="text-gray-400 text-[10px]">PROMOÇÕES</div>
-            <div id="kpi-promotions" class="text-indigo-300 font-bold">9</div>
+            <div class="text-gray-400 text-[10px]">PICO NO NÍVEL</div>
+            <div id="kpi-best-winrate" class="text-indigo-400 font-bold">0.0%</div>
           </div>
         </div>
         <div class="text-xs text-gray-300 flex items-center justify-between border-t border-indigo-900/40 pt-2 font-mono">
-          <span>Janela de Avaliação</span>
+          <span>Patamar: <strong id="kpi-depth-level" class="text-indigo-300">D10</strong> (<span id="kpi-promotions">9</span> promos)</span>
           <span id="kpi-curriculum-samples" class="text-indigo-300">64 eps</span>
         </div>
       </div>
@@ -1049,10 +1052,17 @@
       if (tickMin1) tickMin1.style.top = '88%';
 
       // =========================================================
-      // Card 2: Fronteira Curricular (Win Rate Real no Nível)
+      // Card 2: Fronteira Curricular (Média de Vitórias no Nível Atual)
       // =========================================================
       const elKpiDepth = document.getElementById('kpi-depth');
-      if (elKpiDepth) elKpiDepth.innerText = `D${depth}`;
+      if (elKpiDepth) elKpiDepth.innerText = `${curWinRate.toFixed(1)}%`;
+      
+      const elDepthBadge = document.getElementById('kpi-depth-badge');
+      if (elDepthBadge) elDepthBadge.innerText = `Nível D${depth} • Meta: 50%`;
+
+      const elDepthLevel = document.getElementById('kpi-depth-level');
+      if (elDepthLevel) elDepthLevel.innerText = `D${depth}`;
+
       const elPromos = document.getElementById('kpi-promotions');
       if (elPromos) elPromos.innerText = telemetry.curriculum_promotions !== undefined ? telemetry.curriculum_promotions : (depth - 1);
       const elSamples = document.getElementById('kpi-curriculum-samples');
@@ -1064,7 +1074,10 @@
         : curWinRate;
       bestWinRate = Math.max(bestWinRate, curWinRate);
 
-      // Altura do Líquido Card 2 (reflete a taxa de sucesso no patamar atual)
+      const elBestWinRate = document.getElementById('kpi-best-winrate');
+      if (elBestWinRate) elBestWinRate.innerText = `${bestWinRate.toFixed(1)}%`;
+
+      // Altura do Líquido Card 2 (reflete a taxa de sucesso média no patamar atual)
       const liqDepth = document.getElementById('vessel-liquid-depth');
       if (liqDepth) {
         const normCurWr = Math.min(1.0, Math.max(0.05, curWinRate / 100.0));
