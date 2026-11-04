@@ -97,6 +97,10 @@ class HUDProcessRunner:
 
     def auto_detect_external_training(self) -> bool:
         """Verifica se há algum script de treino do System 1 rodando no sistema e conecta automaticamente."""
+        # Não intercepta processos se estiver rodando em ambiente de testes automatizados
+        if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
+            return False
+
         with self._lock:
             # Se já está conectado ao PID e possui log válido, mantém conexão ativa
             if self.is_running() and self.external_log_path and self._is_valid_training_log(self.external_log_path):
@@ -294,10 +298,13 @@ class HUDProcessRunner:
                     pass
 
         elif ext_pid is not None:
-            try:
-                os.kill(ext_pid, signal.SIGINT)
-            except OSError:
-                pass
+            with self._lock:
+                self.external_pid = None
+                self.external_log_path = None
+                self.status = "IDLE"
+                self.logs.append(f"[{time.strftime('%H:%M:%S')}] 🔌 Desconectado do processo externo (PID {ext_pid}).")
+                self.log_counter += 1
+            return True, f"Desconectado do processo externo PID {ext_pid} com sucesso."
 
         with self._lock:
             self.status = "STOPPED"

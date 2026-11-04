@@ -359,11 +359,8 @@ class HUDServer:
         return None
 
     def _external_telemetry_loop(self) -> None:
-        """Loop em segundo plano para extração de telemetria e renderização de vídeo quando conectado a treino externo."""
-        import io
+        """Loop em segundo plano para extração de telemetria quando conectado a treino externo."""
         import re
-        from PIL import Image
-        from system1_engine.env.adapters.rubiks import RubiksCubeEnv
 
         step_pattern = re.compile(
             r"\[Step\s+(\d+)/\d+\]\s+Mean Return \(last 20 ep\):\s+([-\d.]+)\s+\|\s+Calibra[çc][ãa]o:\s+([-\d.]+)\s+\|\s+Profundidade:\s+(\d+)"
@@ -374,9 +371,6 @@ class HUDServer:
         promo_pattern = re.compile(
             r"Sucesso\s+([\d.]+)%\s+>=\s+([\d.]+)%!\s+Profundidade promovida:\s+(\d+)\s+->\s+(\d+)"
         )
-
-        render_env = None
-        action_counter = 0
 
         while not self._stop_event.is_set():
             if not self.runner.is_running() or not getattr(self.runner, "external_log_path", None) or not getattr(self.runner, "_is_valid_training_log", lambda x: True)(self.runner.external_log_path):
@@ -502,27 +496,7 @@ class HUDServer:
                 except Exception:
                     pass
 
-            if render_env is None:
-                try:
-                    render_env = RubiksCubeEnv(render_mode="rgb_array", scramble_depth=5)
-                    render_env.reset()
-                except Exception:
-                    render_env = None
-
-            if render_env is not None:
-                try:
-                    action_counter = (action_counter + 1) % 12
-                    render_env.step(action_counter)
-                    frame = render_env.render()
-                    if frame is not None:
-                        img = Image.fromarray(frame)
-                        buf = io.BytesIO()
-                        img.save(buf, format="JPEG", quality=75)
-                        self.frame_buffer.update_frame(buf.getvalue())
-                except Exception:
-                    pass
-
-            time.sleep(0.15)
+            time.sleep(0.5)
 
     def start(self) -> None:
         if self._running:
