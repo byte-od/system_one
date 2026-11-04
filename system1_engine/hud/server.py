@@ -408,14 +408,14 @@ class HUDServer:
                     current_steps = getattr(self, "_ext_steps", None)
                     current_return = getattr(self, "_ext_return", 0.0)
                     current_calib = getattr(self, "_ext_calib", 1.0)
-                    current_depth = getattr(self, "_ext_depth", 10)
-                    current_scars = getattr(self, "_ext_scars", 569000)
-                    marathon_base_steps = getattr(self, "_ext_marathon_steps", 21000000)
-                    current_eta = getattr(self, "_ext_eta", "12.0h")
-                    current_w_norm = getattr(self, "_ext_w_norm", 3.04)
-                    current_z_norm = getattr(self, "_ext_z_norm", 5.58)
-                    current_g_norm = getattr(self, "_ext_g_norm", 23.31)
-                    current_depth_best_return = getattr(self, "_ext_best_ret", 6.70)
+                    current_depth = getattr(self, "_ext_depth", 1)
+                    current_scars = getattr(self, "_ext_scars", 0)
+                    marathon_base_steps = getattr(self, "_ext_marathon_steps", 0)
+                    current_eta = getattr(self, "_ext_eta", "6.0h")
+                    current_w_norm = getattr(self, "_ext_w_norm", 0.0)
+                    current_z_norm = getattr(self, "_ext_z_norm", 0.0)
+                    current_g_norm = getattr(self, "_ext_g_norm", 0.0)
+                    current_depth_best_return = getattr(self, "_ext_best_ret", 0.0)
                     promotions_count = max(current_depth - 1, 0)
 
                     found_new_step = False
@@ -480,16 +480,17 @@ class HUDServer:
                     time_since_step = max(0.0, min(5.0, now - getattr(self, "_last_step_time", now))) if current_steps is not None else 0.0
                     live_steps = current_steps + int(self._smoothed_fps * time_since_step) if current_steps is not None else 0
 
-                    # Extrapolação viva de Cicatrizes O(1) (~0.0215 cicatrizes/passo em D10)
-                    if current_scars is not None:
+                    # Extrapolação viva de Cicatrizes O(1)
+                    if current_scars is not None and current_scars > 0:
                         steps_beyond_marathon = max(0, live_steps - marathon_base_steps)
-                        live_scars = current_scars + int(0.0215 * min(500000, steps_beyond_marathon))
+                        live_scars = current_scars + int(0.015 * min(500000, steps_beyond_marathon))
                     else:
-                        live_scars = 569000
+                        live_scars = 0
 
                     # Recálculo de ETA em tempo real baseado no Throughput real (~1,750 FPS)
+                    target_total = 30_000_000 if "30" in str(getattr(self.runner, "external_log_path", "")) else 100_000_000
                     if live_steps > 0 and self._smoothed_fps > 0:
-                        rem_steps = max(0, 100_000_000 - live_steps)
+                        rem_steps = max(0, target_total - live_steps)
                         rem_hours = (rem_steps / self._smoothed_fps) / 3600.0
                         live_eta = f"{rem_hours:.1f}h"
                     else:
@@ -582,7 +583,7 @@ class HUDServer:
                             "sil_trajectories": live_scars,
                             "sil_full_wins": live_scars,
                             "sil_memory_mb": 0.0042,
-                            "sil_tournament_size": "Híbrido v2",
+                            "sil_tournament_size": "Híbrido Puríssimo",
                             # Exploração e Calibração
                             "calibration": live_calib,
                             "latency_p50_us": latency,
