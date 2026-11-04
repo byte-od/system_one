@@ -371,6 +371,9 @@ class HUDServer:
         marathon_pattern = re.compile(
             r"🏃 \[Maratona\s+([\d,]+)/[\d,]+.*Depth:\s+D(\d+)\s+\|\s+Scars:\s+([\d,]+)\s+\|\s+FPS:\s+(\d+)"
         )
+        promo_pattern = re.compile(
+            r"Sucesso\s+([\d.]+)%\s+>=\s+([\d.]+)%!\s+Profundidade promovida:\s+(\d+)\s+->\s+(\d+)"
+        )
 
         render_env = None
         action_counter = 0
@@ -386,33 +389,49 @@ class HUDServer:
                     with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
                         f.seek(0, os.SEEK_END)
                         size = f.tell()
-                        f.seek(max(0, size - 16384))
+                        # Lê os últimos 32 KB para histórico recente
+                        f.seek(max(0, size - 32768))
                         lines = f.readlines()
 
                     current_steps = None
                     current_return = 0.0
                     current_calib = 1.0
-                    current_depth = 5
+                    current_depth = 8
                     current_scars = 0
+                    current_depth_best_return = 0.0
+                    promotions_count = 0
 
                     for line in reversed(lines):
-                        if current_steps is None:
-                            m_step = step_pattern.search(line)
-                            if m_step:
-                                current_steps = int(m_step.group(1))
-                                current_return = float(m_step.group(2))
-                                current_calib = float(m_step.group(3))
-                                current_depth = int(m_step.group(4))
+                        m_step = step_pattern.search(line)
+                        if m_step:
+                            steps = int(m_step.group(1))
+                            ret = float(m_step.group(2))
+                            calib = float(m_step.group(3))
+                            depth = int(m_step.group(4))
+                            if current_steps is None:
+                                current_steps = steps
+                                current_return = ret
+                                current_calib = calib
+                                current_depth = depth
+                                current_depth_best_return = ret
+                            elif depth == current_depth:
+                                current_depth_best_return = max(current_depth_best_return, ret)
 
                         if current_scars == 0:
                             m_mar = marathon_pattern.search(line)
                             if m_mar:
                                 current_scars = int(m_mar.group(3).replace(",", ""))
 
-                        if current_steps is not None and current_scars > 0:
-                            break
+                    for line in lines:
+                        if promo_pattern.search(line):
+                            promotions_count += 1
 
                     if current_steps is not None:
+                        # Taxa estimada de vitórias no patamar atual:
+                        # Em Rubik, retorno ~10..12 indica episódio resolvido.
+                        cur_sr = min(1.0, max(0.0, current_return / 12.0))
+                        best_sr = min(1.0, max(cur_sr, current_depth_best_return / 12.0))
+
                         self.update_telemetry({
                             "status": "RUNNING",
                             "env": f"RubiksCube (Tabula Rasa D{current_depth})",
@@ -420,8 +439,9 @@ class HUDServer:
                             "fps": 21850.0,
                             "curriculum_depth": current_depth,
                             "curriculum_max_depth": "∞",
-                            "curriculum_success_rate": min(1.0, max(0.0, current_return / 12.0)),
-                            "curriculum_depth_best_success_rate": 0.65,
+                            "curriculum_promotions": max(promotions_count, current_depth - 1),
+                            "curriculum_success_rate": cur_sr,
+                            "curriculum_depth_best_success_rate": best_sr,
                             "mean_return_20": current_return,
                             "sil_memory_mb": 0.0042,
                             "sil_tournament_size": f"Scar (Híbrido v2 - {current_scars:,} cicatrizes)" if current_scars else "Scar (Híbrido v2)",

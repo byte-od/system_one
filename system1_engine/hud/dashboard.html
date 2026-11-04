@@ -2622,6 +2622,13 @@
           const parsed = JSON.parse(raw);
           const res = { ..._defaultTotalMetrics, ...parsed };
           if (!res.byLevel || typeof res.byLevel !== 'object') res.byLevel = {};
+          // Sanitização preventiva: remove resíduos de 100% gravados em patamares combinatórios (D5+)
+          Object.keys(res.byLevel).forEach(k => {
+            const d = parseInt(k.replace(/\D/g, ''), 10) || 1;
+            if (d >= 5 && res.byLevel[k].maxWinRate >= 99.0) {
+              res.byLevel[k].maxWinRate = 0.0;
+            }
+          });
           return res;
         }
       } catch (e) {
@@ -2799,7 +2806,11 @@
 
         // Card 2: Currículo / Win Rate - Filtrado por Nível (Pico do Patamar)
         const effDepthNum = parseInt((effLevel || 'D1').replace(/\D/g, ''), 10) || 1;
-        const maxWr = (lm.maxWinRate !== null && lm.maxWinRate !== undefined) ? lm.maxWinRate : 0.0;
+        let maxWr = (lm.maxWinRate !== null && lm.maxWinRate !== undefined) ? lm.maxWinRate : 0.0;
+        if (effDepthNum >= 5 && maxWr >= 99.0) {
+          maxWr = (lm.curWinRate !== null && lm.curWinRate < 90.0) ? lm.curWinRate : 0.0;
+          lm.maxWinRate = maxWr;
+        }
 
         const elMax2 = document.getElementById('vessel-val-max-2');
         if (elMax2) elMax2.innerText = `${maxWr.toFixed(1)}%`;
@@ -5634,18 +5645,20 @@
             ? (Number(telemetry.curriculum_depth_best_success_rate) * 100)
             : null;
 
-          // O MAX é o maior valor histórico ou instantâneo no patamar: nunca fica congelado ou regride
+          // Sanitização de histórico: se o patamar for D5+ e houver resíduo espúrio de 100%, zera
+          let prevMax = (curLevelLm.maxWinRate !== null && !isNaN(curLevelLm.maxWinRate)) ? curLevelLm.maxWinRate : 0;
+          if (currentDepthNum >= 5 && prevMax >= 99.0) {
+            prevMax = curWinRate;
+          }
+
+          // O MAX é o maior valor histórico ou instantâneo observado no patamar
           const candMaxWr = Math.max(
             depthBestSr !== null ? depthBestSr : 0,
             curWinRate,
-            (curLevelLm.maxWinRate !== null && !isNaN(curLevelLm.maxWinRate) ? curLevelLm.maxWinRate : 0)
+            prevMax
           );
 
-          if (currentDepthNum <= 4) {
-            curLevelLm.maxWinRate = 100.0;
-          } else {
-            curLevelLm.maxWinRate = candMaxWr;
-          }
+          curLevelLm.maxWinRate = Math.min(100.0, candMaxWr);
           curLevelLm.minWinRate = 0.0;
 
           const avgWinRate = _trainMetricsState.winRateHistory.length ? (_trainMetricsState.winRateHistory.reduce((a, b) => a + b, 0) / _trainMetricsState.winRateHistory.length) : curWinRate;
@@ -6071,7 +6084,11 @@
           }
 
           // Card 2: Win Rate (%) - Régua Filtrada por Nível (Pico do Patamar)
-          const effMaxWr = (effLm.maxWinRate !== null && effLm.maxWinRate !== undefined) ? effLm.maxWinRate : 0.0;
+          let effMaxWr = (effLm.maxWinRate !== null && effLm.maxWinRate !== undefined) ? effLm.maxWinRate : 0.0;
+          if (effDepthNum >= 5 && effMaxWr >= 99.0) {
+            effMaxWr = Math.max(depthBestSr || 0, curWinRate);
+            effLm.maxWinRate = effMaxWr;
+          }
 
           const valMax2 = document.getElementById('vessel-val-max-2');
           if (valMax2) {
