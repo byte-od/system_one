@@ -413,6 +413,18 @@ class UniversalS1Wrapper(gym.Wrapper):
             return self.env.simulate_2step(action1, action2)
         return None
 
+    def simulate_3step(
+        self,
+        action1: Any,
+        action2: Any,
+        action3: Any,
+        return_obs: bool = False,
+    ) -> Optional[tuple[Optional[np.ndarray], float, bool]]:
+        """Simula 3 passos consecutivos (Horizonte Fantasma de 3º Passo) se o ambiente base suportar."""
+        if hasattr(self.env, "simulate_3step"):
+            return self.env.simulate_3step(action1, action2, action3, return_obs=return_obs)
+        return None
+
     def step(
         self, action: Any, chunk_mask: Optional[np.ndarray] = None
     ) -> tuple[S1Observation, Any, Any, Any, Any]:

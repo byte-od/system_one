@@ -873,6 +873,36 @@ class RubiksCubeEnv(gym.Env):
 
         return obs2, float(rew2), bool(is_solved)
 
+    def simulate_3step(
+        self,
+        action1: int,
+        action2: int,
+        action3: int,
+        return_obs: bool = False,
+    ) -> Tuple[Optional[np.ndarray], float, bool]:
+        """Simula 3 passos atômicos consecutivos (Horizonte Fantasma de 3º Passo) e desfaz na ordem LIFO sem alocação."""
+        act1_name = self.core.ATOMIC_MOVES[int(action1)]
+        act2_name = self.core.ATOMIC_MOVES[int(action2)]
+        act3_name = self.core.ATOMIC_MOVES[int(action3)]
+        inv1_name = self.core.INVERSE_ATOMIC[act1_name]
+        inv2_name = self.core.INVERSE_ATOMIC[act2_name]
+        inv3_name = self.core.INVERSE_ATOMIC[act3_name]
+
+        self.core.apply_atomic(act1_name)
+        self.core.apply_atomic(act2_name)
+        self.core.apply_atomic(act3_name)
+        is_solved = self.core.is_solved()
+        cur_score = self.core.get_score()
+        delta_score = cur_score - self._prev_score
+        rew3 = (delta_score * 5.0) - 0.06 + (10.0 if is_solved else 0.0)
+        obs3 = self.core.get_one_hot() if (return_obs and not is_solved) else None
+
+        self.core.apply_atomic(inv3_name)
+        self.core.apply_atomic(inv2_name)
+        self.core.apply_atomic(inv1_name)
+
+        return obs3, float(rew3), bool(is_solved)
+
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         self._steps += 1
         act_idx = int(action)

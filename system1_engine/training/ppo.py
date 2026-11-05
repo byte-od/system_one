@@ -1483,22 +1483,13 @@ class RecurrentPPOTrainer:
             if self.scar_memory is not None:
                 traj_logps = [s.get("log_prob", 0.0) for s in traj_steps]
                 surprise = float(-sum(traj_logps) / max(1, len(traj_logps)))
-                enc = getattr(self.agent.front_end, "state_encoder", None)
-                if enc is not None and hasattr(enc, "slot_proj"):
-                    with torch.inference_mode(False), torch.enable_grad():
-                        s0 = torch.tensor(traj_obs[0], dtype=torch.float32, device=self.device).unsqueeze(0).unsqueeze(1).requires_grad_(True)
-                        delta_dim = 972 if not self.agent.is_visual else None
-                        obs_t = {
-                            "obs": s0,
-                            "prev_action": torch.zeros((1, 1), dtype=torch.long, device=self.device),
-                            "prev_reward": torch.zeros((1, 1, 1), dtype=torch.float32, device=self.device),
-                            "delta_obs": torch.zeros((1, 1, delta_dim), dtype=torch.float32, device=self.device) if delta_dim else None,
-                        }
-                        _, val, _ = self.agent(obs_t)
-                        slots = getattr(enc, "_last_slots", None)
-                        if slots is not None and slots.requires_grad:
-                            g_slots = torch.autograd.grad(val.sum(), slots)[0].detach()
-                            self.scar_memory.record_scar(slots.detach(), g_slots, surprise=surprise)
+                self.agent.record_victory_scar(
+                    traj_obs=traj_obs,
+                    traj_delta=traj_delta,
+                    traj_prev_act=traj_prev_act,
+                    traj_prev_rew=traj_prev_rew,
+                    surprise=surprise,
+                )
 
             if self.scar_mode == "none":
                 self.sil_buffer.add(
@@ -1561,22 +1552,13 @@ class RecurrentPPOTrainer:
                 if self.scar_memory is not None and not self.pure_scars:
                     peak_logps = [s.get("log_prob", 0.0) for s in peak_slice]
                     surprise = float(-sum(peak_logps) / max(1, len(peak_logps)))
-                    enc = getattr(self.agent.front_end, "state_encoder", None)
-                    if enc is not None and hasattr(enc, "slot_proj"):
-                        with torch.inference_mode(False), torch.enable_grad():
-                            s0 = torch.tensor(peak_obs[0], dtype=torch.float32, device=self.device).unsqueeze(0).unsqueeze(1).requires_grad_(True)
-                            delta_dim = 972 if not self.agent.is_visual else None
-                            obs_t = {
-                                "obs": s0,
-                                "prev_action": torch.zeros((1, 1), dtype=torch.long, device=self.device),
-                                "prev_reward": torch.zeros((1, 1, 1), dtype=torch.float32, device=self.device),
-                                "delta_obs": torch.zeros((1, 1, delta_dim), dtype=torch.float32, device=self.device) if delta_dim else None,
-                            }
-                            _, val, _ = self.agent(obs_t)
-                            slots = getattr(enc, "_last_slots", None)
-                            if slots is not None and slots.requires_grad:
-                                g_slots = torch.autograd.grad(val.sum(), slots)[0].detach()
-                                self.scar_memory.record_scar(slots.detach(), g_slots, surprise=surprise)
+                    self.agent.record_victory_scar(
+                        traj_obs=peak_obs,
+                        traj_delta=peak_delta,
+                        traj_prev_act=peak_prev_act,
+                        traj_prev_rew=peak_prev_rew,
+                        surprise=surprise,
+                    )
 
                 if self.scar_mode == "none":
                     self.sil_buffer.add(

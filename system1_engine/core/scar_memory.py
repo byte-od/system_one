@@ -148,6 +148,7 @@ class GradientScarMemory(nn.Module):
         Se afinidade > 0, injeta Fast-Weights proporcionalmente à proximidade.
         """
         if not self.has_fast_weights or int(self.scars_count.item()) == 0:
+            self._last_affinity = None
             return slots, None
 
         # Projeção linear rápida O(1): slots @ W_scar^T -> [..., num_slots, slot_dim]
@@ -159,10 +160,12 @@ class GradientScarMemory(nn.Module):
             norm_s = slots / (torch.norm(slots, dim=-1, keepdim=True) + 1e-6)
             # Similaridade cosseno por slot: [..., num_slots]
             affinity = torch.matmul(norm_s, norm_z_ref)
+            self._last_affinity = affinity
             # Gate ReLU suave: só ativa quando a afinidade for positiva (> 0)
             gate = torch.clamp(affinity, min=0.0).unsqueeze(-1)  # [..., num_slots, 1]
             slots_guided = slots + self.scale * gate * delta
         else:
+            self._last_affinity = None
             slots_guided = slots + self.scale * delta
 
         return slots_guided, delta
@@ -184,13 +187,20 @@ class GradientScarMemory(nn.Module):
         resonance: torch.Tensor,
     ) -> torch.Tensor:
         """Modula a distribuição de logits com base no sinal de ressonância direcional (Intuição Sistema 1)."""
-        if not self.has_resonance or int(self.scars_count.item()) == 0:
+        if not self.has_resonance or int(self.scars_count.item()) == 0 or resonance is None:
             return logits
 
         # Se resonance > 0: aumenta a nitidez (temperatura mais fria / certeza sem hesitação)
         # Se resonance < 0: aumenta a incerteza (temperatura mais quente / estimula exploração)
-        res_scalar = resonance.mean() if resonance.dim() > 0 else resonance
-        clamped_res = torch.clamp(res_scalar, -1.0, 1.0)
+        if resonance.dim() > 0:
+            res_per_sample = resonance.mean(dim=-1, keepdim=True)
+            if logits.dim() == 1:
+                res_per_sample = res_per_sample.squeeze()
+            elif logits.dim() == 2 and res_per_sample.dim() == 3:
+                res_per_sample = res_per_sample.squeeze(1)
+        else:
+            res_per_sample = resonance
+        clamped_res = torch.clamp(res_per_sample, -1.0, 1.0)
         
         # Modulação suave de escala
         scale_factor = 1.0 + self.resonance_beta * clamped_res

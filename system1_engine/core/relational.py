@@ -181,6 +181,7 @@ class UniversalRelationalStateEncoder(nn.Module):
         self.scar_memory = None
         self._last_delta_slots = None
         self._last_resonance = None
+        self._last_affinity = None
         self._obs_proj_cache = None
 
     def train(self, mode: bool = True) -> "UniversalRelationalStateEncoder":
@@ -235,11 +236,15 @@ class UniversalRelationalStateEncoder(nn.Module):
         if self.scar_memory is not None and getattr(self.scar_memory, "has_fast_weights", False):
             slots, delta = self.scar_memory.modulate_slots(slots)
             self._last_delta_slots = delta
+            self._last_affinity = getattr(self.scar_memory, "_last_affinity", None)
             if getattr(self.scar_memory, "mode", "") == "hybrid" and delta is not None:
                 self._last_resonance = self.scar_memory.compute_resonance_hybrid(delta)
+            else:
+                self._last_resonance = None
         else:
             self._last_delta_slots = None
             self._last_resonance = None
+            self._last_affinity = None
 
         # Achatamento e projeção relacional
         self._last_slots = slots

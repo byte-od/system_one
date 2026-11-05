@@ -177,6 +177,92 @@ class UniversalS1Agent(nn.Module):
         if hasattr(self.front_end, "state_encoder") and hasattr(self.front_end.state_encoder, "scar_memory"):
             self.front_end.state_encoder.scar_memory = scar_memory
 
+    def load_state_dict(self, state_dict: Any, strict: bool = True, assign: bool = False) -> Any:
+        """Auto-detecta e instancia GradientScarMemory se presente no state_dict antes do carregamento."""
+        if (
+            self.scar_memory is None
+            and isinstance(state_dict, dict)
+            and any(k.startswith("scar_memory.") or ".scar_memory." in k for k in state_dict.keys())
+        ):
+            from system1_engine.core.scar_memory import GradientScarMemory
+            enc = getattr(self.front_end, "state_encoder", None)
+            slot_dim = getattr(enc, "slot_dim", 32) if enc is not None else 32
+            num_slots = getattr(enc, "num_slots", 8) if enc is not None else 8
+            sm = GradientScarMemory(
+                slot_dim=slot_dim,
+                num_slots=num_slots,
+                mode="hybrid",
+                scale=0.0,
+                resonance_beta=0.0,
+            ).to(self.device)
+            self.set_scar_memory(sm)
+        return super().load_state_dict(state_dict, strict=strict, assign=assign)
+
+    def record_victory_scar(
+        self,
+        traj_obs: Any,
+        traj_delta: Optional[Any] = None,
+        traj_prev_act: Optional[Any] = None,
+        traj_prev_rew: Optional[Any] = None,
+        surprise: float = 1.5,
+    ) -> bool:
+        """Grava permanentemente toda a trajetória de uma vitória [0..T-1] na Memória de Cicatrizes O(1) e Intuição."""
+        if self.is_visual:
+            return False
+        enc = getattr(self.front_end, "state_encoder", None)
+        if enc is None or not hasattr(enc, "slot_proj"):
+            return False
+        if self.scar_memory is None:
+            from system1_engine.core.scar_memory import GradientScarMemory
+            slot_dim = getattr(enc, "slot_dim", 32)
+            num_slots = getattr(enc, "num_slots", 8)
+            self.set_scar_memory(
+                GradientScarMemory(slot_dim=slot_dim, num_slots=num_slots, mode="hybrid").to(self.device)
+            )
+        if getattr(self.scar_memory, "mode", "none") == "none":
+            return False
+
+        dev = self.device
+        obs_arr = np.asarray(traj_obs, dtype=np.float32)
+        if obs_arr.ndim == 1:
+            obs_arr = obs_arr[None, :]
+        T_len, obs_dim = obs_arr.shape[0], obs_arr.shape[-1]
+        delta_dim = (3 * obs_dim) if self.tri_compass else obs_dim
+
+        with torch.inference_mode(False), torch.enable_grad():
+            t_obs = torch.tensor(obs_arr, dtype=torch.float32, device=dev).unsqueeze(0).requires_grad_(True)
+            if traj_delta is not None:
+                d_arr = np.asarray(traj_delta, dtype=np.float32)
+                if d_arr.ndim == 1:
+                    d_arr = d_arr[None, :]
+                t_delta = torch.tensor(d_arr, dtype=torch.float32, device=dev).unsqueeze(0)
+            else:
+                t_delta = torch.zeros((1, T_len, delta_dim), dtype=torch.float32, device=dev)
+
+            if traj_prev_act is not None:
+                t_act = torch.as_tensor(traj_prev_act, dtype=torch.long, device=dev).view(1, T_len)
+            else:
+                t_act = torch.zeros((1, T_len), dtype=torch.long, device=dev)
+
+            if traj_prev_rew is not None:
+                t_rew = torch.as_tensor(traj_prev_rew, dtype=torch.float32, device=dev).view(1, T_len, 1)
+            else:
+                t_rew = torch.zeros((1, T_len, 1), dtype=torch.float32, device=dev)
+
+            obs_t = {
+                "obs": t_obs,
+                "delta_obs": t_delta,
+                "prev_action": t_act,
+                "prev_reward": t_rew,
+            }
+            _, val, _ = self.forward(obs_t)
+            slots = getattr(enc, "_last_slots", None)
+            if slots is not None and slots.requires_grad:
+                g_slots = torch.autograd.grad(val.sum(), slots)[0].detach()
+                self.scar_memory.record_scar(slots.detach(), g_slots, surprise=float(surprise))
+                return True
+        return False
+
     @property
     def device(self) -> torch.device:
         """Returns the device on which model parameters currently reside."""
@@ -833,53 +919,125 @@ class UniversalS1Agent(nn.Module):
                                 - torch.tensor(cand_pen_list, device=dev)
                             )
 
-                            # Salto Fantasma de 2º Passo guiado pela Intuição (+ Crítico de 2º Passo)
+                            # Salto Fantasma de 2º e 3º Passo guiado pela Intuição + Cicatrizes (Opções 1, 2 e 3)
                             sim_2step_fn = (
                                 getattr(raw_inner_env, "simulate_2step", None)
+                                if (ghost_jump and use_fast_raw_sim)
+                                else None
+                            )
+                            sim_3step_fn = (
+                                getattr(raw_inner_env, "simulate_3step", None)
                                 if (ghost_jump and use_fast_raw_sim)
                                 else None
                             )
                             if sim_2step_fn is not None:
                                 next_logits = self.policy_head.linear(h_cands).squeeze(1)
                                 next_probs = torch.softmax(next_logits, dim=-1)
-                                _, next_top_idx = torch.topk(next_probs, k=min(2, n_acts), dim=-1)
+                                next_top_p, next_top_idx = torch.topk(next_probs, k=min(3, n_acts), dim=-1)
+
+                                q1_order = torch.argsort(q_scores, descending=True)
+                                best_m1 = int(q1_order[0].item())
+                                second_m1 = int(q1_order[1].item()) if M > 1 else best_m1
+                                worst_m1 = int(q1_order[-1].item())
+                                best_q1_val = float(q_scores[best_m1].item())
+                                q1_margin = float((q_scores[best_m1] - q_scores[second_m1]).item())
+
+                                # Opção 1 (Poda de Clone Cicatrizado): se o pior clone pisou em cicatriz e está atrás, libera slot SIMD
+                                prune_worst = (
+                                    (M >= 4)
+                                    and (cand_pen_list[worst_m1] > 0.0)
+                                    and ((best_q1_val - float(q_scores[worst_m1].item())) > 0.25)
+                                )
+                                alive_m = [m_i for m_i in range(M) if not (prune_worst and m_i == worst_m1)]
 
                                 solve_2step_act = None
+                                p_idx_list: List[int] = []
                                 obs2_list = []
-                                act2_list = []
-                                rew2_list = []
-                                pen2_list = []
+                                a1_list: List[int] = []
+                                act2_list: List[int] = []
+                                rew2_list: List[float] = []
+                                pen2_list: List[float] = []
+                                r1_ref_list: List[float] = []
+                                best_m1_r2 = -1e9
 
-                                for idx_m, a1 in enumerate(valid_cands):
-                                    a2 = int(next_top_idx[idx_m, 0].item())
+                                for idx_m in alive_m:
+                                    a1 = valid_cands[idx_m]
                                     if n_acts == 12:
                                         inv_a1 = (a1 + 1) if (a1 % 2 == 0) else (a1 - 1)
-                                        if a2 == inv_a1 and next_top_idx.shape[1] > 1:
-                                            a2 = int(next_top_idx[idx_m, 1].item())
-                                    o2, rew2, done2 = sim_2step_fn(a1, a2)
-                                    if done2:
-                                        solve_2step_act = a1
-                                        break
-                                    if o2 is not None:
-                                        o2_arr = np.asarray(o2, dtype=np.float32)
-                                        v_cnt2 = (
-                                            visit_counts.get(hash(o2_arr.tobytes()), 0)
-                                            if (scar_penalty > 0.0 and visit_counts)
-                                            else 0
+                                        valid_a2s = [
+                                            int(next_top_idx[idx_m, k_i].item())
+                                            for k_i in range(next_top_idx.shape[1])
+                                            if int(next_top_idx[idx_m, k_i].item()) != inv_a1
+                                        ]
+                                    else:
+                                        valid_a2s = [
+                                            int(next_top_idx[idx_m, k_i].item())
+                                            for k_i in range(next_top_idx.shape[1])
+                                        ]
+                                    if not valid_a2s:
+                                        valid_a2s = [int(next_top_idx[idx_m, 0].item())]
+
+                                    # Opção 2 (Bifurcação Assimétrica no 2º Passo para o líder sob dúvida intuitiva)
+                                    margin2 = (
+                                        float((next_top_p[idx_m, 0] - next_top_p[idx_m, 1]).item())
+                                        if next_top_p.shape[1] > 1
+                                        else 1.0
+                                    )
+                                    branch_k = (
+                                        2
+                                        if (
+                                            idx_m == best_m1
+                                            and (prune_worst or margin2 < 0.15)
+                                            and margin2 < 0.25
+                                            and len(valid_a2s) >= 2
                                         )
-                                        obs2_list.append(o2_arr)
-                                        act2_list.append(a2)
-                                        rew2_list.append(float(rew2))
-                                        pen2_list.append(float(scar_penalty * v_cnt2))
+                                        else 1
+                                    )
+
+                                    for a2 in valid_a2s[:branch_k]:
+                                        o2, rew2, done2 = sim_2step_fn(a1, a2)
+                                        if done2:
+                                            solve_2step_act = a1
+                                            break
+                                        if idx_m == best_m1 and float(rew2) > best_m1_r2:
+                                            best_m1_r2 = float(rew2)
+                                        if o2 is not None:
+                                            o2_arr = np.asarray(o2, dtype=np.float32)
+                                            v_cnt2 = (
+                                                visit_counts.get(hash(o2_arr.tobytes()), 0)
+                                                if (scar_penalty > 0.0 and visit_counts)
+                                                else 0
+                                            )
+                                            p_idx_list.append(idx_m)
+                                            obs2_list.append(o2_arr)
+                                            a1_list.append(a1)
+                                            act2_list.append(a2)
+                                            rew2_list.append(float(rew2))
+                                            pen2_list.append(float(scar_penalty * v_cnt2))
+                                            r1_ref_list.append(cand_rew_list[idx_m])
+                                    if solve_2step_act is not None:
+                                        break
 
                                 if solve_2step_act is not None:
                                     action = solve_2step_act
                                     value_rerank_triggered = True
-                                elif len(obs2_list) == M:
+                                elif (
+                                    not force_rerank_by_scar
+                                    and cand_pen_list[best_m1] == 0.0
+                                    and q1_margin >= 0.25
+                                    and len(rew2_list) > 0
+                                    and best_m1_r2 >= max(rew2_list)
+                                ):
+                                    # Opção 1 (Gate Condicional): líder do Passo 1 já domina em valor e em alinhamento físico de 2º passo
+                                    action = valid_cands[best_m1]
+                                    value_rerank_triggered = True
+                                elif len(obs2_list) > 0:
+                                    M2 = len(obs2_list)
                                     st_obs2 = np.stack(obs2_list)
                                     b_obs2 = torch.from_numpy(st_obs2).unsqueeze(1)
+                                    st_parent_obs = stacked_obs[p_idx_list]
                                     if getattr(effective_env, "tri_compass", False):
-                                        d_loc2 = st_obs2 - stacked_obs
+                                        d_loc2 = st_obs2 - st_parent_obs
                                         d_orig2 = (
                                             st_obs2 - effective_env.init_obs
                                             if effective_env.init_obs is not None
@@ -900,23 +1058,64 @@ class UniversalS1Agent(nn.Module):
                                         b_obs2 = b_obs2.to(dev)
                                         b_delta2 = b_delta2.to(dev)
 
-                                    b_act2 = torch.tensor(act2_list, dtype=torch.long, device=dev).view(M, 1)
+                                    b_act2 = torch.tensor(act2_list, dtype=torch.long, device=dev).view(M2, 1)
                                     b_rew2 = (
                                         torch.tensor(rew2_list, dtype=torch.float32, device=dev)
-                                        - torch.tensor(cand_rew_list, dtype=torch.float32, device=dev)
-                                    ).view(M, 1, 1)
+                                        - torch.tensor(r1_ref_list, dtype=torch.float32, device=dev)
+                                    ).view(M2, 1, 1)
                                     z_cands2 = self.front_end(obs=b_obs2, delta_obs=b_delta2, prev_action=b_act2, prev_reward=b_rew2)
-                                    h_cands2, _ = self.trunk(z_cands2, hx=nhx_cands, dones=None)
+                                    if nhx_cands is not None:
+                                        if isinstance(nhx_cands, tuple):
+                                            hx_cands2 = tuple(
+                                                h_t[:, p_idx_list, :] if h_t.dim() == 3 else h_t[p_idx_list, :]
+                                                for h_t in nhx_cands
+                                            )
+                                        else:
+                                            hx_cands2 = nhx_cands[:, p_idx_list, :] if nhx_cands.dim() == 3 else nhx_cands[p_idx_list, :]
+                                    else:
+                                        hx_cands2 = None
+
+                                    h_cands2, _ = self.trunk(z_cands2, hx=hx_cands2, dones=None)
                                     v_cands2 = self.value_head(h_cands2).squeeze(-1).squeeze(-1)
                                     q2_scores = (
                                         torch.tensor(rew2_list, device=dev)
                                         + (0.99 ** 2) * v_cands2
                                         - torch.tensor(pen2_list, device=dev)
                                     )
-                                    q_scores = torch.maximum(q_scores, 0.98 * q2_scores)
-                                    best_idx = int(torch.argmax(q_scores).item())
-                                    action = valid_cands[best_idx]
-                                    value_rerank_triggered = True
+
+                                    # Opção 3 (Horizonte Fantasma de 3º Passo em Rust quando próximo da solução)
+                                    solve_3step_act = None
+                                    if sim_3step_fn is not None and float(v_cands2.max().item()) > 1.5:
+                                        logits3 = self.policy_head.linear(h_cands2).squeeze(1)
+                                        _, top_i3 = torch.topk(logits3, k=min(6, n_acts), dim=-1)
+                                        for m2_i in range(M2):
+                                            if float(v_cands2[m2_i].item()) <= 1.5:
+                                                continue
+                                            a1_v, a2_v = a1_list[m2_i], act2_list[m2_i]
+                                            inv_a2 = ((a2_v + 1) if (a2_v % 2 == 0) else (a2_v - 1)) if n_acts == 12 else -1
+                                            for k_idx in range(top_i3.shape[1]):
+                                                a3_v = int(top_i3[m2_i, k_idx].item())
+                                                if a3_v == inv_a2:
+                                                    continue
+                                                _, _, done3 = sim_3step_fn(a1_v, a2_v, a3_v, return_obs=False)
+                                                if done3:
+                                                    solve_3step_act = a1_v
+                                                    break
+                                            if solve_3step_act is not None:
+                                                break
+
+                                    if solve_3step_act is not None:
+                                        action = solve_3step_act
+                                        value_rerank_triggered = True
+                                    else:
+                                        best_q2_per_m = torch.full((M,), -1e9, device=dev)
+                                        for m2_i, p_i in enumerate(p_idx_list):
+                                            if q2_scores[m2_i] > best_q2_per_m[p_i]:
+                                                best_q2_per_m[p_i] = q2_scores[m2_i]
+                                        q_scores = torch.maximum(q_scores, 0.98 * best_q2_per_m)
+                                        best_idx = int(torch.argmax(q_scores).item())
+                                        action = valid_cands[best_idx]
+                                        value_rerank_triggered = True
                                 else:
                                     best_idx = int(torch.argmax(q_scores).item())
                                     action = valid_cands[best_idx]

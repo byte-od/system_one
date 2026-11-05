@@ -49,6 +49,65 @@ def test_simulate_2step_restores_exact_cube_state():
                 assert obs2 is not None and obs2.shape == (324,)
 
 
+def test_simulate_3step_restores_exact_cube_state_and_detects_win():
+    raw_env = RubiksCubeEnv(curriculum=False, scramble_depth=3)
+    raw_env.reset(seed=99)
+    # Apply 3 known moves from solved state
+    raw_env.core.reset()
+    raw_env.core.apply_atomic("U")
+    raw_env.core.apply_atomic("R")
+    raw_env.core.apply_atomic("F")
+    raw_env._prev_score = raw_env.core.get_score()
+    state_before = raw_env.core.state.copy()
+
+    # Inverse sequence F' (5), R' (9), U' (1) must solve in 3 steps
+    obs3, rew3, done3 = raw_env.simulate_3step(5, 9, 1, return_obs=False)
+    assert done3 is True
+    assert obs3 is None
+    assert rew3 > 10.0
+    assert np.array_equal(raw_env.core.state, state_before)
+
+
+def test_standardized_scar_memory_record_and_autoload():
+    raw_env = RubiksCubeEnv(curriculum=False, scramble_depth=2)
+    env = UniversalS1Wrapper(raw_env, tri_compass=True)
+    agent = UniversalS1Agent(
+        obs_space=env.observation_space,
+        action_space=env.action_space,
+        trunk_type="lru",
+        action_chunk_size=1,
+        tri_compass=True,
+    ).to("cpu")
+
+    obs_dict, _ = env.reset(seed=11)
+    traj_obs = [obs_dict["obs"], obs_dict["obs"]]
+    traj_delta = [obs_dict["delta_obs"], obs_dict["delta_obs"]]
+    ok = agent.record_victory_scar(
+        traj_obs=traj_obs,
+        traj_delta=traj_delta,
+        traj_prev_act=[0, 1],
+        traj_prev_rew=[0.0, 1.0],
+        surprise=2.0,
+    )
+    assert ok is True
+    assert agent.scar_memory is not None
+    assert int(agent.scar_memory.scars_count.item()) == 1
+
+    # Save state_dict and load into a fresh agent with scar_memory=None -> must auto-instantiate scar_memory
+    sd = agent.state_dict()
+    agent2 = UniversalS1Agent(
+        obs_space=env.observation_space,
+        action_space=env.action_space,
+        trunk_type="lru",
+        action_chunk_size=1,
+        tri_compass=True,
+    ).to("cpu")
+    assert agent2.scar_memory is None
+    agent2.load_state_dict(sd, strict=True)
+    assert agent2.scar_memory is not None
+    assert int(agent2.scar_memory.scars_count.item()) == 1
+
+
 def test_act_fast_ghost_jump_and_soft_scar():
     raw_env = RubiksCubeEnv(curriculum=False, scramble_depth=2)
     env = UniversalS1Wrapper(raw_env, tri_compass=True)
