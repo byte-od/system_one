@@ -738,15 +738,17 @@ class RubiksCubeEnv(gym.Env):
         # 1. Taxa de sucesso real observada na fronteira ativa
         success_rate = self.curriculum_success_rate
 
-        # 2. Modulação Dinâmica da Probabilidade da Fronteira (P_frontier)
-        # Se o sucesso for baixo (<20%), recua para treinar no degrau preparatório D-1.
-        # Conforme sobe, concentra até 90% na fronteira para disparar a promoção.
+        # 2. Modulação Dinâmica Suavizada da Probabilidade da Fronteira (P_frontier)
+        # Rampa sigmoide suave (-4.5 em vez de -10.0) + amortecimento EMA para evitar
+        # quebras bruscas na proporção D_atual vs D-1 ao cruzar 35% de vitórias.
         p_base = 1.0 - self.mixed_replay_rate
-        p_min = max(0.40, p_base - 0.25)
-        p_max = min(0.92, p_base + 0.15)
+        p_min = max(0.50, p_base - 0.15)
+        p_max = min(0.90, p_base + 0.10)
 
-        s_factor = 1.0 / (1.0 + np.exp(-10.0 * (success_rate - 0.35)))
-        p_frontier = float(p_min + (p_max - p_min) * s_factor)
+        s_factor = 1.0 / (1.0 + np.exp(-4.5 * (success_rate - 0.35)))
+        raw_p_frontier = float(p_min + (p_max - p_min) * s_factor)
+        prev_p = getattr(self, "_last_p_frontier", raw_p_frontier)
+        p_frontier = float(0.85 * prev_p + 0.15 * raw_p_frontier)
         self._last_p_frontier = p_frontier
 
         if self.rng.random() < p_frontier:
@@ -813,6 +815,11 @@ class RubiksCubeEnv(gym.Env):
             self.set_view_mode(options["view_mode"])
         self._last_scramble_moves = self.core.scramble(depth=depth, use_macros=False, rng=self.rng)
         self._steps = 0
+        if self.curriculum and depth >= 4:
+            jitter = int(self.rng.integers(-3, 5))
+            self._episode_max_steps = max(15, min(self.max_steps, depth * 5) + jitter)
+        else:
+            self._episode_max_steps = min(self.max_steps, max(15, depth * 5)) if self.curriculum else self.max_steps
         self._last_action_name = "RESET"
         self._prev_score = self.core.get_score()
 
@@ -924,7 +931,11 @@ class RubiksCubeEnv(gym.Env):
             reward += 10.0
 
         terminated = is_solved
-        eff_max_steps = min(self.max_steps, max(15, getattr(self, "_episode_depth", self.current_depth) * 5)) if self.curriculum else self.max_steps
+        eff_max_steps = getattr(
+            self,
+            "_episode_max_steps",
+            min(self.max_steps, max(15, getattr(self, "_episode_depth", self.current_depth) * 5)) if self.curriculum else self.max_steps,
+        )
         truncated = self._steps >= eff_max_steps
 
         if (terminated or truncated) and self.curriculum:
@@ -1141,13 +1152,15 @@ class RubiksCubeMacroEnv(gym.Env):
         # 1. Taxa de sucesso real observada na fronteira ativa
         success_rate = self.curriculum_success_rate
 
-        # 2. Modulação Dinâmica da Probabilidade da Fronteira (P_frontier)
+        # 2. Modulação Dinâmica Suavizada da Probabilidade da Fronteira (P_frontier)
         p_base = 1.0 - self.mixed_replay_rate
-        p_min = max(0.40, p_base - 0.25)
-        p_max = min(0.92, p_base + 0.15)
+        p_min = max(0.50, p_base - 0.15)
+        p_max = min(0.90, p_base + 0.10)
 
-        s_factor = 1.0 / (1.0 + np.exp(-10.0 * (success_rate - 0.35)))
-        p_frontier = float(p_min + (p_max - p_min) * s_factor)
+        s_factor = 1.0 / (1.0 + np.exp(-4.5 * (success_rate - 0.35)))
+        raw_p_frontier = float(p_min + (p_max - p_min) * s_factor)
+        prev_p = getattr(self, "_last_p_frontier", raw_p_frontier)
+        p_frontier = float(0.85 * prev_p + 0.15 * raw_p_frontier)
         self._last_p_frontier = p_frontier
 
         if self.rng.random() < p_frontier:
@@ -1270,7 +1283,11 @@ class RubiksCubeMacroEnv(gym.Env):
             reward += 15.0
 
         terminated = is_solved
-        eff_max_steps = min(self.max_steps, max(15, getattr(self, "_episode_depth", self.current_depth) * 5)) if self.curriculum else self.max_steps
+        eff_max_steps = getattr(
+            self,
+            "_episode_max_steps",
+            min(self.max_steps, max(15, getattr(self, "_episode_depth", self.current_depth) * 5)) if self.curriculum else self.max_steps,
+        )
         truncated = self._steps >= eff_max_steps
 
         if (terminated or truncated) and self.curriculum:

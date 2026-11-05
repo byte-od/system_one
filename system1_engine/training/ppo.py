@@ -351,8 +351,8 @@ class RecurrentPPOTrainer:
                 self._env_scale_multipliers = torch.ones((self.num_envs, 1, 1), dtype=torch.float32, device=self.device)
                 self._env_fixed_anchors = None
 
-        # Persistent episode statistics across rollout batches
-        self.episode_returns: deque[float] = deque(maxlen=20)
+        # Persistent episode statistics across rollout batches (cobre toda a frota vetorizada para evitar ondas de truncamento)
+        self.episode_returns: deque[float] = deque(maxlen=max(20, self.num_envs))
         self.curr_ep_return: float = 0.0
         self.total_steps: int = 0
         self.best_state_depth: int = self._get_current_curriculum_depth()
