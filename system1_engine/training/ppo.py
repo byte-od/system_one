@@ -712,12 +712,20 @@ class RecurrentPPOTrainer:
         if self.action_chunk_size == 1:
             logits_1d = raw_logits.squeeze()
             probs = torch.softmax(logits_1d, dim=-1)
-            top_p, top_indices = torch.topk(probs, k=min(self.teacher_top_k, len(probs)))
+            n_acts = len(probs)
+            top_p, top_indices = torch.topk(probs, k=min(self.teacher_top_k + 2, n_acts))
             conf = float(top_p[0].item())
             if conf >= self.teacher_confidence_threshold:
                 return None
 
-            cand_acts = [int(idx.item()) for idx in top_indices]
+            inv_last = -1
+            if n_acts == 12 and hasattr(self, "_vec_recent_actions") and e < len(self._vec_recent_actions) and len(self._vec_recent_actions[e]) > 0:
+                last_a = int(self._vec_recent_actions[e][-1])
+                inv_last = (last_a + 1) if (last_a % 2 == 0) else (last_a - 1)
+
+            cand_acts = [int(idx.item()) for idx in top_indices if int(idx.item()) != inv_last][:self.teacher_top_k]
+            if not cand_acts:
+                cand_acts = [int(top_indices[0].item())]
             cand_obs = []
             cand_rews = []
             valid_acts = []
@@ -739,18 +747,133 @@ class RecurrentPPOTrainer:
                 best_act = immediate_solve
             elif len(valid_acts) > 1:
                 M = len(valid_acts)
-                b_obs = torch.from_numpy(np.stack(cand_obs).astype(np.float32)).unsqueeze(1).to(self.device)
-                b_delta = torch.zeros_like(b_obs)
+                stacked_obs = np.stack(cand_obs).astype(np.float32)
+                b_obs = torch.from_numpy(stacked_obs).unsqueeze(1).to(self.device)
                 b_act = torch.tensor(valid_acts, dtype=torch.long, device=self.device).view(M, 1)
                 b_rew = torch.tensor(cand_rews, dtype=torch.float32, device=self.device).view(M, 1, 1)
 
                 hx_e = current_hx[:, e : e + 1, :].repeat(1, M, 1) if current_hx is not None else None
-                z_cands = self.agent.front_end(obs=b_obs, delta_obs=b_delta, prev_action=b_act, prev_reward=b_rew)
-                h_cands, _ = self.agent.trunk(z_cands, hx=hx_e)
+                use_tri_direct = (
+                    getattr(self.env, "tri_compass", False)
+                    and hasattr(self.agent.front_end, "forward_tri_direct")
+                    and getattr(self.env, "prev_obs", None) is not None
+                )
+                if use_tri_direct:
+                    t_prev = torch.from_numpy(self.env.prev_obs[e : e + 1]).to(self.device)
+                    t_init = (
+                        torch.from_numpy(self.env.init_obs[e : e + 1]).to(self.device)
+                        if getattr(self.env, "init_obs", None) is not None
+                        else None
+                    )
+                    t_goal = (
+                        torch.from_numpy(self.env.elite_goal_obs).view(1, -1).to(self.device)
+                        if getattr(self.env, "elite_goal_obs", None) is not None
+                        else None
+                    )
+                    z_cands = self.agent.front_end.forward_tri_direct(b_obs, t_prev, t_init, t_goal, b_act, b_rew)
+                else:
+                    b_delta = torch.zeros_like(b_obs)
+                    z_cands = self.agent.front_end(obs=b_obs, delta_obs=b_delta, prev_action=b_act, prev_reward=b_rew)
+
+                h_cands, nhx_cands = self.agent.trunk(z_cands, hx=hx_e)
                 v_cands = self.agent.value_head(h_cands).squeeze(-1).squeeze(-1)
                 q_scores = torch.tensor(cand_rews, device=self.device) + self.effective_gamma * v_cands
-                best_idx = int(torch.argmax(q_scores).item())
-                best_act = valid_acts[best_idx]
+
+                sim_2step_fn = getattr(env_e, "simulate_2step", None)
+                sim_3step_fn = getattr(env_e, "simulate_3step", None)
+                if sim_2step_fn is not None:
+                    next_logits = self.agent.policy_head.linear(h_cands).squeeze(1)
+                    _, next_top_idx = torch.topk(next_logits, k=min(2, n_acts), dim=-1)
+                    q1_order = torch.argsort(q_scores, descending=True)
+                    best_m1 = int(q1_order[0].item())
+                    second_m1 = int(q1_order[1].item()) if M > 1 else best_m1
+                    q1_margin = float((q_scores[best_m1] - q_scores[second_m1]).item())
+
+                    solve_2step_act = None
+                    obs2_list = []
+                    p_idx_list = []
+                    a1_list = []
+                    act2_list = []
+                    rew2_list = []
+                    r1_ref_list = []
+                    best_m1_r2 = -1e9
+
+                    for idx_m in range(M):
+                        a1 = valid_acts[idx_m]
+                        inv_a1 = ((a1 + 1) if (a1 % 2 == 0) else (a1 - 1)) if n_acts == 12 else -1
+                        a2 = int(next_top_idx[idx_m, 0].item())
+                        if a2 == inv_a1 and next_top_idx.shape[1] > 1:
+                            a2 = int(next_top_idx[idx_m, 1].item())
+                        o2, rew2, done2 = sim_2step_fn(a1, a2)
+                        if done2:
+                            solve_2step_act = a1
+                            break
+                        if idx_m == best_m1 and float(rew2) > best_m1_r2:
+                            best_m1_r2 = float(rew2)
+                        if o2 is not None:
+                            p_idx_list.append(idx_m)
+                            obs2_list.append(np.asarray(o2, dtype=np.float32))
+                            a1_list.append(a1)
+                            act2_list.append(a2)
+                            rew2_list.append(float(rew2))
+                            r1_ref_list.append(cand_rews[idx_m])
+
+                    if solve_2step_act is not None:
+                        best_act = solve_2step_act
+                    elif len(rew2_list) > 0 and q1_margin >= 0.25 and best_m1_r2 >= max(rew2_list):
+                        best_act = valid_acts[best_m1]
+                    elif len(obs2_list) > 0:
+                        M2 = len(obs2_list)
+                        st_obs2 = np.stack(obs2_list)
+                        b_obs2 = torch.from_numpy(st_obs2).unsqueeze(1).to(self.device)
+                        b_act2 = torch.tensor(act2_list, dtype=torch.long, device=self.device).view(M2, 1)
+                        b_rew2 = (
+                            torch.tensor(rew2_list, dtype=torch.float32, device=self.device)
+                            - torch.tensor(r1_ref_list, dtype=torch.float32, device=self.device)
+                        ).view(M2, 1, 1)
+                        if use_tri_direct:
+                            t_parent = torch.from_numpy(stacked_obs[p_idx_list]).to(self.device)
+                            z_cands2 = self.agent.front_end.forward_tri_direct(b_obs2, t_parent, t_init, t_goal, b_act2, b_rew2)
+                        else:
+                            z_cands2 = self.agent.front_end(obs=b_obs2, delta_obs=torch.zeros_like(b_obs2), prev_action=b_act2, prev_reward=b_rew2)
+                        hx_cands2 = nhx_cands[:, p_idx_list, :] if nhx_cands is not None else None
+                        h_cands2, _ = self.agent.trunk(z_cands2, hx=hx_cands2)
+                        v_cands2 = self.agent.value_head(h_cands2).squeeze(-1).squeeze(-1)
+                        q2_scores = torch.tensor(rew2_list, device=self.device) + (self.effective_gamma ** 2) * v_cands2
+
+                        solve_3step_act = None
+                        if sim_3step_fn is not None and float(v_cands2.max().item()) > 1.5:
+                            logits3 = self.agent.policy_head.linear(h_cands2).squeeze(1)
+                            _, top_i3 = torch.topk(logits3, k=min(4, n_acts), dim=-1)
+                            for m2_i in range(M2):
+                                if float(v_cands2[m2_i].item()) <= 1.5:
+                                    continue
+                                a1_v, a2_v = a1_list[m2_i], act2_list[m2_i]
+                                inv_a2 = ((a2_v + 1) if (a2_v % 2 == 0) else (a2_v - 1)) if n_acts == 12 else -1
+                                for k_idx in range(top_i3.shape[1]):
+                                    a3_v = int(top_i3[m2_i, k_idx].item())
+                                    if a3_v == inv_a2:
+                                        continue
+                                    _, _, done3 = sim_3step_fn(a1_v, a2_v, a3_v, return_obs=False)
+                                    if done3:
+                                        solve_3step_act = a1_v
+                                        break
+                                if solve_3step_act is not None:
+                                    break
+
+                        if solve_3step_act is not None:
+                            best_act = solve_3step_act
+                        else:
+                            best_q2_per_m = torch.full((M,), -1e9, device=self.device)
+                            for m2_i, p_i in enumerate(p_idx_list):
+                                if q2_scores[m2_i] > best_q2_per_m[p_i]:
+                                    best_q2_per_m[p_i] = q2_scores[m2_i]
+                            q_scores = torch.maximum(q_scores, 0.98 * best_q2_per_m)
+                            best_act = valid_acts[int(torch.argmax(q_scores).item())]
+                    else:
+                        best_act = valid_acts[int(torch.argmax(q_scores).item())]
+                else:
+                    best_act = valid_acts[int(torch.argmax(q_scores).item())]
             elif len(valid_acts) == 1:
                 best_act = valid_acts[0]
             else:
@@ -1016,7 +1139,7 @@ class RecurrentPPOTrainer:
                     # -------------------------------------------------------------
                     # Teacher-Assisted SIL Rollouts (Lookahead Proximal Assimétrico)
                     # -------------------------------------------------------------
-                    if self.teacher_sil_envs > 0 and self.sil_enabled:
+                    if self.teacher_sil_envs > 0 and (self.sil_enabled or self.scar_mode != "none"):
                         raw_env_obj = getattr(self.env, "unwrapped", self.env)
                         if hasattr(raw_env_obj, "envs"):
                             for e in range(min(self.teacher_sil_envs, E)):
@@ -1025,7 +1148,7 @@ class RecurrentPPOTrainer:
                                     e=e,
                                     env_e=env_e,
                                     dist_sample=dist_eval_rollout,
-                                    current_hx=current_hx,
+                                    current_hx=next_hx,
                                 )
                                 if res is not None:
                                     t_act, t_logp = res
