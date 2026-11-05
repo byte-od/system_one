@@ -83,3 +83,59 @@ Para inferência reativa passo a passo ($batch=1$), a **CPU é 5,4× a 6,4× mai
 | **D17** | 0% | 1% | 0% | **2%** | **+2% abs** *(recorde D17!)* |
 | **D18–D20** | 0% | 0% | 0% | **0%** | -- |
 | **TOTAL (1.200)** | **44 (3,67%)** | **71 (5,92%)** | **111 (9,25%)** | **114 (9,50%)** | **+70 cubos (+159,1%)** |
+
+
+---
+
+## 6. Fluxograma Completo (Tri-Compass + Intuição + Cicatrizes + $Q_{\text{S1}}$)
+
+```mermaid
+flowchart TD
+    S["Estado Atual s_t (B=1)"] --> P0["Pass 0: Lote B=1 (0,456 ms — 18% do custo)<br/>• Ramo Relacional: Slots + Cicatriz Positiva (W_scar + z_target)<br/>• Ramo Tri-Compass (baddbmm): Δ_local(s_t - s_t-1), Δ_origin(s_t - s_0), Δ_goal(s_t - s_meta)<br/>• Tronco LRU + Intuição Neural (policy_head) + Bússola R_0/A_0"]
+
+    P0 --> G0{"Confiança >= 0.85<br/>E Destino sem Cicatriz?"}
+
+    G0 -- "Sim (Fast-Path)" --> ACT["Executa Ação a_1<br/>(Custo Total: 0,45 ms)"]
+
+    G0 -- "Não" --> SIM1["Passo 1 Físico em Rust (0,042 ms — 1,7%)<br/>Intuição elege Top-4 giros (a_1) -> simulate_step(a_1)<br/>Gera 4 estados s'_1 e checa Cicatriz Negativa N(s'_1)"]
+
+    SIM1 --> WIN1{"Resolveu em<br/>1 passo?"}
+    WIN1 -- "Sim" --> ACT
+
+    WIN1 -- "Não" --> P1["Pass 1 Neural SIMD: Lote B=4 (0,878 ms — 34,5%)<br/>• Recalcula Tri-Compass p/ os 4 filhos: Δ_local(s'_1 - s_t), Δ_origin, Δ_goal<br/>• Slots + Cicatriz W_scar + Tronco LRU (lê pesos 1x p/ os 4 clones)<br/>• Juiz V(s'_1) + Intuição p/ 2º passo (policy_head)"]
+
+    P1 --> OPT1{"Opção 1: Poda + Gate de 1º Passo<br/>• Poda pior clone se bateu em cicatriz<br/>• Líder tem margem >= 0.25 e maior ganho físico 2-step?"}
+
+    OPT1 -- "Sim (Corte 1-Step)" --> ACT1["Executa Líder do 1º Passo<br/>(Custo Total: ~1,45 ms)"]
+
+    OPT1 -- "Não" --> SIM2["Opção 2: Salto Fantasma 2-Step em Rust (0,051 ms — 2,0%)<br/>Intuição sugere a_2 (bifurca Top-2 no líder se margem < 0.25 -> B=4..5)<br/>Executa simulate_2step(a_1, a_2) -> inv_2 -> inv_1"]
+
+    SIM2 --> WIN2{"Resolveu em<br/>2 passos?"}
+    WIN2 -- "Sim" --> ACT
+
+    WIN2 -- "Não" --> P2["Pass 2 Neural SIMD: Lote B=4..5 (0,915 ms — 36,0%)<br/>• Recalcula Tri-Compass p/ os 4..5 netos: Δ_local(s''_2 - s'_1), Δ_origin, Δ_goal<br/>• Herda memória LRU do Pass 1 (nhx_cands) + Cicatriz W_scar<br/>• Juiz V(s''_2) + Intuição R(s''_2) + Afinidade A(s''_2)"]
+
+    P2 --> OPT3{"Opção 3: Horizonte de 3º Passo<br/>Algum neto tem V(s''_2) > 1.5?"}
+
+    OPT3 -- "Sim (0,032 ms — 1,3%, ZERO rede neural)" --> SIM3["Reaproveita Intuição do Pass 2 (Top-6 giros a_3)<br/>Varre simulate_3step(a_1, a_2, a_3) direto em Rust"]
+    OPT3 -- "Não" --> QS1
+
+    SIM3 --> QS1["Equação Unificada Q_S1 (0,169 ms — 6,6%)<br/>Q_S1(a_1) = max(Q_1(a_1), 0.98 * max_a2 Q_2(a_1, a_2))<br/>Executa a_1 vencedor"]
+
+    ACT --> CHECK_WIN{"Cubo Resolvido?"}
+    ACT1 --> CHECK_WIN
+    QS1 --> CHECK_WIN
+
+    CHECK_WIN -- "Sim" --> REC["Gravação Permanente O(1): record_victory_scar([0..T-1])<br/>Atualiza W_scar, g_target e z_target (~0,20 ms apenas na vitória)"]
+    CHECK_WIN -- "Não" --> S
+    REC -. "Retroalimenta Memória (4,25 KB)" .-> P0
+```
+
+---
+
+## 7. Roadmap de Otimização de Latência Zero-Perda (`2,54 ms -> ~1,05 ms`)
+
+1. **Otimização 1 — Desativação de Barreiras Multi-Thread OpenMP para Lotes Pequenos (`torch.set_num_threads(1)` em `act_fast`):** Elimina `+0,62 ms` de sincronização de threads (`libomp`) em matrizes `B=1..5`.
+2. **Otimização 2 — Cache de Continuidade Temporal `Pass 1(t) -> Pass 0(t+1)`:** Reaproveita `(h_cands[best_idx], nhx_cands[best_idx])` já computados no `Pass 1` do passo $t$ como resultado exato (`diff = 0.0`) do `Pass 0` no passo $t+1$, poupando `~0,40 ms` por decisão.
+3. **Otimização 3 — Cache de Continuidade Temporal `Pass 2(t) -> Pass 1(t+1)`:** Reaproveita `(h_cands2, nhx_cands2, v_cands2)` já computados no `Pass 2` do passo $t$ para os candidatos filhos $a_2$ do estado vencedor $a_1^*$, reduzindo o lote do `Pass 1` no passo $t+1$ de `B=4` para `B=2..3`.
+4. **Otimização 4 — Fusão Direta do Tri-Compass sobre $s' \in \mathbb{R}^{324}$:** Usa a linearidade $W(s' - s_{\text{ref}}) + b = W s' + (b - W s_{\text{ref}})$ para eliminar a alocação e concatenação em NumPy dos vetores de `972 floats` nos Passos 1 e 2.
