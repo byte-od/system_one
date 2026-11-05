@@ -842,11 +842,12 @@
       <div class="flex items-center gap-2">
         <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
         <h2 class="text-xs font-mono font-bold text-white uppercase tracking-wider">Terminal de Telemetria & Treinamento</h2>
+        <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800/60">Últimas 30 • Mais recente no topo</span>
       </div>
       <div class="flex items-center gap-2 text-xs font-mono">
-        <label class="flex items-center gap-1.5 cursor-pointer text-gray-400 hover:text-white">
+        <label class="flex items-center gap-1.5 cursor-pointer text-gray-400 hover:text-white" title="Mantém a rolagem fixa no topo com a linha mais recente">
           <input type="checkbox" id="chk-autoscroll" checked class="rounded bg-gray-800 border-gray-700 text-cyan-500">
-          <span>Auto-Scroll</span>
+          <span>Fixar no Topo</span>
         </label>
         <button onclick="clearTerminalLogs()" class="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 text-[11px]">
           Limpar
@@ -1242,42 +1243,74 @@
       }
     }
 
-    // Injeção de Logs no Terminal
-    function appendTerminalLogs(lines) {
-      if (!lines || lines.length === 0) return;
+    // Injeção de Logs no Terminal (Últimas 30 linhas em ordem reversa: mais nova no topo)
+    const MAX_TERMINAL_LOGS = 30;
+    let _recentTerminalLines = [];
+
+    function renderTerminalLogs() {
       const term = document.getElementById('terminal-logs');
       if (!term) return;
 
-      const firstChild = term.firstElementChild;
-      if (firstChild && firstChild.innerText.includes('Conectando')) {
-        term.innerHTML = '';
-      }
-
-      lines.forEach(l => {
+      term.innerHTML = '';
+      _recentTerminalLines.forEach((l, idx) => {
         const div = document.createElement('div');
-        div.className = 'leading-relaxed hover:bg-[#111722] px-1 rounded transition-colors';
-        if (l.includes('🚀 [CURRICULUM')) {
-          div.className += ' text-cyan-400 font-bold';
-        } else if (l.includes('💾 Checkpoint')) {
-          div.className += ' text-emerald-400 font-bold';
-        } else if (l.includes('Mean Return')) {
-          div.className += ' text-gray-300';
-        } else if (l.includes('🏃 [Maratona')) {
-          div.className += ' text-purple-300 font-medium';
-        } else {
-          div.className += ' text-gray-400';
+        div.className = 'leading-relaxed hover:bg-[#111722] px-1.5 py-0.5 rounded transition-colors flex items-start gap-2 text-xs font-mono';
+        
+        // Destaque visual na linha mais recente no topo
+        if (idx === 0) {
+          div.className += ' bg-cyan-950/40 border-l-2 border-cyan-400 pl-2 shadow-sm';
         }
-        div.textContent = l;
+
+        const numSpan = document.createElement('span');
+        numSpan.className = 'text-[10px] text-gray-500 select-none font-mono w-5 text-right shrink-0 pt-0.5';
+        numSpan.textContent = `${idx + 1}`;
+
+        const textSpan = document.createElement('span');
+        textSpan.className = 'flex-1 break-all';
+        if (l.includes('🚀 [CURRICULUM')) {
+          textSpan.className += ' text-cyan-400 font-bold';
+        } else if (l.includes('💾 Checkpoint')) {
+          textSpan.className += ' text-emerald-400 font-bold';
+        } else if (l.includes('Mean Return')) {
+          textSpan.className += ' text-gray-200';
+        } else if (l.includes('🏃 [Maratona')) {
+          textSpan.className += ' text-purple-300 font-medium';
+        } else {
+          textSpan.className += ' text-gray-400';
+        }
+        textSpan.textContent = l;
+
+        div.appendChild(numSpan);
+        div.appendChild(textSpan);
         term.appendChild(div);
       });
 
       const autoscroll = document.getElementById('chk-autoscroll')?.checked;
       if (autoscroll) {
-        term.scrollTop = term.scrollHeight;
+        term.scrollTop = 0; // Fixa a visualização no topo com a linha mais recente
       }
     }
 
+    function appendTerminalLogs(lines) {
+      if (!lines || lines.length === 0) return;
+
+      // Injeta cada nova linha no topo (ordem reversa: mais recente no índice 0)
+      for (const l of lines) {
+        const trimmed = typeof l === 'string' ? l.trim() : String(l);
+        if (!trimmed) continue;
+        _recentTerminalLines.unshift(trimmed);
+      }
+
+      // Restringe estritamente às últimas 30 linhas
+      if (_recentTerminalLines.length > MAX_TERMINAL_LOGS) {
+        _recentTerminalLines = _recentTerminalLines.slice(0, MAX_TERMINAL_LOGS);
+      }
+
+      renderTerminalLogs();
+    }
+
     function clearTerminalLogs() {
+      _recentTerminalLines = [];
       const term = document.getElementById('terminal-logs');
       if (term) term.innerHTML = '<div class="text-gray-500 italic">[Logs limpos pelo operador]</div>';
     }
