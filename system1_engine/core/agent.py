@@ -696,6 +696,20 @@ class UniversalS1Agent(nn.Module):
                 )
 
             logits_sq = self.policy_head.linear(h).squeeze(0).squeeze(0)
+            enc0 = getattr(self.front_end, "state_encoder", None)
+            if (
+                enc0 is not None
+                and getattr(self, "scar_memory", None) is not None
+                and int(self.scar_memory.scars_count.item()) > 0
+            ):
+                res0 = getattr(enc0, "_last_resonance", None)
+                aff0 = getattr(enc0, "_last_affinity", None)
+                if res0 is not None and aff0 is not None:
+                    r0_val = float(res0.mean().item())
+                    a0_val = float(aff0.mean().item())
+                    if r0_val > 0.80 and a0_val > 0.25:
+                        # Alta ressonância intuitiva + alta afinidade com o manifold de vitória no Pass 0: acelera Fast-Path
+                        logits_sq = logits_sq * min(1.15, 1.0 + 0.50 * (r0_val - 0.80))
             probs = torch.softmax(logits_sq, dim=-1)
             best_action = int(torch.argmax(probs, dim=-1).item())
             n_acts = probs.shape[0]
