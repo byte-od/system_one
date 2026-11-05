@@ -395,6 +395,137 @@
     ::-webkit-scrollbar-thumb:hover {
       background: #334155;
     }
+
+    /* ======================================================== */
+    /* MODO MINIMALISTA FLUTUANTE (JANELAS COMPACTAS / ZERO SCROLL) */
+    /* ======================================================== */
+    html.mini-mode,
+    body.mini-mode {
+      width: 100vw !important;
+      height: 100vh !important;
+      max-width: 100vw !important;
+      max-height: 100vh !important;
+      min-height: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      background: #05080f !important;
+      box-sizing: border-box !important;
+      user-select: none;
+    }
+
+    body.mini-mode > * + * {
+      margin-top: 0 !important;
+    }
+
+    body.mini-mode header,
+    body.mini-mode #hero-progress-section,
+    body.mini-mode #learning-chart-section,
+    body.mini-mode #terminal-logs-card,
+    body.mini-mode #modal-checkpoints {
+      display: none !important;
+    }
+
+    body.mini-mode #mini-mode-toolbar {
+      display: flex !important;
+      position: fixed !important;
+      top: 4px !important;
+      right: 4px !important;
+      z-index: 9999 !important;
+      opacity: 0.45;
+      transition: opacity 0.2s ease;
+    }
+    body.mini-mode #mini-mode-toolbar:hover {
+      opacity: 1;
+    }
+
+    body.mini-mode #train-status-cards-container {
+      display: grid !important;
+      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+      grid-template-rows: repeat(2, minmax(0, 1fr)) !important;
+      gap: 6px !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      max-width: 100vw !important;
+      max-height: 100vh !important;
+      margin: 0 !important;
+      padding: 6px !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+    }
+
+    @media (min-width: 760px) and (max-height: 240px) {
+      body.mini-mode #train-status-cards-container {
+        grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+        grid-template-rows: minmax(0, 1fr) !important;
+      }
+    }
+
+    body.mini-mode .vessel-card {
+      padding: 8px 10px !important;
+      min-height: 0 !important;
+      height: 100% !important;
+      border-radius: 0.6rem !important;
+    }
+
+    body.mini-mode .vessel-card-content {
+      padding-right: 36px !important;
+      height: 100% !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: space-between !important;
+    }
+    body.mini-mode .vessel-card-content > * + * {
+      margin-top: 0 !important;
+    }
+
+    body.mini-mode .vessel-card-content > div:first-child span:first-child {
+      font-size: 9.5px !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+    }
+    body.mini-mode .vessel-card-content > div:first-child span:last-child {
+      display: none !important;
+    }
+
+    body.mini-mode #kpi-return,
+    body.mini-mode #kpi-depth,
+    body.mini-mode #kpi-scars,
+    body.mini-mode #kpi-entropy,
+    body.mini-mode #kpi-fps,
+    body.mini-mode #kpi-calibration {
+      font-size: clamp(15px, 3.6vw, 22px) !important;
+      line-height: 1.05 !important;
+    }
+
+    body.mini-mode .vessel-card-content > div:nth-child(2) > div:last-child {
+      font-size: 9.5px !important;
+      line-height: 1.1 !important;
+    }
+    body.mini-mode .vessel-card-content > div:nth-child(2) > div:last-child > div:first-child {
+      font-size: 7.5px !important;
+    }
+
+    body.mini-mode .vessel-card-content > div:last-child {
+      font-size: 9px !important;
+      padding-top: 3px !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+    }
+
+    body.mini-mode .vessel-scale-ticks {
+      width: 34px !important;
+      right: 3px !important;
+    }
+    body.mini-mode .vessel-tick-tag {
+      display: none !important;
+    }
+    body.mini-mode .vessel-tick-label {
+      font-size: 7.5px !important;
+      right: 8px !important;
+    }
   </style>
 </head>
 <body class="min-h-screen flex flex-col p-4 md:p-6 space-y-4">
@@ -436,14 +567,14 @@
       <button onclick="toggleCheckpointsModal()" class="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer text-xs flex items-center gap-1">
         💾 Checkpoints
       </button>
-      <button id="btn-mini-mode" onclick="openMiniFloatingWindow()" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 transition cursor-pointer text-xs" title="Janela Miniatura">
+      <button id="btn-mini-mode" onclick="openMiniFloatingWindow()" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-800/60 transition cursor-pointer text-xs flex items-center gap-1" title="Abrir Janela Miniatura Flutuante (ou Shift+Clique para alternar nesta aba)">
         ⧉ Mini
       </button>
     </div>
   </header>
 
   <!-- PROGRESS HERO BANNER -->
-  <section class="hud-card p-4 space-y-2">
+  <section id="hero-progress-section" class="hud-card p-4 space-y-2">
     <div class="flex items-center justify-between text-xs font-mono">
       <span class="text-gray-400 flex items-center gap-2">
         <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
@@ -823,7 +954,7 @@
   </section>
 
   <!-- GRÁFICO DINÂMICO DE APRENDIZADO -->
-  <section class="hud-card p-4 space-y-3">
+  <section id="learning-chart-section" class="hud-card p-4 space-y-3">
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-2">
         <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
@@ -837,7 +968,7 @@
   </section>
 
   <!-- TERMINAL CONSOLE -->
-  <section class="hud-card p-4 space-y-2 flex-1 flex flex-col min-h-[220px]">
+  <section id="terminal-logs-card" class="hud-card p-4 space-y-2 flex-1 flex flex-col min-h-[220px]">
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-2">
         <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
@@ -878,8 +1009,15 @@
     </div>
   </div>
 
+  <!-- BARRA FLUTUANTE DE RETORNO NO MODO MINIMALISTA -->
+  <div id="mini-mode-toolbar" class="hidden fixed top-1 right-1 z-50 items-center gap-1">
+    <button type="button" onclick="toggleMiniMode(false)" class="px-2 py-0.5 rounded bg-black/90 hover:bg-slate-800 text-cyan-300 border border-cyan-700/70 text-[10px] font-mono shadow-lg cursor-pointer flex items-center gap-1" title="Restaurar HUD completo (Esc)">
+      <span>🗖</span> <span>Expandir</span>
+    </button>
+  </div>
+
   <!-- ELEMENTOS DE CONTRATO (GARANTIA DE TESTES E PARIDADE) -->
-  <div id="mini-mode-toolbar" style="display: none;">
+  <div id="legacy-contract-stubs" style="display: none;">
     <button id="btn-start" disabled>Iniciar</button>
     <button id="btn-stop">Parar</button>
     <span id="feed-status">STANDBY</span>
@@ -1139,8 +1277,9 @@
       // =========================================================
       // Card 3: Cicatrizes O(1)
       // =========================================================
+      const isMini = document.body.classList.contains('mini-mode');
       const elScars = document.getElementById('kpi-scars');
-      if (elScars) elScars.innerText = scars.toLocaleString();
+      if (elScars) elScars.innerText = isMini ? formatCompactNumber(scars, 1) : scars.toLocaleString();
       const elW = document.getElementById('kpi-w-norm');
       if (elW) elW.innerText = Number(wNorm).toFixed(2);
       const elZ = document.getElementById('kpi-z-norm');
@@ -1215,7 +1354,7 @@
       const elSteps = document.getElementById('kpi-steps');
       if (elSteps) elSteps.innerText = `${pct.toFixed(1)}%`;
       const elRawSteps = document.getElementById('kpi-raw-steps');
-      if (elRawSteps) elRawSteps.innerText = steps.toLocaleString();
+      if (elRawSteps) elRawSteps.innerText = isMini ? formatCompactNumber(steps, 2) : steps.toLocaleString();
       
       // Altura do Líquido Card 5: Throughput em tempo real (0 a 2500 FPS nos 128 ambientes)
       const liqSteps = document.getElementById('vessel-liquid-steps');
@@ -1457,16 +1596,126 @@
       }
     }
 
-    // Stubs para compatibilidade com o contrato e testes legados
+    // Stubs e Modo Miniatura Flutuante
     function openGymCatalogModal() {
       console.log('Gym catalog requested');
     }
-    function openMiniFloatingWindow() {
-      window.open(window.location.href, 'S1_Mini_HUD', 'width=420,height=520,resizable=yes');
+
+    function formatCompactNumber(val, decimals = 1) {
+      if (val === null || val === undefined || isNaN(val)) return '0';
+      const n = Number(val);
+      const abs = Math.abs(n);
+      if (abs >= 1000000) {
+        return (n / 1000000).toFixed(decimals).replace(/\.0+$/, '') + 'M';
+      }
+      if (abs >= 10000) {
+        return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+      }
+      if (abs >= 1000) {
+        return (n / 1000).toFixed(decimals).replace(/\.0+$/, '') + 'k';
+      }
+      return n.toLocaleString();
     }
+
+    function autoFitMiniWindow() {
+      if (!document.body.classList.contains('mini-mode')) return;
+      requestAnimationFrame(() => {
+        try {
+          const chromeW = (window.outerWidth > window.innerWidth) ? (window.outerWidth - window.innerWidth) : 0;
+          const chromeH = (window.outerHeight > window.innerHeight) ? (window.outerHeight - window.innerHeight) : 28;
+          const targetW = Math.max(460, Math.min(620, 500 + chromeW));
+          const targetH = Math.max(280, Math.min(380, 310 + chromeH));
+          if (window.opener && (Math.abs(window.outerWidth - targetW) > 10 || Math.abs(window.outerHeight - targetH) > 10)) {
+            window.resizeTo(targetW, targetH);
+          }
+        } catch (_) {}
+      });
+    }
+
+    function toggleMiniMode(forceState) {
+      const htmlEl = document.documentElement;
+      const bodyEl = document.body;
+      const isCurrentlyMini = bodyEl.classList.contains('mini-mode');
+      const targetState = (forceState !== undefined) ? !!forceState : !isCurrentlyMini;
+
+      if (targetState) {
+        htmlEl.classList.add('mini-mode');
+        bodyEl.classList.add('mini-mode');
+        setTimeout(autoFitMiniWindow, 60);
+      } else {
+        htmlEl.classList.remove('mini-mode');
+        bodyEl.classList.remove('mini-mode');
+        try {
+          const url = new URL(window.location.href);
+          if (url.searchParams.has('mini')) {
+            url.searchParams.delete('mini');
+            window.history.replaceState({}, '', url.toString());
+          }
+          if (window.opener && window.outerWidth < 700) {
+            window.resizeTo(1280, 820);
+          }
+        } catch (_) {}
+        setTimeout(resizeCanvas, 60);
+      }
+      triggerPollingFallback();
+    }
+
+    function openMiniFloatingWindow() {
+      const ev = typeof window !== 'undefined' ? window.event : null;
+      if (ev && (ev.shiftKey || ev.altKey)) {
+        toggleMiniMode();
+        return;
+      }
+      if (document.body.classList.contains('mini-mode')) {
+        toggleMiniMode(false);
+        return;
+      }
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.set('mini', '1');
+      const width = 500;
+      const height = 320;
+      const screenW = window.screen.availWidth || window.screen.width || 1280;
+      const left = Math.max(0, screenW - width - 24);
+      const top = 48;
+      const win = window.open(
+        currentUrl.toString(),
+        'S1_HUD_Mini_Floating',
+        `width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,resizable=yes`
+      );
+      if (win && !win.closed) {
+        try {
+          win.focus();
+        } catch (_) {}
+      } else {
+        // Fallback imediato na própria aba se popups estiverem bloqueados
+        toggleMiniMode(true);
+      }
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.body.classList.contains('mini-mode')) {
+        toggleMiniMode(false);
+      }
+    });
+
+    (function checkMiniQueryParam() {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('mini') === '1' || urlParams.get('mini') === 'true' || window.location.hash === '#mini') {
+          toggleMiniMode(true);
+          setTimeout(autoFitMiniWindow, 100);
+        }
+      } catch (_) {}
+    })();
 
     // Bootstrap
     window.addEventListener('DOMContentLoaded', () => {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('mini') === '1' || urlParams.get('mini') === 'true' || window.location.hash === '#mini') {
+          toggleMiniMode(true);
+        }
+      } catch (_) {}
       resizeCanvas();
       startSSEConnection();
       // Leitura imediata ao abrir a página
