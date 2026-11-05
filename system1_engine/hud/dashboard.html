@@ -462,14 +462,26 @@
     }
 
     body.mini-mode .vessel-card {
-      padding: 8px 10px !important;
+      padding: 7px 8px !important;
       min-height: 0 !important;
       height: 100% !important;
-      border-radius: 0.6rem !important;
+      border-radius: 14px !important;
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.82) 0%, rgba(7, 11, 20, 0.96) 100%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.14) !important;
+      box-shadow:
+        inset 0 1px 2px rgba(255, 255, 255, 0.18),
+        inset 0 -3px 8px rgba(0, 0, 0, 0.65),
+        0 6px 16px rgba(0, 0, 0, 0.45) !important;
+    }
+
+    /* Realça o líquido, as ondas e as bolhas no modo frasco */
+    body.mini-mode .vessel-liquid-body {
+      box-shadow: inset 0 3px 14px var(--vessel-glow) !important;
+      filter: saturate(1.25) brightness(1.12);
     }
 
     body.mini-mode .vessel-card-content {
-      padding-right: 36px !important;
+      padding-right: 32px !important;
       height: 100% !important;
       display: flex !important;
       flex-direction: column !important;
@@ -479,13 +491,48 @@
       margin-top: 0 !important;
     }
 
-    body.mini-mode .vessel-card-content > div:first-child span:first-child {
-      font-size: 9.5px !important;
-      white-space: nowrap !important;
-      overflow: hidden !important;
-      text-overflow: ellipsis !important;
+    /* Topo do frasco: exibe apenas o ícone em badge de vidro e oculta textos longos */
+    body.mini-mode .vessel-card-content > div:first-child > span:first-child {
+      font-size: 0 !important;
+      gap: 0 !important;
+      width: 24px !important;
+      height: 24px !important;
+      border-radius: 7px !important;
+      background: rgba(15, 23, 42, 0.65) !important;
+      border: 1px solid rgba(255, 255, 255, 0.12) !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4) !important;
     }
-    body.mini-mode .vessel-card-content > div:first-child span:last-child {
+    body.mini-mode .vessel-card-content > div:first-child > span:first-child > span:first-child {
+      font-size: 13px !important;
+      line-height: 1 !important;
+    }
+    body.mini-mode .vessel-card-content > div:first-child > span:last-child {
+      display: none !important;
+    }
+
+    /* Centro do frasco: apenas o indicador principal centralizado sobre o líquido */
+    body.mini-mode .vessel-card-content > div:nth-child(2) {
+      margin: auto 0 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      width: 100% !important;
+      text-align: center !important;
+    }
+    /* Oculta subtítulos sob o número principal (ex: "Episódios Vencidos", "Calibração Adaptativa") */
+    body.mini-mode .vessel-card-content > div:nth-child(2) > div:first-child > div:nth-child(2) {
+      display: none !important;
+    }
+    /* Oculta coluna secundária direita (PICO NO NÍVEL, MEMÓRIA RAM, etc.) pois a escala graduada já marca MAX/MIN */
+    body.mini-mode .vessel-card-content > div:nth-child(2) > div:nth-child(2) {
+      display: none !important;
+    }
+
+    /* Oculta rodapé de texto no modo frasco */
+    body.mini-mode .vessel-card-content > div:nth-child(3) {
       display: none !important;
     }
 
@@ -495,28 +542,14 @@
     body.mini-mode #kpi-entropy,
     body.mini-mode #kpi-fps,
     body.mini-mode #kpi-calibration {
-      font-size: clamp(15px, 3.6vw, 22px) !important;
-      line-height: 1.05 !important;
-    }
-
-    body.mini-mode .vessel-card-content > div:nth-child(2) > div:last-child {
-      font-size: 9.5px !important;
-      line-height: 1.1 !important;
-    }
-    body.mini-mode .vessel-card-content > div:nth-child(2) > div:last-child > div:first-child {
-      font-size: 7.5px !important;
-    }
-
-    body.mini-mode .vessel-card-content > div:last-child {
-      font-size: 9px !important;
-      padding-top: 3px !important;
-      white-space: nowrap !important;
-      overflow: hidden !important;
-      text-overflow: ellipsis !important;
+      font-size: clamp(16px, 4.2vw, 22px) !important;
+      font-weight: 900 !important;
+      line-height: 1 !important;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95), 0 0 12px rgba(0, 0, 0, 0.85) !important;
     }
 
     body.mini-mode .vessel-scale-ticks {
-      width: 34px !important;
+      width: 32px !important;
       right: 3px !important;
     }
     body.mini-mode .vessel-tick-tag {
@@ -524,7 +557,7 @@
     }
     body.mini-mode .vessel-tick-label {
       font-size: 7.5px !important;
-      right: 8px !important;
+      right: 7px !important;
     }
   </style>
 </head>
@@ -1308,7 +1341,7 @@
       // Card 4: Exploração & Entropia
       // =========================================================
       const elEntropy = document.getElementById('kpi-entropy');
-      if (elEntropy) elEntropy.innerText = Number(entropy).toFixed(3);
+      if (elEntropy) elEntropy.innerText = isMini ? Number(entropy).toFixed(2) : Number(entropy).toFixed(3);
       const elEntCoef = document.getElementById('kpi-entropy-coef');
       if (elEntCoef) elEntCoef.innerText = telemetry.effective_entropy_coef || '0.007';
       const healthBadge = document.getElementById('kpi-entropy-health');
@@ -1623,8 +1656,8 @@
         try {
           const chromeW = (window.outerWidth > window.innerWidth) ? (window.outerWidth - window.innerWidth) : 0;
           const chromeH = (window.outerHeight > window.innerHeight) ? (window.outerHeight - window.innerHeight) : 28;
-          const targetW = Math.max(460, Math.min(620, 500 + chromeW));
-          const targetH = Math.max(280, Math.min(380, 310 + chromeH));
+          const targetW = Math.max(360, Math.min(480, 390 + chromeW));
+          const targetH = Math.max(220, Math.min(320, 250 + chromeH));
           if (window.opener && (Math.abs(window.outerWidth - targetW) > 10 || Math.abs(window.outerHeight - targetH) > 10)) {
             window.resizeTo(targetW, targetH);
           }
@@ -1672,8 +1705,8 @@
       }
       const currentUrl = new URL(window.location.href);
       currentUrl.searchParams.set('mini', '1');
-      const width = 500;
-      const height = 320;
+      const width = 390;
+      const height = 250;
       const screenW = window.screen.availWidth || window.screen.width || 1280;
       const left = Math.max(0, screenW - width - 24);
       const top = 48;
