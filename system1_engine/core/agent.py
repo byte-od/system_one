@@ -196,6 +196,11 @@ class UniversalS1Agent(nn.Module):
                 resonance_beta=0.0,
             ).to(self.device)
             self.set_scar_memory(sm)
+        if self.scar_memory is not None and isinstance(state_dict, dict):
+            state_dict = dict(state_dict)
+            for prefix in ("scar_memory.", "front_end.state_encoder.scar_memory."):
+                if f"{prefix}W_scar" in state_dict and f"{prefix}z_target" not in state_dict:
+                    state_dict[f"{prefix}z_target"] = self.scar_memory.z_target.clone()
         return super().load_state_dict(state_dict, strict=strict, assign=assign)
 
     def record_victory_scar(
@@ -1024,9 +1029,14 @@ class UniversalS1Agent(nn.Module):
                                 elif (
                                     not force_rerank_by_scar
                                     and cand_pen_list[best_m1] == 0.0
-                                    and q1_margin >= 0.25
                                     and len(rew2_list) > 0
-                                    and best_m1_r2 >= max(rew2_list)
+                                    and (
+                                        (q1_margin >= 0.25 and best_m1_r2 >= max(rew2_list))
+                                        or (
+                                            getattr(self, "_super_margin_threshold", None) is not None
+                                            and q1_margin >= float(getattr(self, "_super_margin_threshold"))
+                                        )
+                                    )
                                 ):
                                     # Opção 1 (Gate Condicional): líder do Passo 1 já domina em valor e em alinhamento físico de 2º passo
                                     action = valid_cands[best_m1]
