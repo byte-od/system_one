@@ -447,9 +447,9 @@
     <div class="flex items-center justify-between text-xs font-mono">
       <span class="text-gray-400 flex items-center gap-2">
         <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
-        <span>PROGRESSO DA MARATONA (100M PASSOS TABULA RASA)</span>
+        <span id="hero-progress-title">PROGRESSO DA MARATONA (30M PASSOS TABULA RASA)</span>
       </span>
-      <span id="hero-progress-text" class="font-bold text-cyan-300">0 / 100,000,000 (0.0%)</span>
+      <span id="hero-progress-text" class="font-bold text-cyan-300">0 / 30,000,000 (0.0%)</span>
     </div>
     <div class="w-full bg-[#131a27] rounded-full h-3 border border-[#1e2b40] overflow-hidden p-0.5">
       <div id="hero-progress-bar" class="bg-gradient-to-r from-cyan-600 via-cyan-400 to-emerald-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
@@ -902,7 +902,7 @@
     // Estado da Aplicação
     let _sseSource = null;
     let _chartPoints = [];
-    let _maxStepsTarget = 100000000;
+    let _maxStepsTarget = 30000000;
     let _lastDataTimestamp = Date.now();
     let _maxObservedFps = 2000;
     let _maxObservedReturn = 0.0;
@@ -989,6 +989,19 @@
       const calib = telemetry.calibration !== undefined ? telemetry.calibration : 1.0;
       const entropy = telemetry.mean_entropy !== undefined ? telemetry.mean_entropy : 1.05;
       const confidence = telemetry.mean_confidence !== undefined ? telemetry.mean_confidence : 0.94;
+      
+      if (telemetry && telemetry.target_steps) {
+        _maxStepsTarget = telemetry.target_steps;
+      } else if (runner && runner.config && runner.config.steps) {
+        _maxStepsTarget = runner.config.steps;
+      }
+
+      const elHeroTitle = document.getElementById('hero-progress-title');
+      if (elHeroTitle) {
+        const millions = Math.round(_maxStepsTarget / 1000000);
+        elHeroTitle.innerText = `PROGRESSO DA MARATONA (${millions}M PASSOS TABULA RASA)`;
+      }
+
       const pct = Math.min(100, (steps / _maxStepsTarget) * 100);
 
       // Status Indicator

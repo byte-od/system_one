@@ -2,6 +2,7 @@ import collections
 import glob
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -55,12 +56,23 @@ class HUDProcessRunner:
             self._stop_requested = False
             self.external_pid = pid
             self.external_log_path = log_path
+
+            cmd_str = (config or {}).get("cmd", "")
+            detected_steps = 100000000
+            if cmd_str:
+                m_tgt = re.search(r"--target-steps\s+(\d+)", cmd_str)
+                if m_tgt:
+                    detected_steps = int(m_tgt.group(1))
+                elif "30m" in cmd_str.lower():
+                    detected_steps = 30000000
+
             self.current_config = config or {
                 "mode": "train",
                 "env": "RubiksCube-v0",
                 "trunk": "lru",
-                "steps": 100000000,
+                "steps": detected_steps,
                 "scar_memory": "hybrid_v2",
+                "cmd": cmd_str,
             }
             self.status = "RUNNING"
             self.logs.append(f"[{time.strftime('%H:%M:%S')}] 🔗 Detectado e conectado ao treino ativo em segundo plano (PID {pid})...")
@@ -141,22 +153,34 @@ class HUDProcessRunner:
                     latest_log = cand
                     break
 
+            target_steps = 100000000
+            if target_cmd:
+                m_tgt = re.search(r"--target-steps\s+(\d+)", target_cmd)
+                if m_tgt:
+                    target_steps = int(m_tgt.group(1))
+                elif "30m" in target_cmd.lower():
+                    target_steps = 30000000
+
             cfg = {
                 "mode": "train",
                 "env": "RubiksCube-v0",
                 "trunk": "lru",
-                "steps": 100000000,
+                "steps": target_steps,
                 "scar_memory": "hybrid_v2",
                 "cmd": target_cmd,
             }
 
             with self._lock:
                 if self.external_pid == target_pid:
-                    # Já associado ao PID, atualiza ponteiro de log se estava desatualizado ou divergente
+                    # Já associado ao PID, atualiza ponteiro de log e config se estava desatualizado ou divergente
                     if latest_log and self.external_log_path != latest_log:
                         self.external_log_path = latest_log
                         self._reader_thread = threading.Thread(target=self._tail_external_log, args=(latest_log,), daemon=True)
                         self._reader_thread.start()
+                    if self.current_config.get("steps") != target_steps:
+                        self.current_config["steps"] = target_steps
+                    if target_cmd and not self.current_config.get("cmd"):
+                        self.current_config["cmd"] = target_cmd
                     return True
 
             success, _ = self.attach_external(target_pid, latest_log, cfg)

@@ -449,6 +449,8 @@ class HUDServer:
                             m_mar = marathon_pattern.search(line)
                             if m_mar:
                                 mar_steps = int(m_mar.group(1).replace(",", ""))
+                                mar_total_steps = int(m_mar.group(2).replace(",", ""))
+                                self._ext_target_total = mar_total_steps
                                 if current_steps is None:
                                     current_steps = mar_steps
                                 marathon_base_steps = mar_steps
@@ -493,8 +495,18 @@ class HUDServer:
                     else:
                         live_scars = 0
 
-                    # Recálculo de ETA em tempo real baseado no Throughput real (~1,750 FPS)
-                    target_total = 30_000_000 if "30" in str(getattr(self.runner, "external_log_path", "")) else 100_000_000
+                    # Determinação dinâmica do Total da Maratona (ex: 30M ou 100M)
+                    target_total = getattr(self, "_ext_target_total", None)
+                    if not target_total:
+                        cfg_steps = getattr(self.runner, "current_config", {}).get("steps")
+                        if cfg_steps and cfg_steps > 0:
+                            target_total = cfg_steps
+                        elif "30" in str(getattr(self.runner, "current_config", {}).get("cmd", "")) or "30" in str(getattr(self.runner, "external_log_path", "")):
+                            target_total = 30_000_000
+                        else:
+                            target_total = 100_000_000
+
+                    # Recálculo de ETA em tempo real baseado no Throughput real (~1,600 FPS)
                     if live_steps > 0 and self._smoothed_fps > 0:
                         rem_steps = max(0, target_total - live_steps)
                         rem_hours = (rem_steps / self._smoothed_fps) / 3600.0
@@ -583,6 +595,7 @@ class HUDServer:
                             "status": "RUNNING",
                             "env": f"RubiksCube (Tabula Rasa D{current_depth})",
                             "total_steps": live_steps,
+                            "target_steps": target_total,
                             "fps": round(self._smoothed_fps, 1),
                             "eta": live_eta,
                             "curriculum_depth": current_depth,
