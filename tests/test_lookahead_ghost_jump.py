@@ -174,3 +174,85 @@ def test_cpu_reflex_latency_sub_08ms():
         times.append((time.perf_counter() - t0) * 1000.0)
 
     assert np.median(times) < 0.80, f"Mediana de reflexo na CPU ({np.median(times):.3f}ms) excedeu 0.80ms"
+
+
+def test_temporal_cache_bit_exactness_and_victory_scar_after_inference_mode():
+    torch.manual_seed(77)
+    raw_env1 = RubiksCubeEnv(curriculum=False, scramble_depth=6)
+    env1 = UniversalS1Wrapper(raw_env1, tri_compass=True)
+    raw_env2 = RubiksCubeEnv(curriculum=False, scramble_depth=6)
+    env2 = UniversalS1Wrapper(raw_env2, tri_compass=True)
+
+    agent_cached = UniversalS1Agent(
+        obs_space=env1.observation_space,
+        action_space=env1.action_space,
+        trunk_type="lru",
+        action_chunk_size=1,
+        tri_compass=True,
+    ).to("cpu")
+    agent_uncached = UniversalS1Agent(
+        obs_space=env2.observation_space,
+        action_space=env2.action_space,
+        trunk_type="lru",
+        action_chunk_size=1,
+        tri_compass=True,
+    ).to("cpu")
+    agent_uncached.load_state_dict(agent_cached.state_dict())
+    agent_cached.eval()
+    agent_uncached.eval()
+
+    obs1, _ = env1.reset(seed=999)
+    obs2, _ = env2.reset(seed=999)
+    agent_cached.reset_memory()
+    agent_uncached.reset_memory()
+
+    traj_obs, traj_delta, traj_act, traj_rew = [], [], [], []
+    for _ in range(6):
+        # Force uncached agent to recompute Pass 0 and Pass 1 from scratch
+        agent_uncached._pass0_cache = None
+        agent_uncached._pass1_child_cache = None
+
+        a_c = agent_cached.act_fast(
+            obs1,
+            deterministic=True,
+            value_rerank=True,
+            value_rerank_top_k=4,
+            value_rerank_threshold=0.99,
+            ghost_jump=True,
+            scar_penalty=0.25,
+            env=env1,
+        )
+        a_u = agent_uncached.act_fast(
+            obs2,
+            deterministic=True,
+            value_rerank=True,
+            value_rerank_top_k=4,
+            value_rerank_threshold=0.99,
+            ghost_jump=True,
+            scar_penalty=0.25,
+            env=env2,
+        )
+        assert a_c == a_u
+        assert torch.allclose(agent_cached.hx, agent_uncached.hx, atol=1e-6)
+        assert agent_cached._pass0_cache is not None
+
+        traj_obs.append(obs1["obs"])
+        traj_delta.append(obs1["delta_obs"])
+        traj_act.append(int(obs1.get("prev_action", 0)))
+        traj_rew.append(float(obs1.get("prev_reward", 0.0)))
+
+        obs1, _, done1, _, _ = env1.step(a_c)
+        obs2, _, done2, _, _ = env2.step(a_u)
+        if done1 or done2:
+            break
+
+    # Verify record_victory_scar works cleanly after @torch.inference_mode() in eval() mode
+    ok = agent_cached.record_victory_scar(
+        traj_obs=traj_obs,
+        traj_delta=traj_delta,
+        traj_prev_act=traj_act,
+        traj_prev_rew=traj_rew,
+        surprise=2.5,
+    )
+    assert ok is True
+

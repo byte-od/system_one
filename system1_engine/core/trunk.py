@@ -474,7 +474,7 @@ class LRUResidualTrunk(nn.Module):
         else:
             x_norm = self.input_norm(x)
 
-        if t == 1 and dones is None and not self.training and not torch.jit.is_tracing() and not torch.onnx.is_in_onnx_export():
+        if t == 1 and dones is None and not self.training and not torch.is_grad_enabled() and not torch.jit.is_tracing() and not torch.onnx.is_in_onnx_export():
             f_lam_r, f_lam_i, w_all, b_all, w_flru_out = self._get_eval_xnorm_fused()
             xn_2d = x_norm.squeeze(1)
             xh_proj = torch.nn.functional.linear(xn_2d, w_all, b_all)

@@ -149,7 +149,7 @@ class LinearRecurrentUnit(nn.Module):
         h_prev_r = h_prev[:, :self.d_hidden]
         h_prev_i = h_prev[:, self.d_hidden:]
 
-        if not self.training and not torch.jit.is_tracing() and not torch.onnx.is_in_onnx_export():
+        if not self.training and not torch.is_grad_enabled() and not torch.jit.is_tracing() and not torch.onnx.is_in_onnx_export():
             lam_r, lam_i, w_in, w_out = self._get_eval_fused()
             proj = F.linear(x_t, w_in)
             dh = self.d_hidden

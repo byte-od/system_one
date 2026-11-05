@@ -181,6 +181,34 @@ class VectorFrontEnd(nn.Module):
         self._delta_cache = (ver, w_d, b_d)
         return w_d, b_d
 
+    def forward_tri_direct(
+        self,
+        obs: torch.Tensor,
+        prev_obs: torch.Tensor,
+        init_obs: Optional[torch.Tensor],
+        goal_obs: Optional[torch.Tensor],
+        prev_action: torch.Tensor,
+        prev_reward: torch.Tensor,
+    ) -> torch.Tensor:
+        """Fast-path Tri-Compass para inferência (T=1) sem concatenar [B, 3*obs_dim] em NumPy."""
+        b = obs.shape[0]
+        z_s = self.state_encoder(obs)
+        obs_2d = obs.view(b, self.obs_dim)
+        d_loc = obs_2d - prev_obs
+        d_orig = (obs_2d - init_obs) if init_obs is not None else torch.zeros_like(obs_2d)
+        d_goal = (obs_2d - goal_obs) if goal_obs is not None else torch.zeros_like(obs_2d)
+        d_3 = torch.stack([d_loc, d_orig, d_goal], dim=0)
+        w_d, b_d = self._get_eval_delta_weights()
+        z_d3 = torch.nn.functional.gelu(torch.baddbmm(b_d, d_3, w_d))
+        z_l = self.local_delta_encoder.net[2](z_d3[0]).view(b, 1, 64)
+        z_o = self.origin_delta_encoder.net[2](z_d3[1]).view(b, 1, 64)
+        z_g = self.goal_delta_encoder.net[2](z_d3[2]).view(b, 1, 64)
+        z_a = self.action_encoder(prev_action)
+        z_r = self.reward_encoder(prev_reward)
+        out_core = self.out_norm(torch.cat([z_s, z_l, z_a, z_r], dim=-1))
+        out_comp = self.compass_norm(torch.cat([z_o, z_g], dim=-1))
+        return torch.cat([out_core, out_comp], dim=-1)
+
     def forward(
         self,
         obs: torch.Tensor,
@@ -211,6 +239,7 @@ class VectorFrontEnd(nn.Module):
         if self.tri_compass:
             if (
                 not self.training
+                and not torch.is_grad_enabled()
                 and not torch.jit.is_tracing()
                 and not torch.onnx.is_in_onnx_export()
                 and local_delta is None

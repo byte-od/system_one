@@ -284,6 +284,8 @@ class UniversalS1Agent(nn.Module):
         self._stagnation_count = 0
         self._action_history = []
         self._state_visit_counts: Dict[int, int] = {}
+        self._pass0_cache = None
+        self._pass1_child_cache = None
 
     def get_initial_hx(self, batch_size: int = 1, device: Optional[torch.device] = None) -> torch.Tensor:
         """Returns the canonical zero-initialized hidden state tensor for this agent."""
@@ -412,7 +414,7 @@ class UniversalS1Agent(nn.Module):
 
         return action, log_prob, value, next_hx
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def act_fast(
         self,
         obs_dict: Dict[str, Any],
@@ -477,82 +479,112 @@ class UniversalS1Agent(nn.Module):
                     t_obs = t_obs.unsqueeze(1)
             else:
                 arr = np.asarray(raw_obs, dtype=np.float32)
+                obs_bytes = arr.tobytes()
                 t_obs = torch.from_numpy(arr).view(1, 1, -1)
                 if value_rerank:
                     if not hasattr(self, "_state_visit_counts"):
                         self._state_visit_counts = {}
                     if len(self._state_visit_counts) < 512:
-                        h_key = hash(arr.tobytes())
+                        h_key = hash(obs_bytes)
                         self._state_visit_counts[h_key] = self._state_visit_counts.get(h_key, 0) + 1
 
         dev = self.device
         to_dev = dev.type != "cpu"
+        if not to_dev and torch.get_num_threads() != 1:
+            torch.set_num_threads(1)
 
-        if self.is_visual:
-            if isinstance(raw_action, torch.Tensor):
-                t_act = raw_action
-            elif self.is_discrete:
-                t_act = torch.tensor([[int(raw_action)]], dtype=torch.long)
+        p0_cache = getattr(self, "_pass0_cache", None)
+        self._pass0_cache = None
+        used_p0_cache = False
+        if (
+            p0_cache is not None
+            and not self.is_visual
+            and self.is_discrete
+            and not isinstance(raw_obs, torch.Tensor)
+        ):
+            c_obs_b, c_act, c_rew, c_h, c_hx, c_res, c_aff = p0_cache
+            if (
+                obs_bytes == c_obs_b
+                and int(raw_action) == c_act
+                and abs(float(np.asarray(raw_reward).flat[0]) - c_rew) < 1e-4
+            ):
+                h = c_h
+                self.hx = c_hx
+                self._last_latent = h
+                enc0 = getattr(self.front_end, "state_encoder", None)
+                if enc0 is not None:
+                    enc0._last_resonance = c_res
+                    enc0._last_affinity = c_aff
+                used_p0_cache = True
             else:
-                t_act = torch.from_numpy(np.asarray(raw_action, dtype=np.float32)).view(1, 1, -1)
+                self._pass1_child_cache = None
 
-            if isinstance(raw_reward, torch.Tensor):
-                t_rew = raw_reward.view(1, 1, 1)
+        if not used_p0_cache:
+            if self.is_visual:
+                if isinstance(raw_action, torch.Tensor):
+                    t_act = raw_action
+                elif self.is_discrete:
+                    t_act = torch.tensor([[int(raw_action)]], dtype=torch.long)
+                else:
+                    t_act = torch.from_numpy(np.asarray(raw_action, dtype=np.float32)).view(1, 1, -1)
+
+                if isinstance(raw_reward, torch.Tensor):
+                    t_rew = raw_reward.view(1, 1, 1)
+                else:
+                    t_rew = torch.as_tensor(raw_reward, dtype=torch.float32).view(1, 1, 1)
+
+                if to_dev:
+                    t_obs = t_obs.to(dev)
+                    t_act = t_act.to(dev)
+                    t_rew = t_rew.to(dev)
+
+                z_in = self.front_end(
+                    obs=t_obs,
+                    prev_action=t_act,
+                    prev_reward=t_rew,
+                )
             else:
-                t_rew = torch.as_tensor(raw_reward, dtype=torch.float32).view(1, 1, 1)
+                raw_delta = obs_dict.get("delta_obs")
+                if raw_delta is None:
+                    t_delta = torch.zeros_like(t_obs)
+                elif isinstance(raw_delta, torch.Tensor):
+                    t_delta = raw_delta
+                    if t_delta.dim() == 1:
+                        t_delta = t_delta.unsqueeze(0).unsqueeze(0)
+                    elif t_delta.dim() == 2:
+                        t_delta = t_delta.unsqueeze(1)
+                else:
+                    arr_d = np.asarray(raw_delta, dtype=np.float32)
+                    t_delta = torch.from_numpy(arr_d).view(1, 1, -1)
 
-            if to_dev:
-                t_obs = t_obs.to(dev)
-                t_act = t_act.to(dev)
-                t_rew = t_rew.to(dev)
+                if isinstance(raw_action, torch.Tensor):
+                    t_act = raw_action
+                elif self.is_discrete:
+                    t_act = torch.tensor([[int(raw_action)]], dtype=torch.long)
+                else:
+                    t_act = torch.from_numpy(np.asarray(raw_action, dtype=np.float32)).view(1, 1, -1)
 
-            z_in = self.front_end(
-                obs=t_obs,
-                prev_action=t_act,
-                prev_reward=t_rew,
-            )
-        else:
-            raw_delta = obs_dict.get("delta_obs")
-            if raw_delta is None:
-                t_delta = torch.zeros_like(t_obs)
-            elif isinstance(raw_delta, torch.Tensor):
-                t_delta = raw_delta
-                if t_delta.dim() == 1:
-                    t_delta = t_delta.unsqueeze(0).unsqueeze(0)
-                elif t_delta.dim() == 2:
-                    t_delta = t_delta.unsqueeze(1)
-            else:
-                arr_d = np.asarray(raw_delta, dtype=np.float32)
-                t_delta = torch.from_numpy(arr_d).view(1, 1, -1)
+                if isinstance(raw_reward, torch.Tensor):
+                    t_rew = raw_reward.view(1, 1, 1)
+                else:
+                    t_rew = torch.as_tensor(raw_reward, dtype=torch.float32).view(1, 1, 1)
 
-            if isinstance(raw_action, torch.Tensor):
-                t_act = raw_action
-            elif self.is_discrete:
-                t_act = torch.tensor([[int(raw_action)]], dtype=torch.long)
-            else:
-                t_act = torch.from_numpy(np.asarray(raw_action, dtype=np.float32)).view(1, 1, -1)
+                if to_dev:
+                    t_obs = t_obs.to(dev)
+                    t_delta = t_delta.to(dev)
+                    t_act = t_act.to(dev)
+                    t_rew = t_rew.to(dev)
 
-            if isinstance(raw_reward, torch.Tensor):
-                t_rew = raw_reward.view(1, 1, 1)
-            else:
-                t_rew = torch.as_tensor(raw_reward, dtype=torch.float32).view(1, 1, 1)
+                z_in = self.front_end(
+                    obs=t_obs,
+                    delta_obs=t_delta,
+                    prev_action=t_act,
+                    prev_reward=t_rew,
+                )
 
-            if to_dev:
-                t_obs = t_obs.to(dev)
-                t_delta = t_delta.to(dev)
-                t_act = t_act.to(dev)
-                t_rew = t_rew.to(dev)
-
-            z_in = self.front_end(
-                obs=t_obs,
-                delta_obs=t_delta,
-                prev_action=t_act,
-                prev_reward=t_rew,
-            )
-
-        # Recurrent pass through trunk with internal persistent memory
-        h, self.hx = self.trunk(z_in, hx=self.hx, dones=None)
-        self._last_latent = h
+            # Recurrent pass through trunk with internal persistent memory
+            h, self.hx = self.trunk(z_in, hx=self.hx, dones=None)
+            self._last_latent = h
 
         # Resolve sampling parameters based on homeostatic auto-calibration, fixed calibration, or legacy flags
         is_auto_calib = auto_calibrate or (
@@ -885,53 +917,160 @@ class UniversalS1Agent(nn.Module):
                         elif len(valid_cands) > 1:
                             M = len(valid_cands)
                             stacked_obs = np.stack(cand_obs_list)
-                            if self.is_visual:
-                                b_obs = torch.from_numpy(stacked_obs).unsqueeze(1).to(dev)
-                                b_delta = None
-                            elif use_fast_raw_sim:
-                                b_obs = torch.from_numpy(stacked_obs).unsqueeze(1)
-                                if getattr(effective_env, "tri_compass", False):
-                                    d_loc = stacked_obs - effective_env.prev_obs
-                                    d_orig = (
-                                        stacked_obs - effective_env.init_obs
-                                        if effective_env.init_obs is not None
-                                        else np.zeros_like(stacked_obs)
-                                    )
-                                    d_goal = (
-                                        stacked_obs - effective_env.elite_goal_obs
-                                        if effective_env.elite_goal_obs is not None
-                                        else np.zeros_like(stacked_obs)
-                                    )
-                                    b_delta = torch.from_numpy(np.concatenate([d_loc, d_orig, d_goal], axis=-1)).unsqueeze(1)
-                                else:
-                                    if getattr(effective_env, "compass_mode", False) and effective_env.init_obs is not None:
-                                        b_delta = torch.from_numpy(stacked_obs - effective_env.init_obs).unsqueeze(1)
+                            use_tri_direct = (
+                                use_fast_raw_sim
+                                and not self.is_visual
+                                and getattr(effective_env, "tri_compass", False)
+                                and hasattr(self.front_end, "forward_tri_direct")
+                            )
+                            t_init_obs = (
+                                torch.from_numpy(effective_env.init_obs).view(1, -1).to(dev)
+                                if (use_tri_direct and effective_env.init_obs is not None)
+                                else None
+                            )
+                            t_goal_obs = (
+                                torch.from_numpy(effective_env.elite_goal_obs).view(1, -1).to(dev)
+                                if (use_tri_direct and effective_env.elite_goal_obs is not None)
+                                else None
+                            )
+
+                            # Otimização 3: Cache de Continuidade Pass 2(t-1) -> Pass 1(t)
+                            child_cache_entry = getattr(self, "_pass1_child_cache", None)
+                            self._pass1_child_cache = None
+                            child_map = (
+                                child_cache_entry[1]
+                                if (
+                                    child_cache_entry is not None
+                                    and not self.is_visual
+                                    and not isinstance(raw_obs, torch.Tensor)
+                                    and child_cache_entry[0] == obs_bytes
+                                    and not isinstance(self.hx, tuple)
+                                )
+                                else None
+                            )
+
+                            unc_idx = (
+                                [i for i, ca in enumerate(valid_cands) if ca not in child_map]
+                                if child_map
+                                else list(range(M))
+                            )
+                            M_unc = len(unc_idx)
+
+                            if M_unc == M:
+                                if self.is_visual:
+                                    b_obs = torch.from_numpy(stacked_obs).unsqueeze(1).to(dev)
+                                    b_delta = None
+                                elif use_tri_direct:
+                                    b_obs = torch.from_numpy(stacked_obs).unsqueeze(1).to(dev)
+                                    t_prev_obs = torch.from_numpy(effective_env.prev_obs).view(1, -1).to(dev)
+                                elif use_fast_raw_sim:
+                                    b_obs = torch.from_numpy(stacked_obs).unsqueeze(1)
+                                    if getattr(effective_env, "tri_compass", False):
+                                        d_loc = stacked_obs - effective_env.prev_obs
+                                        d_orig = (
+                                            stacked_obs - effective_env.init_obs
+                                            if effective_env.init_obs is not None
+                                            else np.zeros_like(stacked_obs)
+                                        )
+                                        d_goal = (
+                                            stacked_obs - effective_env.elite_goal_obs
+                                            if effective_env.elite_goal_obs is not None
+                                            else np.zeros_like(stacked_obs)
+                                        )
+                                        b_delta = torch.from_numpy(np.concatenate([d_loc, d_orig, d_goal], axis=-1)).unsqueeze(1)
                                     else:
-                                        b_delta = torch.zeros_like(b_obs)
-                                if to_dev:
-                                    b_obs = b_obs.to(dev)
-                                    b_delta = b_delta.to(dev)
-                            else:
-                                b_obs = torch.from_numpy(stacked_obs).unsqueeze(1).to(dev)
-                                b_delta = torch.from_numpy(np.stack(cand_delta_list)).unsqueeze(1).to(dev)
+                                        if getattr(effective_env, "compass_mode", False) and effective_env.init_obs is not None:
+                                            b_delta = torch.from_numpy(stacked_obs - effective_env.init_obs).unsqueeze(1)
+                                        else:
+                                            b_delta = torch.zeros_like(b_obs)
+                                    if to_dev:
+                                        b_obs = b_obs.to(dev)
+                                        b_delta = b_delta.to(dev)
+                                else:
+                                    b_obs = torch.from_numpy(stacked_obs).unsqueeze(1).to(dev)
+                                    b_delta = torch.from_numpy(np.stack(cand_delta_list)).unsqueeze(1).to(dev)
 
-                            b_act = torch.tensor(cand_act_list, dtype=torch.long, device=dev).view(M, 1)
-                            b_rew = torch.tensor(cand_rew_list, dtype=torch.float32, device=dev).view(M, 1, 1)
+                                b_act = torch.tensor(cand_act_list, dtype=torch.long, device=dev).view(M, 1)
+                                b_rew = torch.tensor(cand_rew_list, dtype=torch.float32, device=dev).view(M, 1, 1)
 
-                            z_cands = self.front_end(obs=b_obs, delta_obs=b_delta, prev_action=b_act, prev_reward=b_rew)
-                            if self.hx is not None:
-                                if isinstance(self.hx, tuple):
-                                    hx_cands = tuple(
-                                        h_t.repeat(1, M, 1) if h_t.dim() == 3 else h_t.repeat(M, 1)
-                                        for h_t in self.hx
+                                if use_tri_direct:
+                                    z_cands = self.front_end.forward_tri_direct(
+                                        b_obs, t_prev_obs, t_init_obs, t_goal_obs, b_act, b_rew
                                     )
                                 else:
-                                    hx_cands = self.hx.repeat(1, M, 1) if self.hx.dim() == 3 else self.hx.repeat(M, 1)
-                            else:
-                                hx_cands = None
+                                    z_cands = self.front_end(obs=b_obs, delta_obs=b_delta, prev_action=b_act, prev_reward=b_rew)
+                                if self.hx is not None:
+                                    if isinstance(self.hx, tuple):
+                                        hx_cands = tuple(
+                                            h_t.repeat(1, M, 1) if h_t.dim() == 3 else h_t.repeat(M, 1)
+                                            for h_t in self.hx
+                                        )
+                                    else:
+                                        hx_cands = self.hx.repeat(1, M, 1) if self.hx.dim() == 3 else self.hx.repeat(M, 1)
+                                else:
+                                    hx_cands = None
 
-                            h_cands, nhx_cands = self.trunk(z_cands, hx=hx_cands, dones=None)
-                            v_cands = self.value_head(h_cands).squeeze(-1).squeeze(-1)
+                                h_cands, nhx_cands = self.trunk(z_cands, hx=hx_cands, dones=None)
+                                v_cands = self.value_head(h_cands).squeeze(-1).squeeze(-1)
+                                enc1 = getattr(self.front_end, "state_encoder", None)
+                                res1_cands = getattr(enc1, "_last_resonance", None) if enc1 is not None else None
+                                aff1_cands = getattr(enc1, "_last_affinity", None) if enc1 is not None else None
+                            else:
+                                # Executa rede neural apenas nos M_unc candidatos não cacheados pelo Pass 2 anterior
+                                h_list = [None] * M
+                                nhx_list = [None] * M
+                                v_list = [None] * M
+                                res1_list = [None] * M
+                                aff1_list = [None] * M
+
+                                if M_unc > 0:
+                                    st_unc = stacked_obs[unc_idx]
+                                    b_obs_u = torch.from_numpy(st_unc).unsqueeze(1).to(dev)
+                                    b_act_u = torch.tensor([cand_act_list[i] for i in unc_idx], dtype=torch.long, device=dev).view(M_unc, 1)
+                                    b_rew_u = torch.tensor([cand_rew_list[i] for i in unc_idx], dtype=torch.float32, device=dev).view(M_unc, 1, 1)
+                                    if use_tri_direct:
+                                        t_prev_obs = torch.from_numpy(effective_env.prev_obs).view(1, -1).to(dev)
+                                        z_u = self.front_end.forward_tri_direct(
+                                            b_obs_u, t_prev_obs, t_init_obs, t_goal_obs, b_act_u, b_rew_u
+                                        )
+                                    else:
+                                        d_loc_u = st_unc - effective_env.prev_obs
+                                        d_orig_u = st_unc - effective_env.init_obs if effective_env.init_obs is not None else np.zeros_like(st_unc)
+                                        d_goal_u = st_unc - effective_env.elite_goal_obs if effective_env.elite_goal_obs is not None else np.zeros_like(st_unc)
+                                        b_del_u = torch.from_numpy(np.concatenate([d_loc_u, d_orig_u, d_goal_u], axis=-1)).unsqueeze(1).to(dev)
+                                        z_u = self.front_end(obs=b_obs_u, delta_obs=b_del_u, prev_action=b_act_u, prev_reward=b_rew_u)
+                                    hx_u = (self.hx.repeat(1, M_unc, 1) if self.hx.dim() == 3 else self.hx.repeat(M_unc, 1)) if self.hx is not None else None
+                                    h_u, nhx_u = self.trunk(z_u, hx=hx_u, dones=None)
+                                    v_u = self.value_head(h_u).squeeze(-1).squeeze(-1)
+                                    if v_u.dim() == 0:
+                                        v_u = v_u.unsqueeze(0)
+                                    enc1 = getattr(self.front_end, "state_encoder", None)
+                                    r_u = getattr(enc1, "_last_resonance", None) if enc1 is not None else None
+                                    a_u = getattr(enc1, "_last_affinity", None) if enc1 is not None else None
+                                    for k_u, orig_i in enumerate(unc_idx):
+                                        h_list[orig_i] = h_u[k_u : k_u + 1]
+                                        nhx_list[orig_i] = nhx_u[:, k_u : k_u + 1, :]
+                                        v_list[orig_i] = v_u[k_u]
+                                        if r_u is not None:
+                                            res1_list[orig_i] = r_u[k_u : k_u + 1]
+                                        if a_u is not None:
+                                            aff1_list[orig_i] = a_u[k_u : k_u + 1]
+
+                                for orig_i, ca in enumerate(valid_cands):
+                                    if h_list[orig_i] is None:
+                                        c_h2, c_nhx2, c_v2, c_r2, c_a2 = child_map[ca]
+                                        h_list[orig_i] = c_h2
+                                        nhx_list[orig_i] = c_nhx2
+                                        v_list[orig_i] = c_v2
+                                        res1_list[orig_i] = c_r2
+                                        aff1_list[orig_i] = c_a2
+
+                                h_cands = torch.cat(h_list, dim=0)
+                                nhx_cands = torch.cat(nhx_list, dim=1)
+                                v_cands = torch.stack(v_list, dim=0)
+                                res1_cands = torch.cat(res1_list, dim=0) if all(x is not None for x in res1_list) else None
+                                aff1_cands = torch.cat(aff1_list, dim=0) if all(x is not None for x in aff1_list) else None
+
                             q_scores = (
                                 torch.tensor(cand_rew_list, device=dev)
                                 + 0.99 * v_cands
@@ -949,6 +1088,14 @@ class UniversalS1Agent(nn.Module):
                                 if (ghost_jump and use_fast_raw_sim)
                                 else None
                             )
+                            h_cands2 = None
+                            nhx_cands2 = None
+                            v_cands2 = None
+                            res2_cands = None
+                            aff2_cands = None
+                            p_idx_list: List[int] = []
+                            act2_list: List[int] = []
+
                             if sim_2step_fn is not None:
                                 next_logits = self.policy_head.linear(h_cands).squeeze(1)
                                 next_probs = torch.softmax(next_logits, dim=-1)
@@ -970,10 +1117,8 @@ class UniversalS1Agent(nn.Module):
                                 alive_m = [m_i for m_i in range(M) if not (prune_worst and m_i == worst_m1)]
 
                                 solve_2step_act = None
-                                p_idx_list: List[int] = []
                                 obs2_list = []
                                 a1_list: List[int] = []
-                                act2_list: List[int] = []
                                 rew2_list: List[float] = []
                                 pen2_list: List[float] = []
                                 r1_ref_list: List[float] = []
@@ -1060,34 +1205,43 @@ class UniversalS1Agent(nn.Module):
                                     st_obs2 = np.stack(obs2_list)
                                     b_obs2 = torch.from_numpy(st_obs2).unsqueeze(1)
                                     st_parent_obs = stacked_obs[p_idx_list]
-                                    if getattr(effective_env, "tri_compass", False):
-                                        d_loc2 = st_obs2 - st_parent_obs
-                                        d_orig2 = (
-                                            st_obs2 - effective_env.init_obs
-                                            if effective_env.init_obs is not None
-                                            else np.zeros_like(st_obs2)
-                                        )
-                                        d_goal2 = (
-                                            st_obs2 - effective_env.elite_goal_obs
-                                            if effective_env.elite_goal_obs is not None
-                                            else np.zeros_like(st_obs2)
-                                        )
-                                        b_delta2 = torch.from_numpy(np.concatenate([d_loc2, d_orig2, d_goal2], axis=-1)).unsqueeze(1)
-                                    else:
-                                        if getattr(effective_env, "compass_mode", False) and effective_env.init_obs is not None:
-                                            b_delta2 = torch.from_numpy(st_obs2 - effective_env.init_obs).unsqueeze(1)
-                                        else:
-                                            b_delta2 = torch.zeros_like(b_obs2)
-                                    if to_dev:
-                                        b_obs2 = b_obs2.to(dev)
-                                        b_delta2 = b_delta2.to(dev)
-
                                     b_act2 = torch.tensor(act2_list, dtype=torch.long, device=dev).view(M2, 1)
                                     b_rew2 = (
                                         torch.tensor(rew2_list, dtype=torch.float32, device=dev)
                                         - torch.tensor(r1_ref_list, dtype=torch.float32, device=dev)
                                     ).view(M2, 1, 1)
-                                    z_cands2 = self.front_end(obs=b_obs2, delta_obs=b_delta2, prev_action=b_act2, prev_reward=b_rew2)
+
+                                    if use_tri_direct:
+                                        if to_dev:
+                                            b_obs2 = b_obs2.to(dev)
+                                        t_parent_obs = torch.from_numpy(st_parent_obs).to(dev)
+                                        z_cands2 = self.front_end.forward_tri_direct(
+                                            b_obs2, t_parent_obs, t_init_obs, t_goal_obs, b_act2, b_rew2
+                                        )
+                                    else:
+                                        if getattr(effective_env, "tri_compass", False):
+                                            d_loc2 = st_obs2 - st_parent_obs
+                                            d_orig2 = (
+                                                st_obs2 - effective_env.init_obs
+                                                if effective_env.init_obs is not None
+                                                else np.zeros_like(st_obs2)
+                                            )
+                                            d_goal2 = (
+                                                st_obs2 - effective_env.elite_goal_obs
+                                                if effective_env.elite_goal_obs is not None
+                                                else np.zeros_like(st_obs2)
+                                            )
+                                            b_delta2 = torch.from_numpy(np.concatenate([d_loc2, d_orig2, d_goal2], axis=-1)).unsqueeze(1)
+                                        else:
+                                            if getattr(effective_env, "compass_mode", False) and effective_env.init_obs is not None:
+                                                b_delta2 = torch.from_numpy(st_obs2 - effective_env.init_obs).unsqueeze(1)
+                                            else:
+                                                b_delta2 = torch.zeros_like(b_obs2)
+                                        if to_dev:
+                                            b_obs2 = b_obs2.to(dev)
+                                            b_delta2 = b_delta2.to(dev)
+                                        z_cands2 = self.front_end(obs=b_obs2, delta_obs=b_delta2, prev_action=b_act2, prev_reward=b_rew2)
+
                                     if nhx_cands is not None:
                                         if isinstance(nhx_cands, tuple):
                                             hx_cands2 = tuple(
@@ -1099,8 +1253,11 @@ class UniversalS1Agent(nn.Module):
                                     else:
                                         hx_cands2 = None
 
-                                    h_cands2, _ = self.trunk(z_cands2, hx=hx_cands2, dones=None)
+                                    h_cands2, nhx_cands2 = self.trunk(z_cands2, hx=hx_cands2, dones=None)
                                     v_cands2 = self.value_head(h_cands2).squeeze(-1).squeeze(-1)
+                                    enc2 = getattr(self.front_end, "state_encoder", None)
+                                    res2_cands = getattr(enc2, "_last_resonance", None) if enc2 is not None else None
+                                    aff2_cands = getattr(enc2, "_last_affinity", None) if enc2 is not None else None
                                     q2_scores = (
                                         torch.tensor(rew2_list, device=dev)
                                         + (0.99 ** 2) * v_cands2
@@ -1148,6 +1305,33 @@ class UniversalS1Agent(nn.Module):
                                 best_idx = int(torch.argmax(q_scores).item())
                                 action = valid_cands[best_idx]
                                 value_rerank_triggered = True
+
+                            # Atualiza caches temporais Pass 1(t)->Pass 0(t+1) e Pass 2(t)->Pass 1(t+1)
+                            if not self.is_visual and action in valid_cands and not isinstance( nhx_cands, tuple ):
+                                chosen_m = valid_cands.index(action)
+                                chosen_obs_b = cand_obs_list[chosen_m].tobytes()
+                                self._pass0_cache = (
+                                    chosen_obs_b,
+                                    int(action),
+                                    float(cand_rew_list[chosen_m]),
+                                    h_cands[chosen_m : chosen_m + 1].detach(),
+                                    nhx_cands[:, chosen_m : chosen_m + 1, :].detach() if nhx_cands is not None else None,
+                                    res1_cands[chosen_m : chosen_m + 1].detach() if res1_cands is not None else None,
+                                    aff1_cands[chosen_m : chosen_m + 1].detach() if aff1_cands is not None else None,
+                                )
+                                if h_cands2 is not None and nhx_cands2 is not None and v_cands2 is not None:
+                                    c_dict = {}
+                                    for m2_i, p_i in enumerate(p_idx_list):
+                                        if p_i == chosen_m:
+                                            c_dict[int(act2_list[m2_i])] = (
+                                                h_cands2[m2_i : m2_i + 1].detach(),
+                                                nhx_cands2[:, m2_i : m2_i + 1, :].detach(),
+                                                v_cands2[m2_i].detach(),
+                                                res2_cands[m2_i : m2_i + 1].detach() if res2_cands is not None else None,
+                                                aff2_cands[m2_i : m2_i + 1].detach() if aff2_cands is not None else None,
+                                            )
+                                    if c_dict:
+                                        self._pass1_child_cache = (chosen_obs_b, c_dict)
 
             is_uncertain = (uncertainty >= uncertainty_threshold) or (confidence < confidence_threshold)
             ensemble_fallback_triggered = False

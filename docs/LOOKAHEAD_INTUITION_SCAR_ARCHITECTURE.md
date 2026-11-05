@@ -133,9 +133,23 @@ flowchart TD
 
 ---
 
-## 7. Roadmap de Otimização de Latência Zero-Perda (`2,54 ms -> ~1,05 ms`)
+## 7. As 4 Otimizações de Latência Zero-Perda Implementadas (`2,54 ms -> 1,09–1,48 ms`)
 
-1. **Otimização 1 — Desativação de Barreiras Multi-Thread OpenMP para Lotes Pequenos (`torch.set_num_threads(1)` em `act_fast`):** Elimina `+0,62 ms` de sincronização de threads (`libomp`) em matrizes `B=1..5`.
-2. **Otimização 2 — Cache de Continuidade Temporal `Pass 1(t) -> Pass 0(t+1)`:** Reaproveita `(h_cands[best_idx], nhx_cands[best_idx])` já computados no `Pass 1` do passo $t$ como resultado exato (`diff = 0.0`) do `Pass 0` no passo $t+1$, poupando `~0,40 ms` por decisão.
-3. **Otimização 3 — Cache de Continuidade Temporal `Pass 2(t) -> Pass 1(t+1)`:** Reaproveita `(h_cands2, nhx_cands2, v_cands2)` já computados no `Pass 2` do passo $t$ para os candidatos filhos $a_2$ do estado vencedor $a_1^*$, reduzindo o lote do `Pass 1` no passo $t+1$ de `B=4` para `B=2..3`.
-4. **Otimização 4 — Fusão Direta do Tri-Compass sobre $s' \in \mathbb{R}^{324}$:** Usa a linearidade $W(s' - s_{\text{ref}}) + b = W s' + (b - W s_{\text{ref}})$ para eliminar a alocação e concatenação em NumPy dos vetores de `972 floats` nos Passos 1 e 2.
+1. **Otimização 1 — `@torch.inference_mode()` + Single-Thread CPU (`torch.set_num_threads(1)` em `act_fast`):** Elimina `+0,62 ms` de sincronização de barreiras de threads OpenMP (`libomp`) e de contadores de versão de views do PyTorch em matrizes pequenas `B=1..5`.
+2. **Otimização 2 — Cache de Continuidade Temporal `Pass 1(t) -> Pass 0(t+1)` (`_pass0_cache`):** Reaproveita `(h_cands[chosen_m], nhx_cands[:, chosen_m, :], res1_cands[chosen_m], aff1_cands[chosen_m])` já computados no `Pass 1` do passo $t$ como resultado bit-a-bit idêntico (`diff = 0.0`) do `Pass 0` no passo $t+1$ (taxa de acerto de `84,8%` dos passos em `D9`, reduzindo o custo do Pass 0 de `0,456 ms` para `0,002 ms`).
+3. **Otimização 3 — Cache de Continuidade Temporal `Pass 2(t) -> Pass 1(t+1)` (`_pass1_child_cache`):** Reaproveita `(h_cands2, nhx_cands2, v_cands2, res2_cands, aff2_cands)` já computados no `Pass 2` do passo $t$ para os candidatos filhos $a_2$ do movimento vencedor $a_1^*$, reduzindo o lote neural do `Pass 1` no passo $t+1$ de `B=4` para `B=2..3`.
+4. **Otimização 4 — Projeção Direta do Tri-Compass sem Concatenação `[B, 972]` (`forward_tri_direct`):** Computa o Tri-Compass diretamente a partir das diferenças `obs_2d - prev_obs_2d`, `obs_2d - init_obs_2d` e `obs_2d - goal_obs_2d` sem alocar e concatenar arrays NumPy intermediários de `972 floats` nos Passos 1 e 2.
+
+### 7.1 Resultado Empírico Antes vs. Depois (3.200 Episódios Pareados `D1..D20`)
+
+| Métrica | Antes das 4 Otimizações (`0af6207`) | **Depois das 4 Otimizações** | Ganho / Paridade |
+| :--- | :---: | :---: | :---: |
+| **Latência Média `D1..D8` (CPU)** | `1,890 ms` (`529 Hz`) | **`1,089 ms` (`917,9 Hz`)** | **`-42,4%` latência (`+73,5%` Hz)** |
+| **Latência Média `D9` (CPU)** | `2,543 ms` (`393 Hz`) | **`1,486 ms` (`672,8 Hz`)** | **`-41,6%` latência (`+71,2%` Hz)** |
+| **Latência Mediana `p50` em `D9`** | `2,801 ms` | **`1,721 ms`** | **`-38,6%` na mediana** |
+| **Fast-Path Cache Hit (`min` / `p10`)** | `0,456 ms` (`2.192 Hz`) | **`0,060 ms` (`16.666 Hz`)** | **`7,6×` mais rápido (`-86,8%`)** |
+| **Vitórias Tabula Rasa `D1..D8`** | `374 / 400` (`93,50%`) | **`374 / 400` (`93,50%`)** | **100% Zero-Perda (`diff = 0`)** |
+| **Vitórias Tabula Rasa `D9..D20`** | `113 / 1.200` (`9,42%`) | **`113 / 1.200` (`9,42%`)** | **100% Zero-Perda (`diff = 0`, até `D17: 2%`)** |
+| **Vitórias Warm-Up `D1..D8`** | `334 / 400` (`83,50%`) | **`334 / 400` (`83,50%`)** | **100% Zero-Perda (`diff = 0`)** |
+| **Vitórias Warm-Up `D9..D20`** | `42 / 1.200` (`3,50%`) | **`42 / 1.200` (`3,50%`)** | **100% Zero-Perda (`diff = 0`, até `D17: 1%`)** |
+

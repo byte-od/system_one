@@ -70,7 +70,7 @@ class LinearRelationalAttention(nn.Module):
             x = x.view(b * t, s, d)
         n, s, d = x.shape
 
-        if not self.training and not torch.jit.is_tracing() and not torch.onnx.is_in_onnx_export():
+        if not self.training and not torch.is_grad_enabled() and not torch.jit.is_tracing() and not torch.onnx.is_in_onnx_export():
             w_qkv = self._get_eval_qkv_weight()
             qkv = F.linear(x, w_qkv).view(n, s, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
             q, k, v = qkv[0], qkv[1], qkv[2]
@@ -217,7 +217,7 @@ class UniversalRelationalStateEncoder(nn.Module):
             d == self.obs_dim
         ), f"Dimensão de entrada esperada {self.obs_dim}, recebido {d}"
 
-        if not self.training and not torch.jit.is_tracing() and not torch.onnx.is_in_onnx_export():
+        if not self.training and not torch.is_grad_enabled() and not torch.jit.is_tracing() and not torch.onnx.is_in_onnx_export():
             w_both, b_both = self._get_eval_obs_proj()
             both = F.linear(obs, w_both, b_both)
             z_base = self.net[2](self.net[1](both[..., :self.out_dim]))
