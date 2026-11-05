@@ -300,24 +300,26 @@ class HUDServer:
                 self.latest_telemetry["curriculum_success_rate"] = 0.0
                 self._current_depth_best_rate = 0.0
 
-            # Sanitização contra anomalia estatística de amostras iniciais espúrias (ex: 3/4 = 75% em D5+)
+            # Sanitização contra anomalia estatística de amostras iniciais espúrias (ex: 1/1 = 100% em D5+)
             curr_d = new_d if new_d is not None else prev_d
             curr_rate = data.get("curriculum_success_rate")
             if curr_d is not None and curr_d >= 5:
                 if not hasattr(self, "_current_depth_best_rate") or self._current_depth_best_rate is None:
                     self._current_depth_best_rate = 0.0
-                if curr_rate is not None and curr_rate < 0.90:
+                if curr_rate is not None and curr_rate < 0.95:
                     self._current_depth_best_rate = max(self._current_depth_best_rate, float(curr_rate))
 
                 incoming_best = data.get("curriculum_depth_best_success_rate")
                 is_anomalous_spike = incoming_best is not None and (
-                    (incoming_best >= 0.95 and (curr_rate is None or curr_rate < 0.80))
-                    or (incoming_best >= 0.60 and curr_rate is not None and curr_rate < 0.30 and self._current_depth_best_rate < 0.50)
+                    incoming_best >= 0.95 and (curr_rate is None or curr_rate < 0.80)
                 )
                 if is_anomalous_spike:
                     data["curriculum_depth_best_success_rate"] = (
                         self._current_depth_best_rate if self._current_depth_best_rate > 0 else (curr_rate if curr_rate is not None else 0.0)
                     )
+                elif incoming_best is not None:
+                    self._current_depth_best_rate = max(self._current_depth_best_rate, float(incoming_best))
+                    data["curriculum_depth_best_success_rate"] = self._current_depth_best_rate
 
             self.latest_telemetry.update(data)
 
@@ -416,11 +418,13 @@ class HUDServer:
                     current_z_norm = getattr(self, "_ext_z_norm", 0.0)
                     current_g_norm = getattr(self, "_ext_g_norm", 0.0)
                     current_depth_best_return = getattr(self, "_ext_best_ret", 0.0)
+                    current_depth_best_sr = getattr(self, "_ext_best_sr", 0.0)
                     promotions_count = max(current_depth - 1, 0)
 
                     found_new_step = False
                     found_new_marathon = False
                     prev_tracked_depth = getattr(self, "_ext_depth", None)
+                    prev_tracked_steps = getattr(self, "_ext_steps", None)
 
                     for line in reversed(lines):
                         if not found_new_step:
@@ -434,9 +438,11 @@ class HUDServer:
                                 current_return = ret
                                 current_calib = calib
                                 current_depth = depth
-                                if prev_tracked_depth is not None and depth != prev_tracked_depth:
-                                    # Reset do pico ao mudar de nível curricular
+                                is_new_run = prev_tracked_steps is not None and steps < prev_tracked_steps * 0.5
+                                if (prev_tracked_depth is not None and depth != prev_tracked_depth) or is_new_run:
+                                    # Reset do pico ao mudar de nível curricular ou iniciar novo treino
                                     current_depth_best_return = ret
+                                    current_depth_best_sr = 0.0
                                 else:
                                     current_depth_best_return = max(current_depth_best_return, ret)
                                 found_new_step = True
@@ -540,12 +546,22 @@ class HUDServer:
                             sample_window = recent_returns_current_depth[-15:]
                             mean_ret_window = sum(sample_window) / len(sample_window)
                             base_win_rate = min(1.0, max(0.0, (mean_ret_window - 1.0) / 10.0))
-                            best_ret_curr_depth = max(recent_returns_current_depth)
-                            best_sr = min(1.0, max(base_win_rate, (best_ret_curr_depth - 1.0) / 10.0))
+                            # Calcula o pico da janela deslizante curricular (mesma escala de 64 ep que base_win_rate)
+                            rolling_peak_sr = base_win_rate
+                            n_rets = len(recent_returns_current_depth)
+                            start_idx = 3 if n_rets >= 4 else 0
+                            for idx in range(start_idx, n_rets):
+                                win_slice = recent_returns_current_depth[max(0, idx - 14) : idx + 1]
+                                slice_mean = sum(win_slice) / len(win_slice)
+                                slice_sr = min(1.0, max(0.0, (slice_mean - 1.0) / 10.0))
+                                if slice_sr > rolling_peak_sr:
+                                    rolling_peak_sr = slice_sr
+                            best_sr = min(1.0, max(base_win_rate, rolling_peak_sr, current_depth_best_sr))
                         else:
                             base_win_rate = min(1.0, max(0.0, (current_return - 1.0) / 10.0))
-                            best_sr = base_win_rate
+                            best_sr = min(1.0, max(base_win_rate, current_depth_best_sr))
 
+                        self._ext_best_sr = best_sr
                         cur_sr = min(1.0, max(0.0, base_win_rate))
                         cur_window = 64
                         cur_wins = int(round(cur_sr * cur_window))

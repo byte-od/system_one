@@ -584,6 +584,26 @@ def test_hud_server_telemetry_curriculum_spike_sanitization():
     # O valor 1.0 é sanitizado para a taxa real observada (0.12)
     assert snap["curriculum_depth_best_success_rate"] == 0.12
 
+    # Pico real atingido em D8 (ex: 24/64 = 0.375 ou 40/64 = 0.625) não deve resetar quando curr_rate oscila < 0.30
+    server.update_telemetry({
+        "curriculum_depth": 8,
+        "curriculum_promotions": 7,
+        "curriculum_success_rate": 0.38,
+        "curriculum_depth_best_success_rate": 0.42,
+    })
+    snap_peak = server.get_telemetry_snapshot()
+    assert snap_peak["curriculum_depth_best_success_rate"] == 0.42
+
+    server.update_telemetry({
+        "curriculum_depth": 8,
+        "curriculum_promotions": 7,
+        "curriculum_success_rate": 0.25,
+        "curriculum_depth_best_success_rate": 0.42,
+    })
+    snap_after_dip = server.get_telemetry_snapshot()
+    assert snap_after_dip["curriculum_depth_best_success_rate"] == 0.42
+
+
 
 
 

@@ -906,6 +906,8 @@
     let _lastDataTimestamp = Date.now();
     let _maxObservedFps = 2000;
     let _maxObservedReturn = 0.0;
+    let _maxObservedWinsByDepth = {};
+    let _lastObservedSteps = 0;
 
     // Inicialização do Canvas
     const canvas = document.getElementById('learning-chart');
@@ -1095,12 +1097,21 @@
       const elSamples = document.getElementById('kpi-curriculum-samples');
       if (elSamples) elSamples.innerText = `Meta: ${targetWins}/${totalEps} eps`;
 
-      // Pico Real Atingido no Patamar Atual (em episódios vencidos / total)
+      // Pico Real Atingido no Patamar Atual (em episódios vencidos / total, monotônico por nível)
+      if (steps > 0 && _lastObservedSteps > 0 && steps < _lastObservedSteps * 0.5) {
+        _maxObservedWinsByDepth = {};
+        _maxObservedReturn = 0.0;
+      }
+      if (steps > 0) {
+        _lastObservedSteps = steps;
+      }
       let bestWinRate = telemetry.curriculum_depth_best_success_rate !== undefined && telemetry.curriculum_depth_best_success_rate !== null
         ? telemetry.curriculum_depth_best_success_rate * 100.0
         : curWinRate;
       bestWinRate = Math.max(bestWinRate, curWinRate);
-      const bestWins = Math.max(wins, Math.round((bestWinRate / 100.0) * totalEps));
+      const prevDepthBestWins = _maxObservedWinsByDepth[depth] || 0;
+      const bestWins = Math.max(wins, Math.round((bestWinRate / 100.0) * totalEps), prevDepthBestWins);
+      _maxObservedWinsByDepth[depth] = bestWins;
 
       const elBestWinRate = document.getElementById('kpi-best-winrate');
       if (elBestWinRate) elBestWinRate.innerText = `${bestWins}/${totalEps}`;
