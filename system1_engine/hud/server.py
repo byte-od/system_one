@@ -547,6 +547,8 @@ class HUDServer:
                             best_sr = base_win_rate
 
                         cur_sr = min(1.0, max(0.0, base_win_rate))
+                        cur_window = 64
+                        cur_wins = int(round(cur_sr * cur_window))
 
                         # Meta curricular elástica dinâmica por nível
                         if current_depth <= 4:
@@ -602,6 +604,8 @@ class HUDServer:
                             "curriculum_max_depth": "∞",
                             "curriculum_promotions": promotions_count,
                             "curriculum_success_rate": cur_sr,
+                            "curriculum_wins": cur_wins,
+                            "curriculum_samples": cur_window,
                             "curriculum_depth_best_success_rate": best_sr,
                             "target_success_rate": target_sr,
                             "curriculum_depth_best_return": current_depth_best_return,

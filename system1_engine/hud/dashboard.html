@@ -575,7 +575,7 @@
         </div>
         <div class="text-xs text-gray-300 flex items-center justify-between border-t border-indigo-900/40 pt-2 font-mono">
           <span>Patamar: <strong id="kpi-depth-level" class="text-indigo-300">D10</strong> (<span id="kpi-promotions">9</span> promos)</span>
-          <span id="kpi-curriculum-samples" class="text-indigo-300">64 eps</span>
+          <span id="kpi-curriculum-samples" class="text-indigo-300">--/64 eps</span>
         </div>
       </div>
     </div>
@@ -1085,8 +1085,13 @@
 
       const elPromos = document.getElementById('kpi-promotions');
       if (elPromos) elPromos.innerText = telemetry.curriculum_promotions !== undefined ? telemetry.curriculum_promotions : (depth - 1);
+      
+      const totalEps = telemetry.curriculum_samples || 64;
+      const wins = telemetry.curriculum_wins !== undefined
+        ? telemetry.curriculum_wins
+        : Math.round((curWinRate / 100.0) * totalEps);
       const elSamples = document.getElementById('kpi-curriculum-samples');
-      if (elSamples) elSamples.innerText = `${telemetry.curriculum_samples || 64} eps`;
+      if (elSamples) elSamples.innerText = `${wins}/${totalEps} eps`;
 
       // Pico Real Atingido no Patamar Atual (NUNCA assume 100% artificialmente)
       let bestWinRate = telemetry.curriculum_depth_best_success_rate !== undefined && telemetry.curriculum_depth_best_success_rate !== null
