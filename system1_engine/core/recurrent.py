@@ -14,7 +14,7 @@ Vantagens Arquiteturais:
 from __future__ import annotations
 
 import math
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -76,6 +76,36 @@ class LinearRecurrentUnit(nn.Module):
         self.d = nn.Parameter(torch.randn(d_out, d_in) / math.sqrt(d_in))
         self.norm = nn.LayerNorm(d_out)
         self.dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
+        self._eval_cache: Optional[Tuple[Any, ...]] = None
+
+    def train(self, mode: bool = True) -> "LinearRecurrentUnit":
+        super().train(mode)
+        self._eval_cache = None
+        return self
+
+    def _get_eval_fused(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Retorna matrizes fundidas e autovalores cacheados para inferência O(1) em modo eval."""
+        ver = (
+            self.nu_log._version,
+            self.theta._version,
+            self.gamma_log._version,
+            self.b_real._version,
+            self.b_imag._version,
+            self.c_real._version,
+            self.c_imag._version,
+            self.d._version,
+            self.b_real.device,
+            self.b_real.dtype,
+        )
+        if self._eval_cache is not None and self._eval_cache[0] == ver:
+            return self._eval_cache[1], self._eval_cache[2], self._eval_cache[3], self._eval_cache[4]
+
+        lam_r, lam_i, gamma = self.get_lambda_real_imag()
+        g_col = gamma.unsqueeze(1)
+        w_in = torch.cat([self.b_real * g_col, self.b_imag * g_col, self.d], dim=0)
+        w_out = torch.cat([self.c_real, -self.c_imag], dim=1)
+        self._eval_cache = (ver, lam_r, lam_i, w_in, w_out)
+        return lam_r, lam_i, w_in, w_out
 
     def get_lambda_real_imag(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Calcula os componentes reais e imaginários de lambda e o escalonador gamma."""
@@ -118,6 +148,21 @@ class LinearRecurrentUnit(nn.Module):
         # Desempacota partes real e imaginária do estado anterior
         h_prev_r = h_prev[:, :self.d_hidden]
         h_prev_i = h_prev[:, self.d_hidden:]
+
+        if not self.training and not torch.jit.is_tracing() and not torch.onnx.is_in_onnx_export():
+            lam_r, lam_i, w_in, w_out = self._get_eval_fused()
+            proj = F.linear(x_t, w_in)
+            dh = self.d_hidden
+            dh2 = 2 * dh
+            bx_r = proj[:, :dh]
+            bx_i = proj[:, dh:dh2]
+            dx = proj[:, dh2:]
+            h_t_r = (lam_r * h_prev_r - lam_i * h_prev_i) + bx_r
+            h_t_i = (lam_r * h_prev_i + lam_i * h_prev_r) + bx_i
+            next_h = torch.cat([h_t_r, h_t_i], dim=-1)
+            cy = F.linear(next_h, w_out)
+            y_t = self.norm(cy + dx)
+            return y_t, next_h
 
         lam_r, lam_i, gamma = self.get_lambda_real_imag()
 
@@ -162,6 +207,10 @@ class LinearRecurrentUnit(nn.Module):
             curr_h = hx.squeeze(0) if hx.dim() == 3 else hx
         else:
             curr_h = torch.zeros(B, self.state_dim, device=x.device, dtype=x.dtype)
+
+        if T == 1 and dones is None:
+            y_t, curr_h = self.step(x.squeeze(1), curr_h)
+            return y_t.unsqueeze(1), curr_h.unsqueeze(0)
 
         outs = []
         for t in range(T):

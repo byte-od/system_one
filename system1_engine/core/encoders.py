@@ -157,6 +157,29 @@ class VectorFrontEnd(nn.Module):
 
         self.action_encoder = ActionEncoder(action_space, embed_dim=16)
         self.reward_encoder = RewardEncoder(fixed=reward_fixed)
+        self._delta_cache = None
+
+    def train(self, mode: bool = True) -> "VectorFrontEnd":
+        super().train(mode)
+        self._delta_cache = None
+        return self
+
+    def _get_eval_delta_weights(self):
+        l_w = self.local_delta_encoder.net[0]
+        o_w = self.origin_delta_encoder.net[0]
+        g_w = self.goal_delta_encoder.net[0]
+        ver = (
+            l_w.weight._version, l_w.bias._version,
+            o_w.weight._version, o_w.bias._version,
+            g_w.weight._version, g_w.bias._version,
+            l_w.weight.device, l_w.weight.dtype,
+        )
+        if self._delta_cache is not None and self._delta_cache[0] == ver:
+            return self._delta_cache[1], self._delta_cache[2]
+        w_d = torch.stack([l_w.weight.t(), o_w.weight.t(), g_w.weight.t()], dim=0)
+        b_d = torch.stack([l_w.bias, o_w.bias, g_w.bias], dim=0).unsqueeze(1)
+        self._delta_cache = (ver, w_d, b_d)
+        return w_d, b_d
 
     def forward(
         self,
@@ -186,22 +209,38 @@ class VectorFrontEnd(nn.Module):
         z_s = self.state_encoder(obs)           # [B, T, 256]
 
         if self.tri_compass:
-            if local_delta is not None and origin_delta is not None and goal_delta is not None:
-                d_loc = local_delta if local_delta.dim() == 3 else local_delta.unsqueeze(1)
-                d_orig = origin_delta if origin_delta.dim() == 3 else origin_delta.unsqueeze(1)
-                d_goal = goal_delta if goal_delta.dim() == 3 else goal_delta.unsqueeze(1)
-            elif delta_obs.shape[-1] >= 3 * self.obs_dim:
-                d_loc = delta_obs[..., :self.obs_dim]
-                d_orig = delta_obs[..., self.obs_dim : 2 * self.obs_dim]
-                d_goal = delta_obs[..., 2 * self.obs_dim : 3 * self.obs_dim]
+            if (
+                not self.training
+                and not torch.jit.is_tracing()
+                and not torch.onnx.is_in_onnx_export()
+                and local_delta is None
+                and delta_obs.shape[-1] == 3 * self.obs_dim
+            ):
+                w_d, b_d = self._get_eval_delta_weights()
+                bt = b * t
+                d_3 = delta_obs.view(bt, 3, self.obs_dim).transpose(0, 1)
+                z_d3 = torch.nn.functional.gelu(torch.baddbmm(b_d, d_3, w_d))
+                z_l = self.local_delta_encoder.net[2](z_d3[0]).view(b, t, 64)
+                z_o = self.origin_delta_encoder.net[2](z_d3[1]).view(b, t, 64)
+                z_g = self.goal_delta_encoder.net[2](z_d3[2]).view(b, t, 64)
             else:
-                d_loc = delta_obs[..., :self.obs_dim]
-                d_orig = delta_obs[..., :self.obs_dim]
-                d_goal = torch.zeros_like(d_loc)
+                if local_delta is not None and origin_delta is not None and goal_delta is not None:
+                    d_loc = local_delta if local_delta.dim() == 3 else local_delta.unsqueeze(1)
+                    d_orig = origin_delta if origin_delta.dim() == 3 else origin_delta.unsqueeze(1)
+                    d_goal = goal_delta if goal_delta.dim() == 3 else goal_delta.unsqueeze(1)
+                elif delta_obs.shape[-1] >= 3 * self.obs_dim:
+                    d_loc = delta_obs[..., :self.obs_dim]
+                    d_orig = delta_obs[..., self.obs_dim : 2 * self.obs_dim]
+                    d_goal = delta_obs[..., 2 * self.obs_dim : 3 * self.obs_dim]
+                else:
+                    d_loc = delta_obs[..., :self.obs_dim]
+                    d_orig = delta_obs[..., :self.obs_dim]
+                    d_goal = torch.zeros_like(d_loc)
 
-            z_l = self.local_delta_encoder(d_loc)   # [B, T, 64]
-            z_o = self.origin_delta_encoder(d_orig) # [B, T, 64]
-            z_g = self.goal_delta_encoder(d_goal)   # [B, T, 64]
+                z_l = self.local_delta_encoder(d_loc)   # [B, T, 64]
+                z_o = self.origin_delta_encoder(d_orig) # [B, T, 64]
+                z_g = self.goal_delta_encoder(d_goal)   # [B, T, 64]
+
             z_a = self.action_encoder(prev_action)  # [B, T, 16]
             z_r = self.reward_encoder(prev_reward)  # [B, T, 1]
 

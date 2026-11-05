@@ -73,5 +73,37 @@ $$\text{Score}(a_i) = Q_{\text{Juiz}}(s, a_i) + \alpha \cdot \ln \pi(a_i | s) + 
    - Processar `[local_delta, origin_delta, goal_delta]` de forma vetorizada e enxuta.
 3. **Simulação em Lote sem Overhead de Dicionários + Poda de Clones Mortos:**
    - Cortar clones que batem em cicatrizes locais antes do forward pass do Crítico; se restar apenas 1 clone válido, pular integralmente o segundo forward neural.
-4. **Execução sob `torch.inference_mode()`:**
-   - Desativa rastreamento de view/versionamento de tensores em C++, reduzindo a latência de despacho na CPU.
+---
+
+## 5. Resultados Empíricos Pós-Implementação (D9 a D20 — 1.200 Cubos)
+
+Comparação pareada nas mesmas 1.200 sementes (`seed = 100000 * d + ep`) entre:
+1. **Reflexo Puro ($k=0$)**
+2. **1-Step Lookahead Clássico ($k=1$)**
+3. **Lookahead com Salto Fantasma Crítico + Cicatriz Suave (`ghost_jump=True, scar_penalty=0.25`)**
+
+| Profundidade | Reflexo Puro (%) | 1-Step Clássico (%) | **Salto Fantasma + Cicatriz Suave (%)** | Ganho vs. Reflexo | Ganho vs. 1-Step |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| **D09** | 22% | 31% | **48%** | **+26%** *(2,18×)* | **+17%** |
+| **D10** | 13% | 21% | **28%** | **+15%** *(2,15×)* | **+7%** |
+| **D11** | 5% | 11% | **18%** | **+13%** *(3,60×)* | **+7%** |
+| **D12** | 2% | 4% | **8%** | **+6%** *(4,00×)* | **+4%** *(2,0×)* |
+| **D13** | 2% | 2% | **5%** | **+3%** *(2,50×)* | **+3%** *(2,5×)* |
+| **D14** | 0% | 1% | **2%** | **+2%** | **+1%** *(2,0×)* |
+| **D15** | 0% | 0% | **1%** | **+1%** *(novo)* | **+1%** *(novo)* |
+| **D16** | 0% | 0% | **1%** | **+1%** *(novo)* | **+1%** *(novo)* |
+| **D17–D20** | 0% | 1% (D17) | **0%** | -- | -- |
+| **TOTAL (1.200)** | **44 (3,67%)** | **71 (5,92%)** | **111 (9,25%)** | **+67 cubos (+152,3%)** | **+40 cubos (+56,3%)** |
+
+### Descobertas Científicas da Ablação
+1. **O Paradoxo do Backtracking (Cicatriz Suave vs. Tabu Rígido):**
+   - Banir rigidamente estados já visitados reduz a eficácia em D9–D11 (de 31% para 26% em D9) porque impede o agente de **desfazer um erro (backtrack)** e retornar ao tronco principal da solução.
+   - A **Cicatriz Suave (`scar_penalty = 0.25 * visit_count`)** aliada ao **Scar Wake-Up Gate** (que acorda o lookahead quando o reflexo tenta reentrar num estado já visitado) resolve o dilema: permite *backtracking* quando o Crítico enxerga grande vantagem ($\Delta Q > 0.25$), mas repele o agente de ciclos planos em D12–D16.
+2. **Por que o Funil `4 -> 4` bate `4 -> 2` no Salto Fantasma (40% vs. 34% em D9):**
+   - Em comutadores de 2 passos ("desmontar no Passo 1 para encaixar no Passo 2"), o movimento salvador frequentemente ocupa a 3ª ou 4ª posição em $Q_1(s, a_1)$ no Passo 1 (vale tático) e só revela sua superioridade após o Salto Fantasma em $Q_2(s, a_1, \hat{a}_2)$.
+
+### Latência na CPU Otimizada
+* **Reflexo Puro (`value_rerank=False`):** **0,418 ms** mediana / **0,432 ms** média (~2.314 decisões/s).
+* **1-Step Lookahead Otimizado (`ghost_jump=False`):** **1,273 ms** média (~785 decisões/s).
+* **Lookahead + Salto Fantasma Crítico (`ghost_jump=True`):** **~1,95 ms** média (~512 decisões/s), executando 600 episódios completos na CPU em ~11s a 47s (contra 388s na GPU MPS).
+

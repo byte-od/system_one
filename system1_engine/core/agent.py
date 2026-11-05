@@ -192,6 +192,7 @@ class UniversalS1Agent(nn.Module):
         self._reward_ema = 0.0
         self._stagnation_count = 0
         self._action_history = []
+        self._state_visit_counts: Dict[int, int] = {}
 
     def get_initial_hx(self, batch_size: int = 1, device: Optional[torch.device] = None) -> torch.Tensor:
         """Returns the canonical zero-initialized hidden state tensor for this agent."""
@@ -340,6 +341,8 @@ class UniversalS1Agent(nn.Module):
         value_rerank: bool = False,
         value_rerank_top_k: int = 2,
         value_rerank_threshold: float = 0.85,
+        ghost_jump: bool = True,
+        scar_penalty: float = 0.25,
         env: Optional[Any] = None,
         simulator: Optional[Callable[[int], Tuple[Any, float, bool, Dict[str, Any]]]] = None,
     ) -> Union[int, np.ndarray, ReflexDecision]:
@@ -384,6 +387,12 @@ class UniversalS1Agent(nn.Module):
             else:
                 arr = np.asarray(raw_obs, dtype=np.float32)
                 t_obs = torch.from_numpy(arr).view(1, 1, -1)
+                if value_rerank:
+                    if not hasattr(self, "_state_visit_counts"):
+                        self._state_visit_counts = {}
+                    if len(self._state_visit_counts) < 512:
+                        h_key = hash(arr.tobytes())
+                        self._state_visit_counts[h_key] = self._state_visit_counts.get(h_key, 0) + 1
 
         dev = self.device
         to_dev = dev.type != "cpu"
@@ -671,16 +680,37 @@ class UniversalS1Agent(nn.Module):
                         break
 
             # -----------------------------------------------------------------
-            # Value Re-ranking (Local 1-Step Lookahead via Learned Critic V(s'))
+            # Value Re-ranking (Lookahead via Intuition + Critic + Soft Scar + 2-Step Ghost Jump)
             # -----------------------------------------------------------------
             value_rerank_triggered = False
             effective_env = env or getattr(self, "default_env", None)
             sim_fn = simulator or (getattr(effective_env, "simulate_step", None) if effective_env is not None else None)
 
             if value_rerank and self.action_chunk_size == 1 and n_acts > 1 and sim_fn is not None:
-                if confidence < value_rerank_threshold:
+                visit_counts = getattr(self, "_state_visit_counts", {})
+                raw_inner_env = getattr(effective_env, "env", None) if (simulator is None and not self.is_visual) else None
+                use_fast_raw_sim = (
+                    raw_inner_env is not None
+                    and hasattr(raw_inner_env, "simulate_step")
+                    and hasattr(effective_env, "prev_obs")
+                    and effective_env.prev_obs is not None
+                )
+
+                # Scar Wake-Up Gate: se o reflexo puro de alta confiança vai pisar num estado já visitado, acorda o Lookahead
+                force_rerank_by_scar = False
+                if confidence >= value_rerank_threshold and use_fast_raw_sim and scar_penalty > 0.0 and visit_counts:
+                    try:
+                        r_obs_chk, _, s_done_chk, _ = raw_inner_env.simulate_step(action)
+                        if not s_done_chk:
+                            chk_hash = hash(np.asarray(r_obs_chk, dtype=np.float32).tobytes())
+                            if visit_counts.get(chk_hash, 0) >= 1:
+                                force_rerank_by_scar = True
+                    except Exception:
+                        pass
+
+                if confidence < value_rerank_threshold or force_rerank_by_scar:
                     cand_k = max(2, min(int(value_rerank_top_k), n_acts))
-                    top_p, top_indices = torch.topk(probs, k=min(cand_k + 2, n_acts))
+                    top_p, top_indices = torch.topk(probs, k=min(cand_k + 4, n_acts))
                     cand_actions = [int(idx.item()) for idx in top_indices if int(idx.item()) not in avoid_set][:cand_k]
                     if not cand_actions:
                         cand_actions = [int(top_indices[0].item())]
@@ -691,50 +721,97 @@ class UniversalS1Agent(nn.Module):
                         cand_delta_list = []
                         cand_act_list = []
                         cand_rew_list = []
+                        cand_pen_list = []
                         valid_cands = []
 
                         for c_act in cand_actions:
-                            try:
-                                sim_res = sim_fn(c_act)
-                            except Exception:
-                                continue
-
-                            if isinstance(sim_res, tuple) and len(sim_res) >= 3:
-                                s_obs, s_rew, s_done = sim_res[0], sim_res[1], sim_res[2]
+                            if use_fast_raw_sim:
+                                try:
+                                    r_obs, s_rew, s_done, _ = raw_inner_env.simulate_step(c_act)
+                                except Exception:
+                                    continue
+                                if s_done:
+                                    immediate_solve = c_act
+                                    break
+                                obs_arr = np.asarray(r_obs, dtype=np.float32)
+                                v_cnt = visit_counts.get(hash(obs_arr.tobytes()), 0) if (scar_penalty > 0.0 and visit_counts) else 0
+                                cand_obs_list.append(obs_arr)
+                                cand_act_list.append(c_act)
+                                cand_rew_list.append(float(s_rew))
+                                cand_pen_list.append(float(scar_penalty * v_cnt))
+                                valid_cands.append(c_act)
                             else:
-                                continue
+                                try:
+                                    sim_res = sim_fn(c_act)
+                                except Exception:
+                                    continue
 
-                            if s_done:
-                                immediate_solve = c_act
-                                break
+                                if isinstance(sim_res, tuple) and len(sim_res) >= 3:
+                                    s_obs, s_rew, s_done = sim_res[0], sim_res[1], sim_res[2]
+                                else:
+                                    continue
 
-                            if isinstance(s_obs, dict):
-                                obs_arr = s_obs["obs"]
-                                delta_arr = s_obs.get("delta_obs", np.zeros_like(obs_arr))
-                            else:
-                                obs_arr = np.asarray(s_obs, dtype=np.float32)
-                                delta_arr = np.zeros_like(obs_arr)
+                                if s_done:
+                                    immediate_solve = c_act
+                                    break
 
-                            cand_obs_list.append(obs_arr)
-                            cand_delta_list.append(delta_arr)
-                            cand_act_list.append(c_act)
-                            cand_rew_list.append(float(s_rew))
-                            valid_cands.append(c_act)
+                                if isinstance(s_obs, dict):
+                                    obs_arr = np.asarray(s_obs["obs"], dtype=np.float32)
+                                    delta_arr = s_obs.get("delta_obs", np.zeros_like(obs_arr))
+                                else:
+                                    obs_arr = np.asarray(s_obs, dtype=np.float32)
+                                    delta_arr = np.zeros_like(obs_arr)
+
+                                v_cnt = (
+                                    visit_counts.get(hash(obs_arr.tobytes()), 0)
+                                    if (not self.is_visual and scar_penalty > 0.0 and visit_counts)
+                                    else 0
+                                )
+                                cand_obs_list.append(obs_arr)
+                                cand_delta_list.append(delta_arr)
+                                cand_act_list.append(c_act)
+                                cand_rew_list.append(float(s_rew))
+                                cand_pen_list.append(float(scar_penalty * v_cnt))
+                                valid_cands.append(c_act)
 
                         if immediate_solve is not None:
                             action = immediate_solve
                             value_rerank_triggered = True
                         elif len(valid_cands) > 1:
                             M = len(valid_cands)
+                            stacked_obs = np.stack(cand_obs_list)
                             if self.is_visual:
-                                b_obs = torch.from_numpy(np.stack(cand_obs_list)).unsqueeze(1).to(self.device)
+                                b_obs = torch.from_numpy(stacked_obs).unsqueeze(1).to(dev)
                                 b_delta = None
+                            elif use_fast_raw_sim:
+                                b_obs = torch.from_numpy(stacked_obs).unsqueeze(1)
+                                if getattr(effective_env, "tri_compass", False):
+                                    d_loc = stacked_obs - effective_env.prev_obs
+                                    d_orig = (
+                                        stacked_obs - effective_env.init_obs
+                                        if effective_env.init_obs is not None
+                                        else np.zeros_like(stacked_obs)
+                                    )
+                                    d_goal = (
+                                        stacked_obs - effective_env.elite_goal_obs
+                                        if effective_env.elite_goal_obs is not None
+                                        else np.zeros_like(stacked_obs)
+                                    )
+                                    b_delta = torch.from_numpy(np.concatenate([d_loc, d_orig, d_goal], axis=-1)).unsqueeze(1)
+                                else:
+                                    if getattr(effective_env, "compass_mode", False) and effective_env.init_obs is not None:
+                                        b_delta = torch.from_numpy(stacked_obs - effective_env.init_obs).unsqueeze(1)
+                                    else:
+                                        b_delta = torch.zeros_like(b_obs)
+                                if to_dev:
+                                    b_obs = b_obs.to(dev)
+                                    b_delta = b_delta.to(dev)
                             else:
-                                b_obs = torch.from_numpy(np.stack(cand_obs_list)).unsqueeze(1).to(self.device)
-                                b_delta = torch.from_numpy(np.stack(cand_delta_list)).unsqueeze(1).to(self.device)
+                                b_obs = torch.from_numpy(stacked_obs).unsqueeze(1).to(dev)
+                                b_delta = torch.from_numpy(np.stack(cand_delta_list)).unsqueeze(1).to(dev)
 
-                            b_act = torch.tensor(cand_act_list, dtype=torch.long, device=self.device).view(M, 1)
-                            b_rew = torch.tensor(cand_rew_list, dtype=torch.float32, device=self.device).view(M, 1, 1)
+                            b_act = torch.tensor(cand_act_list, dtype=torch.long, device=dev).view(M, 1)
+                            b_rew = torch.tensor(cand_rew_list, dtype=torch.float32, device=dev).view(M, 1, 1)
 
                             z_cands = self.front_end(obs=b_obs, delta_obs=b_delta, prev_action=b_act, prev_reward=b_rew)
                             if self.hx is not None:
@@ -748,12 +825,106 @@ class UniversalS1Agent(nn.Module):
                             else:
                                 hx_cands = None
 
-                            h_cands, _ = self.trunk(z_cands, hx=hx_cands, dones=None)
+                            h_cands, nhx_cands = self.trunk(z_cands, hx=hx_cands, dones=None)
                             v_cands = self.value_head(h_cands).squeeze(-1).squeeze(-1)
-                            q_scores = torch.tensor(cand_rew_list, device=self.device) + 0.99 * v_cands
-                            best_idx = int(torch.argmax(q_scores).item())
-                            action = valid_cands[best_idx]
-                            value_rerank_triggered = True
+                            q_scores = (
+                                torch.tensor(cand_rew_list, device=dev)
+                                + 0.99 * v_cands
+                                - torch.tensor(cand_pen_list, device=dev)
+                            )
+
+                            # Salto Fantasma de 2º Passo guiado pela Intuição (+ Crítico de 2º Passo)
+                            sim_2step_fn = (
+                                getattr(raw_inner_env, "simulate_2step", None)
+                                if (ghost_jump and use_fast_raw_sim)
+                                else None
+                            )
+                            if sim_2step_fn is not None:
+                                next_logits = self.policy_head.linear(h_cands).squeeze(1)
+                                next_probs = torch.softmax(next_logits, dim=-1)
+                                _, next_top_idx = torch.topk(next_probs, k=min(2, n_acts), dim=-1)
+
+                                solve_2step_act = None
+                                obs2_list = []
+                                act2_list = []
+                                rew2_list = []
+                                pen2_list = []
+
+                                for idx_m, a1 in enumerate(valid_cands):
+                                    a2 = int(next_top_idx[idx_m, 0].item())
+                                    if n_acts == 12:
+                                        inv_a1 = (a1 + 1) if (a1 % 2 == 0) else (a1 - 1)
+                                        if a2 == inv_a1 and next_top_idx.shape[1] > 1:
+                                            a2 = int(next_top_idx[idx_m, 1].item())
+                                    o2, rew2, done2 = sim_2step_fn(a1, a2)
+                                    if done2:
+                                        solve_2step_act = a1
+                                        break
+                                    if o2 is not None:
+                                        o2_arr = np.asarray(o2, dtype=np.float32)
+                                        v_cnt2 = (
+                                            visit_counts.get(hash(o2_arr.tobytes()), 0)
+                                            if (scar_penalty > 0.0 and visit_counts)
+                                            else 0
+                                        )
+                                        obs2_list.append(o2_arr)
+                                        act2_list.append(a2)
+                                        rew2_list.append(float(rew2))
+                                        pen2_list.append(float(scar_penalty * v_cnt2))
+
+                                if solve_2step_act is not None:
+                                    action = solve_2step_act
+                                    value_rerank_triggered = True
+                                elif len(obs2_list) == M:
+                                    st_obs2 = np.stack(obs2_list)
+                                    b_obs2 = torch.from_numpy(st_obs2).unsqueeze(1)
+                                    if getattr(effective_env, "tri_compass", False):
+                                        d_loc2 = st_obs2 - stacked_obs
+                                        d_orig2 = (
+                                            st_obs2 - effective_env.init_obs
+                                            if effective_env.init_obs is not None
+                                            else np.zeros_like(st_obs2)
+                                        )
+                                        d_goal2 = (
+                                            st_obs2 - effective_env.elite_goal_obs
+                                            if effective_env.elite_goal_obs is not None
+                                            else np.zeros_like(st_obs2)
+                                        )
+                                        b_delta2 = torch.from_numpy(np.concatenate([d_loc2, d_orig2, d_goal2], axis=-1)).unsqueeze(1)
+                                    else:
+                                        if getattr(effective_env, "compass_mode", False) and effective_env.init_obs is not None:
+                                            b_delta2 = torch.from_numpy(st_obs2 - effective_env.init_obs).unsqueeze(1)
+                                        else:
+                                            b_delta2 = torch.zeros_like(b_obs2)
+                                    if to_dev:
+                                        b_obs2 = b_obs2.to(dev)
+                                        b_delta2 = b_delta2.to(dev)
+
+                                    b_act2 = torch.tensor(act2_list, dtype=torch.long, device=dev).view(M, 1)
+                                    b_rew2 = (
+                                        torch.tensor(rew2_list, dtype=torch.float32, device=dev)
+                                        - torch.tensor(cand_rew_list, dtype=torch.float32, device=dev)
+                                    ).view(M, 1, 1)
+                                    z_cands2 = self.front_end(obs=b_obs2, delta_obs=b_delta2, prev_action=b_act2, prev_reward=b_rew2)
+                                    h_cands2, _ = self.trunk(z_cands2, hx=nhx_cands, dones=None)
+                                    v_cands2 = self.value_head(h_cands2).squeeze(-1).squeeze(-1)
+                                    q2_scores = (
+                                        torch.tensor(rew2_list, device=dev)
+                                        + (0.99 ** 2) * v_cands2
+                                        - torch.tensor(pen2_list, device=dev)
+                                    )
+                                    q_scores = torch.maximum(q_scores, 0.98 * q2_scores)
+                                    best_idx = int(torch.argmax(q_scores).item())
+                                    action = valid_cands[best_idx]
+                                    value_rerank_triggered = True
+                                else:
+                                    best_idx = int(torch.argmax(q_scores).item())
+                                    action = valid_cands[best_idx]
+                                    value_rerank_triggered = True
+                            else:
+                                best_idx = int(torch.argmax(q_scores).item())
+                                action = valid_cands[best_idx]
+                                value_rerank_triggered = True
 
             is_uncertain = (uncertainty >= uncertainty_threshold) or (confidence < confidence_threshold)
             ensemble_fallback_triggered = False

@@ -385,6 +385,33 @@ class LRUResidualTrunk(nn.Module):
         self.highway = nn.Linear(input_dim, self.hidden_dim, bias=highway_bias)
         self.combine_norm = nn.LayerNorm(self.hidden_dim)
         self.res_block = ResMLPBlock(self.hidden_dim)
+        self._xnorm_cache = None
+
+    def train(self, mode: bool = True) -> "LRUTrunk":
+        super().train(mode)
+        self._xnorm_cache = None
+        return self
+
+    def _get_eval_xnorm_fused(self):
+        flru = self.fast_lru
+        hw = self.highway
+        ver = (
+            flru.nu_log._version, flru.theta._version, flru.gamma_log._version,
+            flru.b_real._version, flru.b_imag._version, flru.c_real._version,
+            flru.c_imag._version, flru.d._version,
+            hw.weight._version, hw.bias._version if hw.bias is not None else 0,
+            hw.weight.device, hw.weight.dtype,
+        )
+        if self._xnorm_cache is not None and self._xnorm_cache[0] == ver:
+            return self._xnorm_cache[1:]
+        f_lam_r, f_lam_i, w_flru_in, w_flru_out = flru._get_eval_fused()
+        w_all = torch.cat([w_flru_in, hw.weight], dim=0)
+        if hw.bias is not None:
+            b_all = torch.cat([torch.zeros(w_flru_in.shape[0], device=hw.weight.device, dtype=hw.weight.dtype), hw.bias], dim=0)
+        else:
+            b_all = None
+        self._xnorm_cache = (ver, f_lam_r, f_lam_i, w_all, b_all, w_flru_out)
+        return f_lam_r, f_lam_i, w_all, b_all, w_flru_out
 
     def get_initial_hx(
         self,
@@ -446,6 +473,29 @@ class LRUResidualTrunk(nn.Module):
             ], dim=-1)
         else:
             x_norm = self.input_norm(x)
+
+        if t == 1 and dones is None and not self.training and not torch.jit.is_tracing() and not torch.onnx.is_in_onnx_export():
+            f_lam_r, f_lam_i, w_all, b_all, w_flru_out = self._get_eval_xnorm_fused()
+            xn_2d = x_norm.squeeze(1)
+            xh_proj = torch.nn.functional.linear(xn_2d, w_all, b_all)
+            dh = self.fast_lru.d_hidden
+            dh2 = 2 * dh
+            fd_end = dh2 + self.fast_dim
+            fbx_r = xh_proj[:, :dh]
+            fbx_i = xh_proj[:, dh:dh2]
+            fdx = xh_proj[:, dh2:fd_end]
+            h_high_2d = xh_proj[:, fd_end:]
+
+            hf_2d = h_fast.squeeze(0)
+            fhr, fhi = hf_2d[:, :dh], hf_2d[:, dh:]
+            next_hf_2d = torch.cat([f_lam_r * fhr - f_lam_i * fhi + fbx_r, f_lam_r * fhi + f_lam_i * fhr + fbx_i], dim=-1)
+            out_fast_2d = self.fast_lru.norm(torch.nn.functional.linear(next_hf_2d, w_flru_out) + fdx)
+
+            out_slow_2d, next_hs_2d = self.slow_lru.step(out_fast_2d, h_slow.squeeze(0))
+            h_comb = self.combine_norm(torch.cat([out_fast_2d, out_slow_2d], dim=-1) + h_high_2d)
+            h_2d = self.res_block(h_comb)
+            next_hx = torch.cat([next_hf_2d, next_hs_2d], dim=-1).unsqueeze(0)
+            return (h_2d if is_2d else h_2d.unsqueeze(1)), next_hx
 
         # Recurrent propagation through cascaded LRU stages
         out_fast, next_hf = self.fast_lru(x_norm, h_fast, dones=dones)

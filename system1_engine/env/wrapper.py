@@ -407,6 +407,12 @@ class UniversalS1Wrapper(gym.Wrapper):
             f"O ambiente base {type(self.env).__name__} não implementa simulate_step()."
         )
 
+    def simulate_2step(self, action1: Any, action2: Any) -> Optional[tuple[Optional[np.ndarray], float, bool]]:
+        """Simula 2 passos consecutivos (Salto Fantasma) se o ambiente base suportar."""
+        if hasattr(self.env, "simulate_2step"):
+            return self.env.simulate_2step(action1, action2)
+        return None
+
     def step(
         self, action: Any, chunk_mask: Optional[np.ndarray] = None
     ) -> tuple[S1Observation, Any, Any, Any, Any]:

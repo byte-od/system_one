@@ -41,6 +41,26 @@ class LinearRelationalAttention(nn.Module):
         self.k_proj = nn.Linear(embed_dim, embed_dim, bias=False)
         self.v_proj = nn.Linear(embed_dim, embed_dim, bias=False)
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=True)
+        self._qkv_cache = None
+
+    def train(self, mode: bool = True) -> "LinearRelationalAttention":
+        super().train(mode)
+        self._qkv_cache = None
+        return self
+
+    def _get_eval_qkv_weight(self) -> torch.Tensor:
+        ver = (
+            self.q_proj.weight._version,
+            self.k_proj.weight._version,
+            self.v_proj.weight._version,
+            self.q_proj.weight.device,
+            self.q_proj.weight.dtype,
+        )
+        if self._qkv_cache is not None and self._qkv_cache[0] == ver:
+            return self._qkv_cache[1]
+        w_qkv = torch.cat([self.q_proj.weight, self.k_proj.weight, self.v_proj.weight], dim=0)
+        self._qkv_cache = (ver, w_qkv)
+        return w_qkv
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Processa tensor de slots com formato [B, T, S, D] ou [B, S, D]."""
@@ -50,22 +70,27 @@ class LinearRelationalAttention(nn.Module):
             x = x.view(b * t, s, d)
         n, s, d = x.shape
 
-        # Projeções Lineares [N, S, H, head_dim] -> [N, H, S, head_dim]
-        q = (
-            self.q_proj(x)
-            .view(n, s, self.num_heads, self.head_dim)
-            .transpose(1, 2)
-        )
-        k = (
-            self.k_proj(x)
-            .view(n, s, self.num_heads, self.head_dim)
-            .transpose(1, 2)
-        )
-        v = (
-            self.v_proj(x)
-            .view(n, s, self.num_heads, self.head_dim)
-            .transpose(1, 2)
-        )
+        if not self.training and not torch.jit.is_tracing() and not torch.onnx.is_in_onnx_export():
+            w_qkv = self._get_eval_qkv_weight()
+            qkv = F.linear(x, w_qkv).view(n, s, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
+            q, k, v = qkv[0], qkv[1], qkv[2]
+        else:
+            # Projeções Lineares [N, S, H, head_dim] -> [N, H, S, head_dim]
+            q = (
+                self.q_proj(x)
+                .view(n, s, self.num_heads, self.head_dim)
+                .transpose(1, 2)
+            )
+            k = (
+                self.k_proj(x)
+                .view(n, s, self.num_heads, self.head_dim)
+                .transpose(1, 2)
+            )
+            v = (
+                self.v_proj(x)
+                .view(n, s, self.num_heads, self.head_dim)
+                .transpose(1, 2)
+            )
 
         # Kernelização Positiva: phi(x) = ELU(x) + 1.0 >= 0
         phi_q = F.elu(q) + 1.0
@@ -156,6 +181,29 @@ class UniversalRelationalStateEncoder(nn.Module):
         self.scar_memory = None
         self._last_delta_slots = None
         self._last_resonance = None
+        self._obs_proj_cache = None
+
+    def train(self, mode: bool = True) -> "UniversalRelationalStateEncoder":
+        super().train(mode)
+        self._obs_proj_cache = None
+        return self
+
+    def _get_eval_obs_proj(self):
+        l0 = self.net[0]
+        ver = (
+            l0.weight._version,
+            l0.bias._version,
+            self.slot_proj.weight._version,
+            self.slot_proj.bias._version,
+            l0.weight.device,
+            l0.weight.dtype,
+        )
+        if self._obs_proj_cache is not None and self._obs_proj_cache[0] == ver:
+            return self._obs_proj_cache[1], self._obs_proj_cache[2]
+        w_both = torch.cat([l0.weight, self.slot_proj.weight], dim=0)
+        b_both = torch.cat([l0.bias, self.slot_proj.bias], dim=0)
+        self._obs_proj_cache = (ver, w_both, b_both)
+        return w_both, b_both
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
         """Processa vetor de observação [B, T, obs_dim] ou [B, obs_dim]."""
@@ -168,11 +216,17 @@ class UniversalRelationalStateEncoder(nn.Module):
             d == self.obs_dim
         ), f"Dimensão de entrada esperada {self.obs_dim}, recebido {d}"
 
-        # 1. Ramo Direto
-        z_base = self.net(obs)  # [B, T, out_dim]
+        if not self.training and not torch.jit.is_tracing() and not torch.onnx.is_in_onnx_export():
+            w_both, b_both = self._get_eval_obs_proj()
+            both = F.linear(obs, w_both, b_both)
+            z_base = self.net[2](self.net[1](both[..., :self.out_dim]))
+            slots = both[..., self.out_dim:].view(b, t, self.num_slots, self.slot_dim)
+        else:
+            # 1. Ramo Direto
+            z_base = self.net(obs)  # [B, T, out_dim]
+            # 2. Ramo Relacional com Atenção Linear sobre Slots
+            slots = self.slot_proj(obs).view(b, t, self.num_slots, self.slot_dim)
 
-        # 2. Ramo Relacional com Atenção Linear sobre Slots
-        slots = self.slot_proj(obs).view(b, t, self.num_slots, self.slot_dim)
         slots = slots + self.slot_embed
         slots = slots + self.attn(self.slot_norm1(slots))
         slots = slots + self.slot_ffn(self.slot_norm2(slots))
