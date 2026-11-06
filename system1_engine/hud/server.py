@@ -542,23 +542,28 @@ class HUDServer:
                             if m_s and int(m_s.group(4)) == current_depth:
                                 recent_returns_current_depth.append(float(m_s.group(2)))
 
+                        # Retorno basal de episódios truncados cai com a profundidade devido à penalidade de horizonte (-0.02 * 5 * d)
+                        unsolved_base = max(0.05, 1.0 - 0.10 * current_depth)
+                        solve_span = 10.5
+
                         if recent_returns_current_depth:
-                            sample_window = recent_returns_current_depth[-15:]
+                            sample_window = recent_returns_current_depth[-6:]
                             mean_ret_window = sum(sample_window) / len(sample_window)
-                            base_win_rate = min(1.0, max(0.0, (mean_ret_window - 1.0) / 10.0))
+                            live_ret_blend = 0.50 * recent_returns_current_depth[-1] + 0.50 * mean_ret_window
+                            base_win_rate = min(1.0, max(0.0, (live_ret_blend - unsolved_base) / solve_span))
                             # Calcula o pico da janela deslizante curricular (mesma escala de 64 ep que base_win_rate)
                             rolling_peak_sr = base_win_rate
                             n_rets = len(recent_returns_current_depth)
                             start_idx = 3 if n_rets >= 4 else 0
                             for idx in range(start_idx, n_rets):
-                                win_slice = recent_returns_current_depth[max(0, idx - 14) : idx + 1]
+                                win_slice = recent_returns_current_depth[max(0, idx - 5) : idx + 1]
                                 slice_mean = sum(win_slice) / len(win_slice)
-                                slice_sr = min(1.0, max(0.0, (slice_mean - 1.0) / 10.0))
+                                slice_sr = min(1.0, max(0.0, (slice_mean - unsolved_base) / solve_span))
                                 if slice_sr > rolling_peak_sr:
                                     rolling_peak_sr = slice_sr
                             best_sr = min(1.0, max(base_win_rate, rolling_peak_sr, current_depth_best_sr))
                         else:
-                            base_win_rate = min(1.0, max(0.0, (current_return - 1.0) / 10.0))
+                            base_win_rate = min(1.0, max(0.0, (current_return - unsolved_base) / solve_span))
                             best_sr = min(1.0, max(base_win_rate, current_depth_best_sr))
 
                         self._ext_best_sr = best_sr
