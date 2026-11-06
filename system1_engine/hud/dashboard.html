@@ -516,6 +516,9 @@
       left: 2px !important;
       margin: 0 !important;
       padding: 0 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 3px !important;
       z-index: 20 !important;
       pointer-events: none !important;
     }
@@ -540,6 +543,22 @@
     }
     body.mini-mode .vessel-card-content > div:first-child > span:last-child {
       display: none !important;
+    }
+    /* Exibe a profundidade atual (ex: D9) como pílula compacta no topo do Card 2 no modo mini */
+    body.mini-mode #kpi-depth-badge {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      height: 20px !important;
+      padding: 0 5px !important;
+      border-radius: 6px !important;
+      font-size: 10px !important;
+      font-weight: 900 !important;
+      line-height: 1 !important;
+      color: #e0e7ff !important;
+      background: rgba(49, 46, 129, 0.85) !important;
+      border: 1px solid rgba(129, 140, 248, 0.45) !important;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.45) !important;
     }
 
     /* Centro do frasco: apenas o indicador principal centralizado sobre o líquido */
@@ -1299,6 +1318,7 @@
       // =========================================================
       // Card 2: Fronteira Curricular (Episódios Vencidos / Total no Nível Atual)
       // =========================================================
+      const isMini = document.body.classList.contains('mini-mode');
       const totalEps = telemetry.curriculum_samples || 64;
       const wins = telemetry.curriculum_wins !== undefined
         ? telemetry.curriculum_wins
@@ -1312,7 +1332,7 @@
         : (depth <= 4 ? 85 : (depth <= 6 ? 65 : (depth <= 10 ? 50 : 40)));
       const targetWins = Math.round((targetPct / 100.0) * totalEps);
       const elDepthBadge = document.getElementById('kpi-depth-badge');
-      if (elDepthBadge) elDepthBadge.innerText = `Nível D${depth} • Meta: ${targetWins}/${totalEps}`;
+      if (elDepthBadge) elDepthBadge.innerText = isMini ? `D${depth}` : `Nível D${depth} • Meta: ${targetWins}/${totalEps}`;
 
       const elDepthLevel = document.getElementById('kpi-depth-level');
       if (elDepthLevel) elDepthLevel.innerText = `D${depth}`;
@@ -1365,7 +1385,6 @@
       // =========================================================
       // Card 3: Cicatrizes O(1)
       // =========================================================
-      const isMini = document.body.classList.contains('mini-mode');
       const elScars = document.getElementById('kpi-scars');
       if (elScars) elScars.innerText = isMini ? formatCompactNumber(scars, 1) : scars.toLocaleString();
       const elW = document.getElementById('kpi-w-norm');
