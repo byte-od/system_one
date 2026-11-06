@@ -1115,6 +1115,445 @@ class RecurrentPPOTrainer:
 
         return None
 
+    def _apply_teacher_lookahead_batch(
+        self,
+        num_scouts: int,
+        raw_env_obj: Any,
+        dist_sample: Any,
+        current_hx: Optional[torch.Tensor],
+    ) -> Dict[int, Tuple[int, torch.Tensor]]:
+        """Versão 100% vetorizada em lote (Pass 1, Pass 2 e Pass 3 unificados) para os Batedores S1.
+        Substitui 24 x 3 = 72 micro-forwards neurais por apenas 3 forwards em lote por passo."""
+        results: Dict[int, Tuple[int, torch.Tensor]] = {}
+        if not self.agent.is_discrete or not hasattr(dist_sample, "logits") or self.action_chunk_size != 1:
+            return results
+
+        all_logits = dist_sample.logits[:num_scouts].squeeze(1)  # [K_scouts, n_acts]
+        all_probs = torch.softmax(all_logits, dim=-1)
+        n_acts = all_probs.shape[-1]
+
+        use_tri_direct = (
+            getattr(self.env, "tri_compass", False)
+            and hasattr(self.agent.front_end, "forward_tri_direct")
+            and getattr(self.env, "prev_obs", None) is not None
+        )
+        t_goal = (
+            torch.from_numpy(self.env.elite_goal_obs).view(1, -1).to(self.device)
+            if (use_tri_direct and getattr(self.env, "elite_goal_obs", None) is not None)
+            else None
+        )
+        scar_pen = 0.25
+
+        # --- PASS 1: Coleta candidatos de 1 passo de todos os Batedores ativos ---
+        p1_obs_list: List[np.ndarray] = []
+        p1_acts_list: List[int] = []
+        p1_rews_list: List[float] = []
+        p1_pens_list: List[float] = []
+        p1_env_ids: List[int] = []
+        scout_slices: Dict[int, Tuple[int, int, int, List[int], List[float], List[float]]] = {}
+        final_best_act: Dict[int, int] = {}
+
+        for e in range(num_scouts):
+            env_e = raw_env_obj.envs[e]
+            if not hasattr(env_e, "simulate_step"):
+                continue
+            d_e = int(getattr(env_e, "_episode_depth", getattr(env_e, "current_depth", 1)))
+            if d_e < self.teacher_min_depth:
+                continue
+
+            avoid_acts = set()
+            if n_acts == 12 and hasattr(self, "_vec_recent_actions") and e < len(self._vec_recent_actions):
+                r_hist = self._vec_recent_actions[e]
+                if len(r_hist) >= 1:
+                    last_a = int(r_hist[-1])
+                    avoid_acts.add((last_a + 1) if (last_a % 2 == 0) else (last_a - 1))
+                if len(r_hist) >= 3:
+                    if r_hist[-1] == r_hist[-3]:
+                        avoid_acts.add(int(r_hist[-2]))
+                    inv_a1 = (int(r_hist[-3]) + 1) if (int(r_hist[-3]) % 2 == 0) else (int(r_hist[-3]) - 1)
+                    inv_a2 = (int(r_hist[-2]) + 1) if (int(r_hist[-2]) % 2 == 0) else (int(r_hist[-2]) - 1)
+                    if int(r_hist[-1]) == inv_a1:
+                        avoid_acts.add(inv_a2)
+
+            valid_probs = all_probs[e].clone()
+            for av_a in avoid_acts:
+                if 0 <= av_a < n_acts:
+                    valid_probs[av_a] = 0.0
+            if float(valid_probs.max().item()) >= self.teacher_confidence_threshold:
+                continue
+
+            eff_top_k = max(self.teacher_top_k, 5 if d_e >= 8 else self.teacher_top_k)
+            _, top_indices = torch.topk(valid_probs, k=min(eff_top_k + 2, n_acts))
+            cand_acts = [int(idx.item()) for idx in top_indices if int(idx.item()) not in avoid_acts][:eff_top_k]
+            if not cand_acts:
+                cand_acts = [int(top_indices[0].item())]
+
+            visit_map = (
+                self._vec_visited_hashes[e]
+                if (hasattr(self, "_vec_visited_hashes") and e < len(self._vec_visited_hashes))
+                else {}
+            )
+            start_idx = len(p1_obs_list)
+            valid_acts_e: List[int] = []
+            cand_rews_e: List[float] = []
+            cand_pens_e: List[float] = []
+            immediate_solve = None
+
+            for a in cand_acts:
+                try:
+                    s_obs, s_rew, s_done, _ = env_e.simulate_step(a)
+                except Exception:
+                    continue
+                if s_done:
+                    immediate_solve = a
+                    break
+                o_arr = np.asarray(s_obs["obs"] if isinstance(s_obs, dict) else s_obs, dtype=np.float32)
+                v_cnt = visit_map.get(hash(o_arr.tobytes()), 0) if visit_map else 0
+                pen_val = float(scar_pen * v_cnt)
+                p1_obs_list.append(o_arr)
+                p1_acts_list.append(a)
+                p1_rews_list.append(float(s_rew))
+                p1_pens_list.append(pen_val)
+                p1_env_ids.append(e)
+                valid_acts_e.append(a)
+                cand_rews_e.append(float(s_rew))
+                cand_pens_e.append(pen_val)
+
+            if immediate_solve is not None:
+                # Remove partial entries added for this env
+                del p1_obs_list[start_idx:]
+                del p1_acts_list[start_idx:]
+                del p1_rews_list[start_idx:]
+                del p1_pens_list[start_idx:]
+                del p1_env_ids[start_idx:]
+                final_best_act[e] = immediate_solve
+            elif len(valid_acts_e) == 1:
+                del p1_obs_list[start_idx:]
+                del p1_acts_list[start_idx:]
+                del p1_rews_list[start_idx:]
+                del p1_pens_list[start_idx:]
+                del p1_env_ids[start_idx:]
+                final_best_act[e] = valid_acts_e[0]
+            elif len(valid_acts_e) > 1:
+                end_idx = len(p1_obs_list)
+                scout_slices[e] = (start_idx, end_idx, d_e, valid_acts_e, cand_rews_e, cand_pens_e)
+
+        if len(p1_obs_list) > 0:
+            N1 = len(p1_obs_list)
+            st_p1_obs = np.stack(p1_obs_list).astype(np.float32)
+            b_obs1 = torch.from_numpy(st_p1_obs).unsqueeze(1).to(self.device)
+            b_act1 = torch.tensor(p1_acts_list, dtype=torch.long, device=self.device).view(N1, 1)
+            b_rew1 = torch.tensor(p1_rews_list, dtype=torch.float32, device=self.device).view(N1, 1, 1)
+            env_ids1_np = np.asarray(p1_env_ids, dtype=np.int64)
+
+            if use_tri_direct:
+                t_prev1 = torch.from_numpy(self.env.prev_obs[env_ids1_np]).to(self.device)
+                t_init1 = (
+                    torch.from_numpy(self.env.init_obs[env_ids1_np]).to(self.device)
+                    if getattr(self.env, "init_obs", None) is not None
+                    else None
+                )
+                z_cands1 = self.agent.front_end.forward_tri_direct(b_obs1, t_prev1, t_init1, t_goal, b_act1, b_rew1)
+            else:
+                z_cands1 = self.agent.front_end(obs=b_obs1, delta_obs=torch.zeros_like(b_obs1), prev_action=b_act1, prev_reward=b_rew1)
+
+            hx1 = current_hx[:, env_ids1_np, :] if current_hx is not None else None
+            h_cands1, nhx_cands1 = self.agent.trunk(z_cands1, hx=hx1)
+            v_cands1 = self.agent.value_head(h_cands1).squeeze(-1).squeeze(-1)
+            q1_all = (
+                torch.tensor(p1_rews_list, device=self.device)
+                + self.effective_gamma * v_cands1
+                - torch.tensor(p1_pens_list, device=self.device)
+            )
+            next_logits1 = self.agent.policy_head.linear(h_cands1).squeeze(1)
+            _, next_top_idx1 = torch.topk(next_logits1, k=min(3, n_acts), dim=-1)
+
+            # --- PASS 2: Coleta ramos de 2 passos de todos os Batedores restantes ---
+            p2_obs_list: List[np.ndarray] = []
+            p2_parent_p1_idx: List[int] = []
+            p2_env_ids: List[int] = []
+            p2_local_m1: List[int] = []
+            p2_a1_list: List[int] = []
+            p2_a2_list: List[int] = []
+            p2_rew2_list: List[float] = []
+            p2_delta_rew2_list: List[float] = []
+            p2_pen2_list: List[float] = []
+            scout_p2_slices: Dict[int, Tuple[int, int, int, List[int], torch.Tensor]] = {}
+
+            for e, (s1, e1, d_e, valid_acts_e, cand_rews_e, cand_pens_e) in scout_slices.items():
+                env_e = raw_env_obj.envs[e]
+                sim_2step_fn = getattr(env_e, "simulate_2step", None)
+                q1_e = q1_all[s1:e1]
+                if sim_2step_fn is None:
+                    final_best_act[e] = valid_acts_e[int(torch.argmax(q1_e).item())]
+                    continue
+
+                M_e = e1 - s1
+                q1_order = torch.argsort(q1_e, descending=True)
+                best_m1 = int(q1_order[0].item())
+                second_m1 = int(q1_order[1].item()) if M_e > 1 else best_m1
+                best_q1_val = float(q1_e[best_m1].item())
+                q1_margin = float((q1_e[best_m1] - q1_e[second_m1]).item())
+
+                visit_map = (
+                    self._vec_visited_hashes[e]
+                    if (hasattr(self, "_vec_visited_hashes") and e < len(self._vec_visited_hashes))
+                    else {}
+                )
+                s2_start = len(p2_obs_list)
+                solve_2step_act = None
+                best_m1_r2 = -1e9
+                max_r2_e = -1e9
+
+                for idx_m in range(M_e):
+                    g_p1 = s1 + idx_m
+                    a1 = valid_acts_e[idx_m]
+                    inv_a1 = ((a1 + 1) if (a1 % 2 == 0) else (a1 - 1)) if n_acts == 12 else -1
+                    valid_a2s = [
+                        int(next_top_idx1[g_p1, k_i].item())
+                        for k_i in range(next_top_idx1.shape[1])
+                        if int(next_top_idx1[g_p1, k_i].item()) != inv_a1
+                    ]
+                    if not valid_a2s:
+                        valid_a2s = [int(next_top_idx1[g_p1, 0].item())]
+                    branch_k = 2 if (len(valid_a2s) >= 2 and (best_q1_val < 5.5 or idx_m == best_m1)) else 1
+                    for a2 in valid_a2s[:branch_k]:
+                        o2, rew2, done2 = sim_2step_fn(a1, a2)
+                        if done2:
+                            solve_2step_act = a1
+                            break
+                        r2_f = float(rew2)
+                        if r2_f > max_r2_e:
+                            max_r2_e = r2_f
+                        if idx_m == best_m1 and r2_f > best_m1_r2:
+                            best_m1_r2 = r2_f
+                        if o2 is not None:
+                            o2_arr = np.asarray(o2, dtype=np.float32)
+                            v_cnt2 = visit_map.get(hash(o2_arr.tobytes()), 0) if visit_map else 0
+                            p2_obs_list.append(o2_arr)
+                            p2_parent_p1_idx.append(g_p1)
+                            p2_env_ids.append(e)
+                            p2_local_m1.append(idx_m)
+                            p2_a1_list.append(a1)
+                            p2_a2_list.append(a2)
+                            p2_rew2_list.append(r2_f)
+                            p2_delta_rew2_list.append(r2_f - cand_rews_e[idx_m])
+                            p2_pen2_list.append(float(scar_pen * v_cnt2))
+                    if solve_2step_act is not None:
+                        break
+
+                if solve_2step_act is not None:
+                    del p2_obs_list[s2_start:]
+                    del p2_parent_p1_idx[s2_start:]
+                    del p2_env_ids[s2_start:]
+                    del p2_local_m1[s2_start:]
+                    del p2_a1_list[s2_start:]
+                    del p2_a2_list[s2_start:]
+                    del p2_rew2_list[s2_start:]
+                    del p2_delta_rew2_list[s2_start:]
+                    del p2_pen2_list[s2_start:]
+                    final_best_act[e] = solve_2step_act
+                elif cand_pens_e[best_m1] == 0.0 and len(p2_obs_list) > s2_start and best_q1_val >= 6.5 and q1_margin >= 0.25 and best_m1_r2 >= max_r2_e:
+                    del p2_obs_list[s2_start:]
+                    del p2_parent_p1_idx[s2_start:]
+                    del p2_env_ids[s2_start:]
+                    del p2_local_m1[s2_start:]
+                    del p2_a1_list[s2_start:]
+                    del p2_a2_list[s2_start:]
+                    del p2_rew2_list[s2_start:]
+                    del p2_delta_rew2_list[s2_start:]
+                    del p2_pen2_list[s2_start:]
+                    final_best_act[e] = valid_acts_e[best_m1]
+                elif len(p2_obs_list) > s2_start:
+                    scout_p2_slices[e] = (s2_start, len(p2_obs_list), d_e, valid_acts_e, q1_e.clone())
+                else:
+                    final_best_act[e] = valid_acts_e[int(torch.argmax(q1_e).item())]
+
+            if len(p2_obs_list) > 0:
+                N2 = len(p2_obs_list)
+                st_p2_obs = np.stack(p2_obs_list).astype(np.float32)
+                b_obs2 = torch.from_numpy(st_p2_obs).unsqueeze(1).to(self.device)
+                b_act2 = torch.tensor(p2_a2_list, dtype=torch.long, device=self.device).view(N2, 1)
+                b_rew2 = torch.tensor(p2_delta_rew2_list, dtype=torch.float32, device=self.device).view(N2, 1, 1)
+                p1_idx_np = np.asarray(p2_parent_p1_idx, dtype=np.int64)
+                env_ids2_np = np.asarray(p2_env_ids, dtype=np.int64)
+
+                if use_tri_direct:
+                    t_parent1 = torch.from_numpy(st_p1_obs[p1_idx_np]).to(self.device)
+                    t_init2 = (
+                        torch.from_numpy(self.env.init_obs[env_ids2_np]).to(self.device)
+                        if getattr(self.env, "init_obs", None) is not None
+                        else None
+                    )
+                    z_cands2 = self.agent.front_end.forward_tri_direct(b_obs2, t_parent1, t_init2, t_goal, b_act2, b_rew2)
+                else:
+                    z_cands2 = self.agent.front_end(obs=b_obs2, delta_obs=torch.zeros_like(b_obs2), prev_action=b_act2, prev_reward=b_rew2)
+
+                hx2 = nhx_cands1[:, p1_idx_np, :] if nhx_cands1 is not None else None
+                h_cands2, nhx_cands2 = self.agent.trunk(z_cands2, hx=hx2)
+                v_cands2 = self.agent.value_head(h_cands2).squeeze(-1).squeeze(-1)
+                q2_all = (
+                    torch.tensor(p2_rew2_list, device=self.device)
+                    + (self.effective_gamma ** 2) * v_cands2
+                    - torch.tensor(p2_pen2_list, device=self.device)
+                )
+                logits3_all = self.agent.policy_head.linear(h_cands2).squeeze(1)
+                _, top_i3_all = torch.topk(logits3_all, k=min(4, n_acts), dim=-1)
+
+                # --- PASS 3: Coleta ramos de 3 passos para todos os Batedores em D8+ ---
+                p3_obs_list: List[np.ndarray] = []
+                p3_parent_p2_idx: List[int] = []
+                p3_env_ids: List[int] = []
+                p3_local_m1: List[int] = []
+                p3_a3_list: List[int] = []
+                p3_rew3_list: List[float] = []
+                p3_delta_rew3_list: List[float] = []
+                p3_pen3_list: List[float] = []
+                scout_p3_slices: Dict[int, Tuple[int, int, List[int], torch.Tensor]] = {}
+
+                for e, (s2, e2, d_e, valid_acts_e, q_scores_e) in scout_p2_slices.items():
+                    env_e = raw_env_obj.envs[e]
+                    sim_3step_fn = getattr(env_e, "simulate_3step", None)
+                    v2_e = v_cands2[s2:e2]
+                    q2_e = q2_all[s2:e2]
+                    M_e = len(valid_acts_e)
+                    M2_e = e2 - s2
+
+                    solve_3step_act = None
+                    if sim_3step_fn is not None and float(v2_e.max().item()) > 1.2:
+                        for local_m2 in range(M2_e):
+                            g_p2 = s2 + local_m2
+                            if float(v_cands2[g_p2].item()) <= 1.2:
+                                continue
+                            a1_v, a2_v = p2_a1_list[g_p2], p2_a2_list[g_p2]
+                            inv_a2 = ((a2_v + 1) if (a2_v % 2 == 0) else (a2_v - 1)) if n_acts == 12 else -1
+                            for k_idx in range(top_i3_all.shape[1]):
+                                a3_v = int(top_i3_all[g_p2, k_idx].item())
+                                if a3_v == inv_a2:
+                                    continue
+                                _, _, done3 = sim_3step_fn(a1_v, a2_v, a3_v, return_obs=False)
+                                if done3:
+                                    solve_3step_act = a1_v
+                                    break
+                            if solve_3step_act is not None:
+                                break
+
+                    if solve_3step_act is not None:
+                        final_best_act[e] = solve_3step_act
+                        continue
+
+                    best_q2_per_m = torch.full((M_e,), -1e9, device=self.device)
+                    for local_m2 in range(M2_e):
+                        g_p2 = s2 + local_m2
+                        p_i = p2_local_m1[g_p2]
+                        if q2_e[local_m2] > best_q2_per_m[p_i]:
+                            best_q2_per_m[p_i] = q2_e[local_m2]
+                    q_scores_e = torch.maximum(q_scores_e, 0.99 * best_q2_per_m)
+
+                    if sim_3step_fn is not None and d_e >= 8 and M2_e >= 2 and float(v2_e.max().item()) < 5.0:
+                        visit_map = (
+                            self._vec_visited_hashes[e]
+                            if (hasattr(self, "_vec_visited_hashes") and e < len(self._vec_visited_hashes))
+                            else {}
+                        )
+                        s3_start = len(p3_obs_list)
+                        top_m2_order = torch.argsort(q2_e, descending=True)[: min(4, M2_e)]
+                        for t_m2 in top_m2_order:
+                            local_m2 = int(t_m2.item())
+                            g_p2 = s2 + local_m2
+                            a1_v, a2_v = p2_a1_list[g_p2], p2_a2_list[g_p2]
+                            inv_a2 = ((a2_v + 1) if (a2_v % 2 == 0) else (a2_v - 1)) if n_acts == 12 else -1
+                            added_k3 = 0
+                            for k_idx in range(top_i3_all.shape[1]):
+                                a3_v = int(top_i3_all[g_p2, k_idx].item())
+                                if a3_v == inv_a2:
+                                    continue
+                                o3, rew3, done3 = sim_3step_fn(a1_v, a2_v, a3_v, return_obs=True)
+                                if done3:
+                                    solve_3step_act = a1_v
+                                    break
+                                if o3 is not None:
+                                    o3_arr = np.asarray(o3, dtype=np.float32)
+                                    v_cnt3 = visit_map.get(hash(o3_arr.tobytes()), 0) if visit_map else 0
+                                    r3_f = float(rew3)
+                                    p3_obs_list.append(o3_arr)
+                                    p3_parent_p2_idx.append(g_p2)
+                                    p3_env_ids.append(e)
+                                    p3_local_m1.append(p2_local_m1[g_p2])
+                                    p3_a3_list.append(a3_v)
+                                    p3_rew3_list.append(r3_f)
+                                    p3_delta_rew3_list.append(r3_f - p2_rew2_list[g_p2])
+                                    p3_pen3_list.append(float(scar_pen * v_cnt3))
+                                    added_k3 += 1
+                                    if added_k3 >= 2:
+                                        break
+                            if solve_3step_act is not None:
+                                break
+
+                        if solve_3step_act is not None:
+                            del p3_obs_list[s3_start:]
+                            del p3_parent_p2_idx[s3_start:]
+                            del p3_env_ids[s3_start:]
+                            del p3_local_m1[s3_start:]
+                            del p3_a3_list[s3_start:]
+                            del p3_rew3_list[s3_start:]
+                            del p3_delta_rew3_list[s3_start:]
+                            del p3_pen3_list[s3_start:]
+                            final_best_act[e] = solve_3step_act
+                        elif len(p3_obs_list) > s3_start:
+                            scout_p3_slices[e] = (s3_start, len(p3_obs_list), valid_acts_e, q_scores_e)
+                        else:
+                            final_best_act[e] = valid_acts_e[int(torch.argmax(q_scores_e).item())]
+                    else:
+                        final_best_act[e] = valid_acts_e[int(torch.argmax(q_scores_e).item())]
+
+                if len(p3_obs_list) > 0:
+                    N3 = len(p3_obs_list)
+                    st_p3_obs = np.stack(p3_obs_list).astype(np.float32)
+                    b_obs3 = torch.from_numpy(st_p3_obs).unsqueeze(1).to(self.device)
+                    b_act3 = torch.tensor(p3_a3_list, dtype=torch.long, device=self.device).view(N3, 1)
+                    b_rew3 = torch.tensor(p3_delta_rew3_list, dtype=torch.float32, device=self.device).view(N3, 1, 1)
+                    p2_idx_np = np.asarray(p3_parent_p2_idx, dtype=np.int64)
+                    env_ids3_np = np.asarray(p3_env_ids, dtype=np.int64)
+
+                    if use_tri_direct:
+                        t_parent2 = torch.from_numpy(st_p2_obs[p2_idx_np]).to(self.device)
+                        t_init3 = (
+                            torch.from_numpy(self.env.init_obs[env_ids3_np]).to(self.device)
+                            if getattr(self.env, "init_obs", None) is not None
+                            else None
+                        )
+                        z_cands3 = self.agent.front_end.forward_tri_direct(b_obs3, t_parent2, t_init3, t_goal, b_act3, b_rew3)
+                    else:
+                        z_cands3 = self.agent.front_end(obs=b_obs3, delta_obs=torch.zeros_like(b_obs3), prev_action=b_act3, prev_reward=b_rew3)
+
+                    hx3 = nhx_cands2[:, p2_idx_np, :] if nhx_cands2 is not None else None
+                    h_cands3, _ = self.agent.trunk(z_cands3, hx=hx3)
+                    v_cands3 = self.agent.value_head(h_cands3).squeeze(-1).squeeze(-1)
+                    q3_all = (
+                        torch.tensor(p3_rew3_list, device=self.device)
+                        + (self.effective_gamma ** 3) * v_cands3
+                        - torch.tensor(p3_pen3_list, device=self.device)
+                    )
+
+                    for e, (s3, e3, valid_acts_e, q_scores_e) in scout_p3_slices.items():
+                        M_e = len(valid_acts_e)
+                        best_q3_per_m = torch.full((M_e,), -1e9, device=self.device)
+                        for g_p3 in range(s3, e3):
+                            p1_i = p3_local_m1[g_p3]
+                            if q3_all[g_p3] > best_q3_per_m[p1_i]:
+                                best_q3_per_m[p1_i] = q3_all[g_p3]
+                        q_scores_e = torch.maximum(q_scores_e, 0.985 * best_q3_per_m)
+                        final_best_act[e] = valid_acts_e[int(torch.argmax(q_scores_e).item())]
+
+        for e, best_act in final_best_act.items():
+            best_t = torch.tensor(best_act, device=self.device)
+            new_logp = dist_sample.log_prob(best_t[None, None])[e]
+            new_logp = torch.clamp(new_logp, min=-10.0, max=0.0)
+            results[e] = (best_act, new_logp)
+
+        return results
+
     def _collect_rollouts_vectorized(
         self,
         current_obs_dict: Dict[str, Any],
@@ -1271,22 +1710,37 @@ class RecurrentPPOTrainer:
                     if self.teacher_sil_envs > 0 and (self.sil_enabled or self.scar_mode != "none"):
                         raw_env_obj = getattr(self.env, "unwrapped", self.env)
                         if hasattr(raw_env_obj, "envs"):
-                            for e in range(min(self.teacher_sil_envs, E)):
+                            num_scouts = min(self.teacher_sil_envs, E)
+                            for e in range(num_scouts):
                                 if hasattr(self, "_vec_visited_hashes") and e < len(self._vec_visited_hashes):
                                     cur_h = hash(np.asarray(current_obs_dict["obs"][e], dtype=np.float32).tobytes())
                                     self._vec_visited_hashes[e][cur_h] = self._vec_visited_hashes[e].get(cur_h, 0) + 1
-                                env_e = raw_env_obj.envs[e]
-                                res = self._apply_teacher_lookahead(
-                                    e=e,
-                                    env_e=env_e,
+                            if self.action_chunk_size == 1:
+                                batch_res = self._apply_teacher_lookahead_batch(
+                                    num_scouts=num_scouts,
+                                    raw_env_obj=raw_env_obj,
                                     dist_sample=dist,
                                     current_hx=next_hx,
                                 )
-                                if res is not None:
+                                for e, res in batch_res.items():
                                     t_act, t_logp = res
                                     env_action[e] = t_act
                                     log_prob[e] = t_logp
                                     env_scales[e] = -1.0
+                            else:
+                                for e in range(num_scouts):
+                                    env_e = raw_env_obj.envs[e]
+                                    res = self._apply_teacher_lookahead(
+                                        e=e,
+                                        env_e=env_e,
+                                        dist_sample=dist,
+                                        current_hx=next_hx,
+                                    )
+                                    if res is not None:
+                                        t_act, t_logp = res
+                                        env_action[e] = t_act
+                                        log_prob[e] = t_logp
+                                        env_scales[e] = -1.0
 
                     # Chunking adaptativo por incerteza: aborta a execução aberta caso a confiança caia
                     chunk_mask = None
