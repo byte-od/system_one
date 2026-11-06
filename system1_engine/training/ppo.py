@@ -325,6 +325,7 @@ class RecurrentPPOTrainer:
                 self._vec_input_dict["delta_obs"] = self._vec_buf_delta
 
             self._vec_recent_actions: List[deque[int]] = [deque(maxlen=6) for _ in range(self.num_envs)]
+            self._vec_visited_hashes: List[Dict[int, int]] = [{} for _ in range(self.num_envs)]
             if self.num_envs >= 4:
                 # Cobertura Completa de Exploração de 0 à 1 em Ambientes Simultâneos (Quality-Diverse Spectrum):
                 # - Estrato Elite (0 .. E//4 - 1): determinístico / ultra-greedy (0.02 a 0.20) para trajetórias ótimas
@@ -713,21 +714,46 @@ class RecurrentPPOTrainer:
             logits_1d = raw_logits.squeeze()
             probs = torch.softmax(logits_1d, dim=-1)
             n_acts = len(probs)
-            top_p, top_indices = torch.topk(probs, k=min(self.teacher_top_k + 2, n_acts))
-            conf = float(top_p[0].item())
+
+            inv_last = -1
+            avoid_acts = set()
+            if n_acts == 12 and hasattr(self, "_vec_recent_actions") and e < len(self._vec_recent_actions):
+                r_hist = self._vec_recent_actions[e]
+                if len(r_hist) >= 1:
+                    last_a = int(r_hist[-1])
+                    inv_last = (last_a + 1) if (last_a % 2 == 0) else (last_a - 1)
+                    avoid_acts.add(inv_last)
+                if len(r_hist) >= 3:
+                    if r_hist[-1] == r_hist[-3]:
+                        avoid_acts.add(int(r_hist[-2]))
+                    inv_a1 = (int(r_hist[-3]) + 1) if (int(r_hist[-3]) % 2 == 0) else (int(r_hist[-3]) - 1)
+                    inv_a2 = (int(r_hist[-2]) + 1) if (int(r_hist[-2]) % 2 == 0) else (int(r_hist[-2]) - 1)
+                    if int(r_hist[-1]) == inv_a1:
+                        avoid_acts.add(inv_a2)
+
+            valid_probs = probs.clone()
+            for av_a in avoid_acts:
+                if 0 <= av_a < n_acts:
+                    valid_probs[av_a] = 0.0
+            conf = float(valid_probs.max().item())
             if conf >= self.teacher_confidence_threshold:
                 return None
 
-            inv_last = -1
-            if n_acts == 12 and hasattr(self, "_vec_recent_actions") and e < len(self._vec_recent_actions) and len(self._vec_recent_actions[e]) > 0:
-                last_a = int(self._vec_recent_actions[e][-1])
-                inv_last = (last_a + 1) if (last_a % 2 == 0) else (last_a - 1)
-
-            cand_acts = [int(idx.item()) for idx in top_indices if int(idx.item()) != inv_last][:self.teacher_top_k]
+            eff_top_k = max(self.teacher_top_k, 6 if d_e >= 8 else self.teacher_top_k)
+            _, top_indices = torch.topk(valid_probs, k=min(eff_top_k + 2, n_acts))
+            cand_acts = [int(idx.item()) for idx in top_indices if int(idx.item()) not in avoid_acts][:eff_top_k]
             if not cand_acts:
                 cand_acts = [int(top_indices[0].item())]
+
+            visit_map = (
+                self._vec_visited_hashes[e]
+                if (hasattr(self, "_vec_visited_hashes") and e < len(self._vec_visited_hashes))
+                else {}
+            )
+            scar_pen = 0.25
             cand_obs = []
             cand_rews = []
+            cand_pens = []
             valid_acts = []
             immediate_solve = None
 
@@ -739,8 +765,11 @@ class RecurrentPPOTrainer:
                 if s_done:
                     immediate_solve = a
                     break
-                cand_obs.append(s_obs["obs"] if isinstance(s_obs, dict) else s_obs)
+                o_arr = np.asarray(s_obs["obs"] if isinstance(s_obs, dict) else s_obs, dtype=np.float32)
+                v_cnt = visit_map.get(hash(o_arr.tobytes()), 0) if visit_map else 0
+                cand_obs.append(o_arr)
                 cand_rews.append(float(s_rew))
+                cand_pens.append(float(scar_pen * v_cnt))
                 valid_acts.append(a)
 
             if immediate_solve is not None:
@@ -777,7 +806,11 @@ class RecurrentPPOTrainer:
 
                 h_cands, nhx_cands = self.agent.trunk(z_cands, hx=hx_e)
                 v_cands = self.agent.value_head(h_cands).squeeze(-1).squeeze(-1)
-                q_scores = torch.tensor(cand_rews, device=self.device) + self.effective_gamma * v_cands
+                q_scores = (
+                    torch.tensor(cand_rews, device=self.device)
+                    + self.effective_gamma * v_cands
+                    - torch.tensor(cand_pens, device=self.device)
+                )
 
                 sim_2step_fn = getattr(env_e, "simulate_2step", None)
                 sim_3step_fn = getattr(env_e, "simulate_3step", None)
@@ -787,6 +820,7 @@ class RecurrentPPOTrainer:
                     q1_order = torch.argsort(q_scores, descending=True)
                     best_m1 = int(q1_order[0].item())
                     second_m1 = int(q1_order[1].item()) if M > 1 else best_m1
+                    best_q1_val = float(q_scores[best_m1].item())
                     q1_margin = float((q_scores[best_m1] - q_scores[second_m1]).item())
 
                     solve_2step_act = None
@@ -795,6 +829,7 @@ class RecurrentPPOTrainer:
                     a1_list = []
                     act2_list = []
                     rew2_list = []
+                    pen2_list = []
                     r1_ref_list = []
                     best_m1_r2 = -1e9
 
@@ -808,7 +843,7 @@ class RecurrentPPOTrainer:
                         ]
                         if not valid_a2s:
                             valid_a2s = [int(next_top_idx[idx_m, 0].item())]
-                        branch_k = 2 if (d_e >= 8 and idx_m in (best_m1, second_m1) and len(valid_a2s) >= 2) else 1
+                        branch_k = 2 if (len(valid_a2s) >= 2 and (best_q1_val < 5.5 or idx_m == best_m1)) else 1
                         for a2 in valid_a2s[:branch_k]:
                             o2, rew2, done2 = sim_2step_fn(a1, a2)
                             if done2:
@@ -817,18 +852,21 @@ class RecurrentPPOTrainer:
                             if idx_m == best_m1 and float(rew2) > best_m1_r2:
                                 best_m1_r2 = float(rew2)
                             if o2 is not None:
+                                o2_arr = np.asarray(o2, dtype=np.float32)
+                                v_cnt2 = visit_map.get(hash(o2_arr.tobytes()), 0) if visit_map else 0
                                 p_idx_list.append(idx_m)
-                                obs2_list.append(np.asarray(o2, dtype=np.float32))
+                                obs2_list.append(o2_arr)
                                 a1_list.append(a1)
                                 act2_list.append(a2)
                                 rew2_list.append(float(rew2))
+                                pen2_list.append(float(scar_pen * v_cnt2))
                                 r1_ref_list.append(cand_rews[idx_m])
                         if solve_2step_act is not None:
                             break
 
                     if solve_2step_act is not None:
                         best_act = solve_2step_act
-                    elif len(rew2_list) > 0 and q1_margin >= 0.25 and best_m1_r2 >= max(rew2_list):
+                    elif cand_pens[best_m1] == 0.0 and len(rew2_list) > 0 and best_q1_val >= 6.5 and q1_margin >= 0.25 and best_m1_r2 >= max(rew2_list):
                         best_act = valid_acts[best_m1]
                     elif len(obs2_list) > 0:
                         M2 = len(obs2_list)
@@ -847,7 +885,11 @@ class RecurrentPPOTrainer:
                         hx_cands2 = nhx_cands[:, p_idx_list, :] if nhx_cands is not None else None
                         h_cands2, nhx_cands2 = self.agent.trunk(z_cands2, hx=hx_cands2)
                         v_cands2 = self.agent.value_head(h_cands2).squeeze(-1).squeeze(-1)
-                        q2_scores = torch.tensor(rew2_list, device=self.device) + (self.effective_gamma ** 2) * v_cands2
+                        q2_scores = (
+                            torch.tensor(rew2_list, device=self.device)
+                            + (self.effective_gamma ** 2) * v_cands2
+                            - torch.tensor(pen2_list, device=self.device)
+                        )
 
                         solve_3step_act = None
                         logits3 = None
@@ -877,19 +919,20 @@ class RecurrentPPOTrainer:
                             for m2_i, p_i in enumerate(p_idx_list):
                                 if q2_scores[m2_i] > best_q2_per_m[p_i]:
                                     best_q2_per_m[p_i] = q2_scores[m2_i]
-                            q_scores = torch.maximum(q_scores, 0.98 * best_q2_per_m)
+                            q_scores = torch.maximum(q_scores, 0.99 * best_q2_per_m)
 
                             # Ponte de Valor de 3º Passo (Q_3 = r_3 + gamma^3 * V(s_3)) para Batedores em D8+
                             if sim_3step_fn is not None and d_e >= 8 and M2 >= 2 and float(v_cands2.max().item()) < 5.5:
                                 if logits3 is None:
                                     logits3 = self.agent.policy_head.linear(h_cands2).squeeze(1)
-                                _, top_i3_val = torch.topk(logits3, k=min(3, n_acts), dim=-1)
-                                top_m2_order = torch.argsort(q2_scores, descending=True)[: min(3, M2)]
+                                _, top_i3_val = torch.topk(logits3, k=min(4, n_acts), dim=-1)
+                                top_m2_order = torch.argsort(q2_scores, descending=True)[: min(6, M2)]
                                 obs3_list = []
                                 m2_ref_list = []
                                 p1_ref_list = []
                                 act3_list = []
                                 rew3_list = []
+                                pen3_list = []
                                 r2_ref_list = []
                                 for t_m2 in top_m2_order:
                                     m2_i = int(t_m2.item())
@@ -905,11 +948,14 @@ class RecurrentPPOTrainer:
                                             solve_3step_act = a1_v
                                             break
                                         if o3 is not None:
-                                            obs3_list.append(np.asarray(o3, dtype=np.float32))
+                                            o3_arr = np.asarray(o3, dtype=np.float32)
+                                            v_cnt3 = visit_map.get(hash(o3_arr.tobytes()), 0) if visit_map else 0
+                                            obs3_list.append(o3_arr)
                                             m2_ref_list.append(m2_i)
                                             p1_ref_list.append(p_idx_list[m2_i])
                                             act3_list.append(a3_v)
                                             rew3_list.append(float(rew3))
+                                            pen3_list.append(float(scar_pen * v_cnt3))
                                             r2_ref_list.append(rew2_list[m2_i])
                                             added_k3 += 1
                                             if added_k3 >= 2:
@@ -940,12 +986,16 @@ class RecurrentPPOTrainer:
                                     hx_cands3 = nhx_cands2[:, m2_ref_list, :] if nhx_cands2 is not None else None
                                     h_cands3, _ = self.agent.trunk(z_cands3, hx=hx_cands3)
                                     v_cands3 = self.agent.value_head(h_cands3).squeeze(-1).squeeze(-1)
-                                    q3_scores = torch.tensor(rew3_list, device=self.device) + (self.effective_gamma ** 3) * v_cands3
+                                    q3_scores = (
+                                        torch.tensor(rew3_list, device=self.device)
+                                        + (self.effective_gamma ** 3) * v_cands3
+                                        - torch.tensor(pen3_list, device=self.device)
+                                    )
                                     best_q3_per_m = torch.full((M,), -1e9, device=self.device)
                                     for m3_i, p1_i in enumerate(p1_ref_list):
                                         if q3_scores[m3_i] > best_q3_per_m[p1_i]:
                                             best_q3_per_m[p1_i] = q3_scores[m3_i]
-                                    q_scores = torch.maximum(q_scores, 0.97 * best_q3_per_m)
+                                    q_scores = torch.maximum(q_scores, 0.985 * best_q3_per_m)
 
                             if solve_3step_act is None:
                                 best_act = valid_acts[int(torch.argmax(q_scores).item())]
@@ -1151,22 +1201,22 @@ class RecurrentPPOTrainer:
                                 inv_a = inv_map.get(e_hist[-1])
                                 if inv_a is not None:
                                     if self.action_chunk_size > 1:
-                                        penalized_logits[e, 0, 0, inv_a] -= 4.0
+                                        penalized_logits[e, 0, 0, inv_a] -= 12.0
                                     else:
-                                        penalized_logits[e, 0, inv_a] -= 4.0
+                                        penalized_logits[e, 0, inv_a] -= 12.0
                             if len(e_hist) >= 3:
                                 if e_hist[-1] == e_hist[-3]:
                                     if self.action_chunk_size > 1:
-                                        penalized_logits[e, 0, 0, e_hist[-2]] -= 3.0
+                                        penalized_logits[e, 0, 0, e_hist[-2]] -= 8.0
                                     else:
-                                        penalized_logits[e, 0, e_hist[-2]] -= 3.0
+                                        penalized_logits[e, 0, e_hist[-2]] -= 8.0
                                 inv_a1 = inv_map.get(e_hist[-3])
                                 inv_a2 = inv_map.get(e_hist[-2])
                                 if inv_a1 is not None and inv_a2 is not None and e_hist[-1] == inv_a1:
                                     if self.action_chunk_size > 1:
-                                        penalized_logits[e, 0, 0, inv_a2] -= 4.0
+                                        penalized_logits[e, 0, 0, inv_a2] -= 12.0
                                     else:
-                                        penalized_logits[e, 0, inv_a2] -= 4.0
+                                        penalized_logits[e, 0, inv_a2] -= 12.0
                     else:
                         for e in range(E):
                             e_hist = self._vec_recent_actions[e]
@@ -1187,6 +1237,8 @@ class RecurrentPPOTrainer:
                             ).clamp(min=0.02, max=1.00)
                         else:
                             env_scales = dynamic_scales.clamp(min=0.02, max=1.00)
+                        if self.teacher_sil_envs > 0 and (self.sil_enabled or self.scar_mode != "none"):
+                            env_scales[: min(self.teacher_sil_envs, E)] = 1.0
                         if self.action_chunk_size > 1:
                             env_scales = env_scales.unsqueeze(2)
                         scaled_logits = torch.nan_to_num(penalized_logits / env_scales, nan=0.0, posinf=35.0, neginf=-35.0).clamp(min=-35.0, max=35.0)
@@ -1222,6 +1274,9 @@ class RecurrentPPOTrainer:
                         raw_env_obj = getattr(self.env, "unwrapped", self.env)
                         if hasattr(raw_env_obj, "envs"):
                             for e in range(min(self.teacher_sil_envs, E)):
+                                if hasattr(self, "_vec_visited_hashes") and e < len(self._vec_visited_hashes):
+                                    cur_h = hash(np.asarray(current_obs_dict["obs"][e], dtype=np.float32).tobytes())
+                                    self._vec_visited_hashes[e][cur_h] = self._vec_visited_hashes[e].get(cur_h, 0) + 1
                                 env_e = raw_env_obj.envs[e]
                                 res = self._apply_teacher_lookahead(
                                     e=e,
@@ -1387,6 +1442,8 @@ class RecurrentPPOTrainer:
                         self.episode_returns.append(float(curr_ep_returns[d_i]))
                         curr_ep_returns[d_i] = 0.0
                         self._vec_recent_actions[d_i].clear()
+                        if hasattr(self, "_vec_visited_hashes") and d_i < len(self._vec_visited_hashes):
+                            self._vec_visited_hashes[d_i].clear()
                         d_info = env_infos[d_i] if isinstance(env_infos, (list, tuple)) and d_i < len(env_infos) else {}
                         new_d = self._get_current_curriculum_depth()
                         if (isinstance(d_info, dict) and d_info.get("curriculum_promoted", False)) or new_d > self._rollout_tracked_depth:

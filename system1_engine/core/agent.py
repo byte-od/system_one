@@ -788,13 +788,12 @@ class UniversalS1Agent(nn.Module):
                 if len(hist) >= 1:
                     last_act = hist[-1]
                     inv_act = (last_act + 1) if (last_act % 2 == 0) else (last_act - 1)
-                    if confidence < 0.96:
-                        avoid_set.add(inv_act)
+                    avoid_set.add(inv_act)
                 if len(hist) >= 3:
                     a1, a2, a3 = hist[-3], hist[-2], hist[-1]
                     inv_a1 = (a1 + 1) if (a1 % 2 == 0) else (a1 - 1)
                     inv_a2 = (a2 + 1) if (a2 % 2 == 0) else (a2 - 1)
-                    if a3 == inv_a1 and confidence < 0.95:
+                    if a3 == inv_a1:
                         avoid_set.add(inv_a2)
 
             if is_deterministic_mode:
@@ -815,6 +814,7 @@ class UniversalS1Agent(nn.Module):
                     if alt_action not in avoid_set:
                         action = alt_action
                         break
+            valid_confidence = float(probs[action].item()) if n_acts > 1 else confidence
 
             # -----------------------------------------------------------------
             # Value Re-ranking (Lookahead via Intuition + Critic + Soft Scar + 2-Step Ghost Jump)
@@ -835,7 +835,7 @@ class UniversalS1Agent(nn.Module):
 
                 # Scar Wake-Up Gate: se o reflexo puro de alta confiança vai pisar num estado já visitado, acorda o Lookahead
                 force_rerank_by_scar = False
-                if confidence >= value_rerank_threshold and use_fast_raw_sim and scar_penalty > 0.0 and visit_counts:
+                if valid_confidence >= value_rerank_threshold and use_fast_raw_sim and scar_penalty > 0.0 and visit_counts:
                     try:
                         r_obs_chk, _, s_done_chk, _ = raw_inner_env.simulate_step(action)
                         if not s_done_chk:
@@ -845,8 +845,9 @@ class UniversalS1Agent(nn.Module):
                     except Exception:
                         pass
 
-                if confidence < value_rerank_threshold or force_rerank_by_scar:
-                    cand_k = max(2, min(int(value_rerank_top_k), n_acts))
+                if valid_confidence < value_rerank_threshold or force_rerank_by_scar:
+                    eff_top_k = max(int(value_rerank_top_k), 6 if (ghost_jump and valid_confidence < 0.55) else int(value_rerank_top_k))
+                    cand_k = max(2, min(eff_top_k, n_acts))
                     top_p, top_indices = torch.topk(probs, k=min(cand_k + 4, n_acts))
                     cand_actions = [int(idx.item()) for idx in top_indices if int(idx.item()) not in avoid_set][:cand_k]
                     if not cand_actions:
@@ -1150,10 +1151,15 @@ class UniversalS1Agent(nn.Module):
                                     branch_k = (
                                         2
                                         if (
-                                            idx_m == best_m1
-                                            and (prune_worst or margin2 < 0.15)
-                                            and margin2 < 0.25
-                                            and len(valid_a2s) >= 2
+                                            len(valid_a2s) >= 2
+                                            and (
+                                                best_q1_val < 5.5
+                                                or (
+                                                    idx_m == best_m1
+                                                    and (prune_worst or margin2 < 0.15)
+                                                    and margin2 < 0.25
+                                                )
+                                            )
                                         )
                                         else 1
                                     )
@@ -1189,6 +1195,7 @@ class UniversalS1Agent(nn.Module):
                                     not force_rerank_by_scar
                                     and cand_pen_list[best_m1] == 0.0
                                     and len(rew2_list) > 0
+                                    and best_q1_val >= 6.5
                                     and (
                                         (q1_margin >= 0.25 and best_m1_r2 >= max(rew2_list))
                                         or (
@@ -1294,14 +1301,14 @@ class UniversalS1Agent(nn.Module):
                                         for m2_i, p_i in enumerate(p_idx_list):
                                             if q2_scores[m2_i] > best_q2_per_m[p_i]:
                                                 best_q2_per_m[p_i] = q2_scores[m2_i]
-                                        q_scores = torch.maximum(q_scores, 0.98 * best_q2_per_m)
+                                        q_scores = torch.maximum(q_scores, 0.99 * best_q2_per_m)
 
                                         # Ponte de Valor de 3º Passo (Q_3 = r_3 + gamma^3 * V(s_3)) quando em fronteira profunda (D8+)
                                         if sim_3step_fn is not None and M2 >= 2 and float(v_cands2.max().item()) < 5.5:
                                             if logits3 is None:
                                                 logits3 = self.policy_head.linear(h_cands2).squeeze(1)
-                                            _, top_i3_val = torch.topk(logits3, k=min(3, n_acts), dim=-1)
-                                            top_m2_order = torch.argsort(q2_scores, descending=True)[: min(3, M2)]
+                                            _, top_i3_val = torch.topk(logits3, k=min(4, n_acts), dim=-1)
+                                            top_m2_order = torch.argsort(q2_scores, descending=True)[: min(6, M2)]
                                             obs3_list = []
                                             m2_ref_list = []
                                             p1_ref_list = []
@@ -1390,7 +1397,7 @@ class UniversalS1Agent(nn.Module):
                                                 for m3_i, p1_i in enumerate(p1_ref_list):
                                                     if q3_scores[m3_i] > best_q3_per_m[p1_i]:
                                                         best_q3_per_m[p1_i] = q3_scores[m3_i]
-                                                q_scores = torch.maximum(q_scores, 0.97 * best_q3_per_m)
+                                                q_scores = torch.maximum(q_scores, 0.985 * best_q3_per_m)
 
                                         if solve_3step_act is None:
                                             best_idx = int(torch.argmax(q_scores).item())
