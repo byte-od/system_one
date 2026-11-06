@@ -1172,7 +1172,15 @@
       const elHeroTitle = document.getElementById('hero-progress-title');
       if (elHeroTitle) {
         const millions = Math.round(_maxStepsTarget / 1000000);
-        elHeroTitle.innerText = `PROGRESSO DA MARATONA (${millions}M PASSOS TABULA RASA)`;
+        const cmdStr = (runner && runner.config && runner.config.cmd ? String(runner.config.cmd) : '').toLowerCase();
+        const envStr = (telemetry && telemetry.env ? String(telemetry.env) : '').toLowerCase();
+        const isWarmup = (telemetry && telemetry.training_regime === 'WARM-UP')
+          || cmdStr.includes('warmup')
+          || cmdStr.includes('warm_up')
+          || cmdStr.includes('base-ckpt')
+          || envStr.includes('warm-up');
+        const regimeLabel = isWarmup ? 'WARM-UP' : 'TABULA RASA';
+        elHeroTitle.innerText = `PROGRESSO DA MARATONA (${millions}M PASSOS ${regimeLabel})`;
       }
 
       const pct = Math.min(100, (steps / _maxStepsTarget) * 100);

@@ -609,9 +609,20 @@ class HUDServer:
                         z_norm = round(current_z_norm + 0.03 * math.cos(live_steps / 16384.0), 2)
                         g_norm = round(current_g_norm + 0.15 * math.sin(live_steps / 8192.0), 2)
 
+                        cmd_str = str(getattr(self.runner, "current_config", {}).get("cmd", "")).lower()
+                        is_warmup = (
+                            "warmup" in cmd_str
+                            or "warm_up" in cmd_str
+                            or "base-ckpt" in cmd_str
+                            or any("WARM-UP" in l.upper() for l in lines[:30])
+                        )
+                        regime_tag = "WARM-UP" if is_warmup else "TABULA RASA"
+                        regime_title = "Warm-Up" if is_warmup else "Tabula Rasa"
+
                         self.update_telemetry({
                             "status": "RUNNING",
-                            "env": f"RubiksCube (Tabula Rasa D{current_depth})",
+                            "training_regime": regime_tag,
+                            "env": f"RubiksCube ({regime_title} D{current_depth})",
                             "total_steps": live_steps,
                             "target_steps": target_total,
                             "fps": round(self._smoothed_fps, 1),
