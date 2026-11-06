@@ -145,7 +145,10 @@ class HUDProcessRunner:
                 return False
 
             # Localiza o arquivo de log mais recente que seja autenticamente do treino (e não do HUD)
-            log_candidates = glob.glob(os.path.expanduser("~/.gemini/antigravity/brain/*/.system_generated/tasks/task-*.log"))
+            log_candidates = (
+                glob.glob("scratch/*.log")
+                + glob.glob(os.path.expanduser("~/.gemini/antigravity/brain/*/.system_generated/tasks/task-*.log"))
+            )
             sorted_candidates = sorted(log_candidates, key=os.path.getmtime, reverse=True)
             latest_log = None
             for cand in sorted_candidates:

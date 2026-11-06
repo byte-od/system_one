@@ -666,6 +666,9 @@
       <button onclick="toggleCheckpointsModal()" class="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer text-xs flex items-center gap-1">
         💾 Checkpoints
       </button>
+      <button onclick="toggleTrainModal()" class="px-3 py-1 rounded bg-emerald-900/80 hover:bg-emerald-800 text-emerald-300 border border-emerald-700/60 transition cursor-pointer text-xs flex items-center gap-1">
+        🚀 Treinar
+      </button>
       <button id="btn-mini-mode" onclick="openMiniFloatingWindow()" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-800/60 transition cursor-pointer text-xs flex items-center gap-1" title="Abrir Janela Miniatura Flutuante (ou Shift+Clique para alternar nesta aba)">
         ⧉ Mini
       </button>
@@ -1108,7 +1111,112 @@
     </div>
   </div>
 
-  <!-- BARRA FLUTUANTE DE RETORNO NO MODO MINIMALISTA -->
+  <!-- MODAL DE TREINAMENTO (CONFIGURAÇÃO + WARM-UP) -->
+  <div id="modal-train" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="hud-card p-6 max-w-md w-full space-y-4 max-h-[90vh] flex flex-col border border-emerald-800/40 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-[#1a2233] pb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">🚀</span>
+          <h3 class="font-bold text-white text-sm uppercase font-mono tracking-wider">Configurar Treinamento</h3>
+        </div>
+        <button onclick="toggleTrainModal()" class="text-gray-400 hover:text-white text-lg font-bold">✕</button>
+      </div>
+
+      <div class="overflow-y-auto flex-1 space-y-4 font-mono text-xs">
+        <div class="space-y-2">
+          <label class="text-cyan-400 font-semibold uppercase tracking-wider">Ambiente</label>
+          <select id="train-env" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-xs">
+            <option value="RubiksCube-v0">⚡ RubiksCube-v0 (Atômico)</option>
+            <option value="RubiksCubeMacro-v0">🧩 RubiksCubeMacro-v0 (Macro-ações)</option>
+            <option value="CartPole-v1">🏃 CartPole-v1</option>
+          </select>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="space-y-2">
+            <label class="text-cyan-400 font-semibold uppercase tracking-wider">Modo</label>
+            <select id="train-mode" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-xs">
+              <option value="atomic">Atômico (giros primitivos)</option>
+              <option value="macro">Macro (algoritmos pré-definidos)</option>
+            </select>
+          </div>
+          <div class="space-y-2">
+            <label class="text-cyan-400 font-semibold uppercase tracking-wider">Passos</label>
+            <input type="number" id="train-steps" value="40000" min="1000" step="1000" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-xs text-center" />
+          </div>
+        </div>
+        <div class="space-y-2">
+          <label class="text-cyan-400 font-semibold uppercase tracking-wider">Learning Rate</label>
+          <input type="number" id="train-lr" value="1e-4" step="any" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-xs text-center" placeholder="ex: 1e-4" />
+        </div>
+
+        <div class="space-y-2 border-t border-[#1a2233] pt-3">
+          <label class="text-emerald-400 font-semibold uppercase tracking-wider">Checkpoint (Warm-up / Carregar)</label>
+          <div class="space-y-2">
+            <select id="train-checkpoint" class="hud-input w-full bg-[#0a0d14] border border-emerald-700/40 text-xs">
+              <option value="">Selecionar checkpoint existente...</option>
+            </select>
+            <input type="text" id="train-checkpoint-manual" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-xs" placeholder="Ou cole o caminho do .pt manualmente" />
+            <div class="flex items-center gap-2 text-[10px]">
+              <input type="checkbox" id="train-freeze-trunk" class="rounded bg-gray-800 border-gray-700 text-emerald-500" />
+              <label for="train-freeze-trunk" class="text-gray-400 cursor-pointer">Congelar tronco (freeze-trunk)</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-2 border-t border-[#1a2233] pt-3">
+          <label class="text-cyan-400 font-semibold uppercase tracking-wider">Currículo (Rubik's)</label>
+          <div class="grid grid-cols-3 gap-2">
+            <div class="space-y-1">
+              <label class="text-[10px] text-gray-400 uppercase">Min Depth</label>
+              <input type="number" id="train-min-depth" value="1" min="1" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-[10px] text-center" />
+            </div>
+            <div class="space-y-1">
+              <label class="text-[10px] text-gray-400 uppercase">Max Depth</label>
+              <input type="number" id="train-max-depth" value="4" min="1" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-[10px] text-center" />
+            </div>
+            <div class="flex items-end">
+              <label class="flex items-center gap-1.5 cursor-pointer text-gray-400 hover:text-white">
+                <input type="checkbox" id="train-curriculum" checked class="rounded bg-gray-800 border-gray-700 text-cyan-500" />
+                <span>Habilitar</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 border-t border-[#1a2233] pt-3">
+          <div class="space-y-2">
+            <label class="text-cyan-400 font-semibold uppercase tracking-wider">Tronco</label>
+            <select id="train-trunk" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-xs">
+              <option value="lean">Lean (padrão)</option>
+              <option value="lru">LRU</option>
+              <option value="classic">Classic</option>
+            </select>
+          </div>
+          <div class="space-y-2">
+            <label class="text-cyan-400 font-semibold uppercase tracking-wider">Dispositivo</label>
+            <select id="train-device" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-xs">
+              <option value="auto">Auto (MPS/CUDA/CPU)</option>
+              <option value="cpu">CPU</option>
+              <option value="mps">MPS (Apple Silicon)</option>
+              <option value="cuda">CUDA</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <label class="text-cyan-400 font-semibold uppercase tracking-wider">Salvar Checkpoint (.pt)</label>
+          <input type="text" id="train-save" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-xs" placeholder="ex: s1_rubikscube_v0_trained.pt" />
+        </div>
+      </div>
+
+      <div class="flex justify-between gap-3 pt-3 border-t border-[#1a2233]">
+        <button onclick="toggleTrainModal()" class="flex-1 py-2 rounded bg-slate-800 hover:bg-slate-700 text-gray-300 border border-slate-700 font-mono text-xs transition">Cancelar</button>
+        <button onclick="startTrainFromModal()" id="btn-train-start" class="flex-1 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 font-mono text-xs font-bold shadow-lg transition">Iniciar Treino</button>
+      </div>
+      <div id="train-status" class="text-[10px] text-emerald-300 font-mono h-4"></div>
+    </div>
+  </div>
+
   <div id="mini-mode-toolbar" class="hidden fixed top-1 right-1 z-50 items-center gap-1">
     <button type="button" onclick="toggleMiniMode(false)" class="px-2 py-0.5 rounded bg-black/90 hover:bg-slate-800 text-cyan-300 border border-cyan-700/70 text-[10px] font-mono shadow-lg cursor-pointer flex items-center gap-1" title="Restaurar HUD completo (Esc)">
       <span>🗖</span> <span>Expandir</span>
@@ -1700,6 +1808,115 @@
         if (!modal.classList.contains('hidden')) {
           loadCheckpoints();
         }
+      }
+    }
+
+    // =========================================================
+    // Treinamento via HUD (com suporte a Warm-up / Carregamento de Checkpoint)
+    // =========================================================
+    async function loadTrainCheckpoints() {
+      const sel = document.getElementById('train-checkpoint');
+      if (!sel) return;
+      try {
+        const resp = await fetch('/api/checkpoints');
+        const data = await resp.json();
+        const ckpts = data.checkpoints_detailed || [];
+        let html = '<option value="">Selecionar checkpoint existente...</option>';
+        if (ckpts.length > 0) {
+          html += ckpts.map(c => `<option value="${c.path}">${c.filename} (${c.size_mb} MB • ${c.env_id || '?'})</option>`).join('');
+        }
+        sel.innerHTML = html;
+      } catch (err) {
+        console.warn('[HUD] Erro ao carregar checkpoints para treino:', err);
+      }
+    }
+
+    function toggleTrainModal() {
+      const modal = document.getElementById('modal-train');
+      if (modal) {
+        modal.classList.toggle('hidden');
+        if (!modal.classList.contains('hidden')) {
+          loadTrainCheckpoints();
+          document.getElementById('train-status').innerText = '';
+        }
+      }
+    }
+
+    async function startTrainFromModal() {
+      const env = document.getElementById('train-env').value;
+      const mode = document.getElementById('train-mode').value;
+      const steps = parseInt(document.getElementById('train-steps').value) || 40000;
+      const lr = parseFloat(document.getElementById('train-lr').value) || 1e-4;
+      const ckptSel = document.getElementById('train-checkpoint').value;
+      const ckptManual = document.getElementById('train-checkpoint-manual').value.trim();
+      const freezeTrunk = document.getElementById('train-freeze-trunk').checked;
+      const curriculum = document.getElementById('train-curriculum').checked;
+      const minDepth = parseInt(document.getElementById('train-min-depth').value) || 1;
+      const maxDepth = parseInt(document.getElementById('train-max-depth').value) || 4;
+      const trunk = document.getElementById('train-trunk').value;
+      const device = document.getElementById('train-device').value;
+      const savePath = document.getElementById('train-save').value.trim();
+
+      const statusEl = document.getElementById('train-status');
+
+      // Determina checkpoint de carregamento (manual tem prioridade sobre seleção)
+      let loadPath = ckptManual || ckptSel || '';
+      let transferFrom = '';
+      // Se um checkpoint foi selecionado e não há manual, ele serve como load (continuação de treino)
+      // Para warm-up de tronco, o usuário pode usar o campo manual ou selecionar
+
+      const cfg = {
+        mode: 'train',
+        env: env,
+        steps: steps,
+        lr: lr,
+        save: savePath || undefined,
+        load: loadPath || undefined,
+        transfer_from: transferFrom || undefined,
+        freeze_trunk: freezeTrunk,
+        trunk: trunk,
+        device: device,
+        curriculum: curriculum,
+        min_depth: minDepth,
+        max_depth: maxDepth,
+        run_mode: mode, // atomic | macro
+        scramble_depth: maxDepth,
+        target_return: 475.0,
+        rollout_steps: 2048,
+        chunk_length: 32,
+        chunk_batch_size: 16,
+        entropy_coef: 0.01,
+        hindsight_replay: true,
+        sil: true,
+        tri_compass: true,
+        dynamic_frontier: true,
+        mixed_replay_rate: 0.15,
+      };
+
+      statusEl.innerText = 'Enviando configuração ao servidor...';
+      statusEl.className = 'text-[10px] text-cyan-300 font-mono h-4';
+
+      try {
+        const resp = await fetch('/api/train/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: cfg }),
+        });
+        const data = await resp.json();
+        if (data.success) {
+          statusEl.innerText = `✅ ${data.message}`;
+          statusEl.className = 'text-[10px] text-emerald-300 font-mono h-4';
+          document.getElementById('btn-train-start').disabled = true;
+          document.getElementById('btn-train-start').innerText = 'Treino em Andamento...';
+          // Fecha o modal após 1.5s
+          setTimeout(() => { toggleTrainModal(); document.getElementById('btn-train-start').disabled = false; document.getElementById('btn-train-start').innerText = 'Iniciar Treino'; }, 1500);
+        } else {
+          statusEl.innerText = `❌ ${data.message}`;
+          statusEl.className = 'text-[10px] text-rose-400 font-mono h-4';
+        }
+      } catch (err) {
+        statusEl.innerText = `❌ Erro de rede: ${err.message}`;
+        statusEl.className = 'text-[10px] text-rose-400 font-mono h-4';
       }
     }
 

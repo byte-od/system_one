@@ -1108,6 +1108,53 @@ class HUDServer:
                     self.end_headers()
                     self.wfile.write(encoded_action)
 
+                elif clean_path == "/api/train/start":
+                    try:
+                        data = json.loads(body.decode("utf-8"))
+                        cfg = data.get("config", {})
+                        # Garante modo de treino
+                        cfg["mode"] = "train"
+                        # Marca regime de warm-up se houver carregamento de checkpoint
+                        if cfg.get("transfer_from") or cfg.get("load"):
+                            cfg["training_regime"] = "WARM-UP"
+                        mode_label = cfg.get("mode", "train").upper()
+                        env_name = cfg.get("env", "RubiksCube-v0")
+                        frame_buffer.reset_placeholder(
+                            "⚡ SYSTEM 1 ENGINE",
+                            f"INICIANDO TREINO [{mode_label}] {env_name}...",
+                        )
+                        url = f"http://{server_instance.host}:{server_instance.port}"
+                        success, msg = runner.start(cfg, url)
+                        resp = {"success": success, "message": msg}
+                    except Exception as err:
+                        resp = {"success": False, "message": str(err)}
+
+                    encoded_train = json.dumps(resp).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(encoded_train)))
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(encoded_train)
+
+                elif clean_path == "/api/train/stop":
+                    try:
+                        success, msg = runner.stop()
+                        frame_buffer.reset_placeholder(
+                            "⚡ SYSTEM 1 ENGINE", "TREINO INTERROMPIDO PELO USUÁRIO"
+                        )
+                        resp = {"success": success, "message": msg}
+                    except Exception as err:
+                        resp = {"success": False, "message": str(err)}
+
+                    encoded_train_stop = json.dumps(resp).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(encoded_train_stop)))
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(encoded_train_stop)
+
                 elif clean_path == "/api/internal/telemetry":
                     try:
                         data = json.loads(body.decode("utf-8"))
