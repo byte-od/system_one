@@ -401,10 +401,10 @@
     /* ======================================================== */
     html.mini-mode,
     body.mini-mode {
-      width: 100vw !important;
-      height: 100vh !important;
-      max-width: 100vw !important;
-      max-height: 100vh !important;
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100% !important;
+      max-height: 100% !important;
       min-height: 0 !important;
       margin: 0 !important;
       padding: 0 !important;
@@ -440,18 +440,23 @@
     }
 
     body.mini-mode #train-status-cards-container {
+      position: fixed !important;
+      inset: 0 !important;
       display: grid !important;
       grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
       grid-template-rows: repeat(2, minmax(0, 1fr)) !important;
       gap: 6px !important;
-      width: 100vw !important;
-      height: 100vh !important;
-      max-width: 100vw !important;
-      max-height: 100vh !important;
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100% !important;
+      max-height: 100% !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
       margin: 0 !important;
       padding: 6px !important;
       overflow: hidden !important;
       box-sizing: border-box !important;
+      z-index: 40 !important;
     }
 
     @media (min-width: 760px) and (max-height: 240px) {
@@ -462,16 +467,23 @@
     }
 
     body.mini-mode .vessel-card {
-      padding: 7px 8px !important;
+      position: relative !important;
+      padding: 4px !important;
+      margin: 0 !important;
+      min-width: 0 !important;
       min-height: 0 !important;
+      width: 100% !important;
       height: 100% !important;
-      border-radius: 14px !important;
+      max-width: 100% !important;
+      max-height: 100% !important;
+      box-sizing: border-box !important;
+      border-radius: 12px !important;
       background: linear-gradient(180deg, rgba(15, 23, 42, 0.82) 0%, rgba(7, 11, 20, 0.96) 100%) !important;
       border: 1px solid rgba(255, 255, 255, 0.14) !important;
       box-shadow:
         inset 0 1px 2px rgba(255, 255, 255, 0.18),
         inset 0 -3px 8px rgba(0, 0, 0, 0.65),
-        0 6px 16px rgba(0, 0, 0, 0.45) !important;
+        0 4px 12px rgba(0, 0, 0, 0.45) !important;
     }
 
     /* Realça o líquido, as ondas e as bolhas no modo frasco */
@@ -481,32 +493,49 @@
     }
 
     body.mini-mode .vessel-card-content {
-      padding-right: 32px !important;
+      position: relative !important;
+      width: 100% !important;
       height: 100% !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      padding: 0 22px 0 4px !important;
+      box-sizing: border-box !important;
       display: flex !important;
       flex-direction: column !important;
-      justify-content: space-between !important;
+      align-items: center !important;
+      justify-content: center !important;
     }
     body.mini-mode .vessel-card-content > * + * {
       margin-top: 0 !important;
     }
 
-    /* Topo do frasco: exibe apenas o ícone em badge de vidro e oculta textos longos */
+    /* Topo do frasco: ícone ancorado no canto superior esquerdo sem ocupar altura de fluxo */
+    body.mini-mode .vessel-card-content > div:first-child {
+      position: absolute !important;
+      top: 2px !important;
+      left: 2px !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      z-index: 20 !important;
+      pointer-events: none !important;
+    }
     body.mini-mode .vessel-card-content > div:first-child > span:first-child {
       font-size: 0 !important;
+      letter-spacing: 0 !important;
       gap: 0 !important;
-      width: 24px !important;
-      height: 24px !important;
-      border-radius: 7px !important;
-      background: rgba(15, 23, 42, 0.65) !important;
+      width: 20px !important;
+      height: 20px !important;
+      border-radius: 6px !important;
+      background: rgba(15, 23, 42, 0.68) !important;
       border: 1px solid rgba(255, 255, 255, 0.12) !important;
       display: inline-flex !important;
       align-items: center !important;
       justify-content: center !important;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4) !important;
+      overflow: hidden !important;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4) !important;
     }
     body.mini-mode .vessel-card-content > div:first-child > span:first-child > span:first-child {
-      font-size: 13px !important;
+      font-size: 11px !important;
       line-height: 1 !important;
     }
     body.mini-mode .vessel-card-content > div:first-child > span:last-child {
@@ -515,12 +544,17 @@
 
     /* Centro do frasco: apenas o indicador principal centralizado sobre o líquido */
     body.mini-mode .vessel-card-content > div:nth-child(2) {
-      margin: auto 0 !important;
+      margin: 0 !important;
       display: flex !important;
       align-items: center !important;
       justify-content: center !important;
       width: 100% !important;
+      min-width: 0 !important;
       text-align: center !important;
+    }
+    body.mini-mode .vessel-card-content > div:nth-child(2) > div:first-child {
+      min-width: 0 !important;
+      line-height: 1 !important;
     }
     /* Oculta subtítulos sob o número principal (ex: "Episódios Vencidos", "Calibração Adaptativa") */
     body.mini-mode .vessel-card-content > div:nth-child(2) > div:first-child > div:nth-child(2) {
@@ -542,22 +576,35 @@
     body.mini-mode #kpi-entropy,
     body.mini-mode #kpi-fps,
     body.mini-mode #kpi-calibration {
-      font-size: clamp(16px, 4.2vw, 22px) !important;
+      font-size: clamp(13px, 3.4vw, 19px) !important;
       font-weight: 900 !important;
       line-height: 1 !important;
+      white-space: nowrap !important;
+      letter-spacing: -0.02em !important;
       text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95), 0 0 12px rgba(0, 0, 0, 0.85) !important;
     }
 
     body.mini-mode .vessel-scale-ticks {
-      width: 32px !important;
-      right: 3px !important;
+      width: 24px !important;
+      right: 2px !important;
     }
-    body.mini-mode .vessel-tick-tag {
+    body.mini-mode .vessel-tick {
+      width: 3px !important;
+    }
+    body.mini-mode .vessel-tick.major {
+      width: 5px !important;
+    }
+    body.mini-mode .vessel-tick.vessel-tick-max,
+    body.mini-mode .vessel-tick.vessel-tick-min {
+      width: 6px !important;
+    }
+    body.mini-mode .vessel-tick-tag,
+    body.mini-mode .vessel-tick-arrow {
       display: none !important;
     }
     body.mini-mode .vessel-tick-label {
-      font-size: 7.5px !important;
-      right: 7px !important;
+      font-size: 7px !important;
+      right: 8px !important;
     }
   </style>
 </head>
@@ -1663,10 +1710,10 @@
       requestAnimationFrame(() => {
         try {
           const chromeW = (window.outerWidth > window.innerWidth) ? (window.outerWidth - window.innerWidth) : 0;
-          const chromeH = (window.outerHeight > window.innerHeight) ? (window.outerHeight - window.innerHeight) : 28;
-          const targetW = Math.max(360, Math.min(480, 390 + chromeW));
-          const targetH = Math.max(220, Math.min(320, 250 + chromeH));
-          if (window.opener && (Math.abs(window.outerWidth - targetW) > 10 || Math.abs(window.outerHeight - targetH) > 10)) {
+          const chromeH = (window.outerHeight > window.innerHeight) ? (window.outerHeight - window.innerHeight) : 40;
+          const targetW = Math.max(420, Math.min(540, 450 + chromeW));
+          const targetH = Math.max(260, Math.min(380, 260 + chromeH));
+          if (window.opener && (window.innerWidth < 400 || window.innerHeight < 220)) {
             window.resizeTo(targetW, targetH);
           }
         } catch (_) {}
@@ -1713,8 +1760,8 @@
       }
       const currentUrl = new URL(window.location.href);
       currentUrl.searchParams.set('mini', '1');
-      const width = 390;
-      const height = 250;
+      const width = 450;
+      const height = 300;
       const screenW = window.screen.availWidth || window.screen.width || 1280;
       const left = Math.max(0, screenW - width - 24);
       const top = 48;
@@ -1725,6 +1772,7 @@
       );
       if (win && !win.closed) {
         try {
+          win.resizeTo(460, 320);
           win.focus();
         } catch (_) {}
       } else {
