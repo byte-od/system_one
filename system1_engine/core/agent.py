@@ -1264,13 +1264,14 @@ class UniversalS1Agent(nn.Module):
                                         - torch.tensor(pen2_list, device=dev)
                                     )
 
-                                    # Opção 3 (Horizonte Fantasma de 3º Passo em Rust quando próximo da solução)
+                                    # Opção 3 (Horizonte Fantasma de 3º Passo: Solução Direta + Ponte de Valor Q_3 em D9+)
                                     solve_3step_act = None
-                                    if sim_3step_fn is not None and float(v_cands2.max().item()) > 1.5:
+                                    logits3 = None
+                                    if sim_3step_fn is not None and float(v_cands2.max().item()) > 1.2:
                                         logits3 = self.policy_head.linear(h_cands2).squeeze(1)
                                         _, top_i3 = torch.topk(logits3, k=min(6, n_acts), dim=-1)
                                         for m2_i in range(M2):
-                                            if float(v_cands2[m2_i].item()) <= 1.5:
+                                            if float(v_cands2[m2_i].item()) <= 1.2:
                                                 continue
                                             a1_v, a2_v = a1_list[m2_i], act2_list[m2_i]
                                             inv_a2 = ((a2_v + 1) if (a2_v % 2 == 0) else (a2_v - 1)) if n_acts == 12 else -1
@@ -1294,9 +1295,107 @@ class UniversalS1Agent(nn.Module):
                                             if q2_scores[m2_i] > best_q2_per_m[p_i]:
                                                 best_q2_per_m[p_i] = q2_scores[m2_i]
                                         q_scores = torch.maximum(q_scores, 0.98 * best_q2_per_m)
-                                        best_idx = int(torch.argmax(q_scores).item())
-                                        action = valid_cands[best_idx]
-                                        value_rerank_triggered = True
+
+                                        # Ponte de Valor de 3º Passo (Q_3 = r_3 + gamma^3 * V(s_3)) quando em fronteira profunda (D8+)
+                                        if sim_3step_fn is not None and M2 >= 2 and float(v_cands2.max().item()) < 5.5:
+                                            if logits3 is None:
+                                                logits3 = self.policy_head.linear(h_cands2).squeeze(1)
+                                            _, top_i3_val = torch.topk(logits3, k=min(3, n_acts), dim=-1)
+                                            top_m2_order = torch.argsort(q2_scores, descending=True)[: min(3, M2)]
+                                            obs3_list = []
+                                            m2_ref_list = []
+                                            p1_ref_list = []
+                                            act3_list = []
+                                            rew3_list = []
+                                            pen3_list = []
+                                            r2_ref_list = []
+                                            for t_m2 in top_m2_order:
+                                                m2_i = int(t_m2.item())
+                                                a1_v, a2_v = a1_list[m2_i], act2_list[m2_i]
+                                                inv_a2 = ((a2_v + 1) if (a2_v % 2 == 0) else (a2_v - 1)) if n_acts == 12 else -1
+                                                added_k3 = 0
+                                                for k_idx in range(top_i3_val.shape[1]):
+                                                    a3_v = int(top_i3_val[m2_i, k_idx].item())
+                                                    if a3_v == inv_a2:
+                                                        continue
+                                                    o3, rew3, done3 = sim_3step_fn(a1_v, a2_v, a3_v, return_obs=True)
+                                                    if done3:
+                                                        solve_3step_act = a1_v
+                                                        break
+                                                    if o3 is not None:
+                                                        o3_arr = np.asarray(o3, dtype=np.float32)
+                                                        v_cnt3 = (
+                                                            visit_counts.get(hash(o3_arr.tobytes()), 0)
+                                                            if (scar_penalty > 0.0 and visit_counts)
+                                                            else 0
+                                                        )
+                                                        obs3_list.append(o3_arr)
+                                                        m2_ref_list.append(m2_i)
+                                                        p1_ref_list.append(p_idx_list[m2_i])
+                                                        act3_list.append(a3_v)
+                                                        rew3_list.append(float(rew3))
+                                                        pen3_list.append(float(scar_penalty * v_cnt3))
+                                                        r2_ref_list.append(rew2_list[m2_i])
+                                                        added_k3 += 1
+                                                        if added_k3 >= 2:
+                                                            break
+                                                if solve_3step_act is not None:
+                                                    break
+
+                                            if solve_3step_act is not None:
+                                                action = solve_3step_act
+                                                value_rerank_triggered = True
+                                            elif len(obs3_list) > 0:
+                                                M3 = len(obs3_list)
+                                                st_obs3 = np.stack(obs3_list)
+                                                b_obs3 = torch.from_numpy(st_obs3).unsqueeze(1).to(dev)
+                                                st_parent2_obs = st_obs2[m2_ref_list]
+                                                b_act3 = torch.tensor(act3_list, dtype=torch.long, device=dev).view(M3, 1)
+                                                b_rew3 = (
+                                                    torch.tensor(rew3_list, dtype=torch.float32, device=dev)
+                                                    - torch.tensor(r2_ref_list, dtype=torch.float32, device=dev)
+                                                ).view(M3, 1, 1)
+                                                if use_tri_direct:
+                                                    t_parent2_obs = torch.from_numpy(st_parent2_obs).to(dev)
+                                                    z_cands3 = self.front_end.forward_tri_direct(
+                                                        b_obs3, t_parent2_obs, t_init_obs, t_goal_obs, b_act3, b_rew3
+                                                    )
+                                                else:
+                                                    b_delta3 = torch.zeros_like(b_obs3)
+                                                    z_cands3 = self.front_end(
+                                                        obs=b_obs3, delta_obs=b_delta3, prev_action=b_act3, prev_reward=b_rew3
+                                                    )
+                                                if nhx_cands2 is not None:
+                                                    if isinstance(nhx_cands2, tuple):
+                                                        hx_cands3 = tuple(
+                                                            h_t[:, m2_ref_list, :] if h_t.dim() == 3 else h_t[m2_ref_list, :]
+                                                            for h_t in nhx_cands2
+                                                        )
+                                                    else:
+                                                        hx_cands3 = (
+                                                            nhx_cands2[:, m2_ref_list, :]
+                                                            if nhx_cands2.dim() == 3
+                                                            else nhx_cands2[m2_ref_list, :]
+                                                        )
+                                                else:
+                                                    hx_cands3 = None
+                                                h_cands3, _ = self.trunk(z_cands3, hx=hx_cands3, dones=None)
+                                                v_cands3 = self.value_head(h_cands3).squeeze(-1).squeeze(-1)
+                                                q3_scores = (
+                                                    torch.tensor(rew3_list, device=dev)
+                                                    + (0.99 ** 3) * v_cands3
+                                                    - torch.tensor(pen3_list, device=dev)
+                                                )
+                                                best_q3_per_m = torch.full((M,), -1e9, device=dev)
+                                                for m3_i, p1_i in enumerate(p1_ref_list):
+                                                    if q3_scores[m3_i] > best_q3_per_m[p1_i]:
+                                                        best_q3_per_m[p1_i] = q3_scores[m3_i]
+                                                q_scores = torch.maximum(q_scores, 0.97 * best_q3_per_m)
+
+                                        if solve_3step_act is None:
+                                            best_idx = int(torch.argmax(q_scores).item())
+                                            action = valid_cands[best_idx]
+                                            value_rerank_triggered = True
                                 else:
                                     best_idx = int(torch.argmax(q_scores).item())
                                     action = valid_cands[best_idx]

@@ -638,6 +638,7 @@ class RubiksCubeEnv(gym.Env):
         self.recent_successes: deque[float] = deque(maxlen=curriculum_window)
         self.frontier_successes: deque[float] = deque(maxlen=curriculum_window)
         self.curriculum_promotions: int = 0
+        self._steps_at_depth: int = 0
         self.core = RubiksCubeCore()
 
         # 12 Ações Atômicas: U, U', D, D', F, F', B, B', R, R', L, L'
@@ -711,6 +712,7 @@ class RubiksCubeEnv(gym.Env):
         self.current_depth = clamped
         self._episode_depth = clamped
         self.curriculum_promotions = max(0, clamped - self.min_depth)
+        self._steps_at_depth = 0
         self.recent_successes.clear()
         self.frontier_successes.clear()
         return self.current_depth
@@ -742,10 +744,10 @@ class RubiksCubeEnv(gym.Env):
         # Rampa sigmoide suave (-4.5 em vez de -10.0) + amortecimento EMA para evitar
         # quebras bruscas na proporção D_atual vs D-1 ao cruzar 35% de vitórias.
         p_base = 1.0 - self.mixed_replay_rate
-        p_min = max(0.50, p_base - 0.15)
-        p_max = min(0.90, p_base + 0.10)
+        p_min = max(0.45, p_base - 0.23)
+        p_max = min(0.92, p_base + 0.13)
 
-        s_factor = 1.0 / (1.0 + np.exp(-4.5 * (success_rate - 0.35)))
+        s_factor = 1.0 / (1.0 + np.exp(-6.5 * (success_rate - 0.35)))
         raw_p_frontier = float(p_min + (p_max - p_min) * s_factor)
         prev_p = getattr(self, "_last_p_frontier", raw_p_frontier)
         p_frontier = float(0.85 * prev_p + 0.15 * raw_p_frontier)
@@ -793,10 +795,17 @@ class RubiksCubeEnv(gym.Env):
                 success_rate = float(np.mean(eval_window))
                 can_promote = self.max_depth is None or self.current_depth < self.max_depth
                 eff_target = self.get_target_success_rate()
-                if success_rate >= eff_target and can_promote:
+                steps_at_d = getattr(self, "_steps_at_depth", 0)
+                horizon_ready = (
+                    True
+                    if (self.current_depth < 6 or steps_at_d == 0)
+                    else (steps_at_d >= min(self.max_steps, self.current_depth * 5) + 4)
+                )
+                if success_rate >= eff_target and can_promote and horizon_ready:
                     old_d = self.current_depth
                     self.current_depth += 1
                     self.curriculum_promotions += 1
+                    self._steps_at_depth = 0
                     self.recent_successes.clear()
                     self.frontier_successes.clear()
                     max_d_str = str(self.max_depth) if self.max_depth is not None else "∞"
@@ -912,6 +921,7 @@ class RubiksCubeEnv(gym.Env):
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         self._steps += 1
+        self._steps_at_depth = getattr(self, "_steps_at_depth", 0) + 1
         act_idx = int(action)
         action_name = self.core.ATOMIC_MOVES[act_idx]
         self._last_action_name = action_name
@@ -1053,6 +1063,7 @@ class RubiksCubeMacroEnv(gym.Env):
         self.recent_successes: deque[float] = deque(maxlen=curriculum_window)
         self.frontier_successes: deque[float] = deque(maxlen=curriculum_window)
         self.curriculum_promotions: int = 0
+        self._steps_at_depth: int = 0
         self.core = RubiksCubeCore()
 
         # 12 Macro-Ações
@@ -1125,6 +1136,7 @@ class RubiksCubeMacroEnv(gym.Env):
         self.current_depth = clamped
         self._episode_depth = clamped
         self.curriculum_promotions = max(0, clamped - self.min_depth)
+        self._steps_at_depth = 0
         self.recent_successes.clear()
         self.frontier_successes.clear()
         return self.current_depth
@@ -1154,10 +1166,10 @@ class RubiksCubeMacroEnv(gym.Env):
 
         # 2. Modulação Dinâmica Suavizada da Probabilidade da Fronteira (P_frontier)
         p_base = 1.0 - self.mixed_replay_rate
-        p_min = max(0.50, p_base - 0.15)
-        p_max = min(0.90, p_base + 0.10)
+        p_min = max(0.45, p_base - 0.23)
+        p_max = min(0.92, p_base + 0.13)
 
-        s_factor = 1.0 / (1.0 + np.exp(-4.5 * (success_rate - 0.35)))
+        s_factor = 1.0 / (1.0 + np.exp(-6.5 * (success_rate - 0.35)))
         raw_p_frontier = float(p_min + (p_max - p_min) * s_factor)
         prev_p = getattr(self, "_last_p_frontier", raw_p_frontier)
         p_frontier = float(0.85 * prev_p + 0.15 * raw_p_frontier)
@@ -1399,6 +1411,8 @@ class VectorizedRubiksEnv(gym.Env):
         self.num_envs = max(1, int(num_envs))
         self.is_macro = is_macro
         self.render_mode = render_mode
+        if "curriculum_window" not in env_kwargs and self.num_envs > 64:
+            env_kwargs["curriculum_window"] = self.num_envs
         env_cls = RubiksCubeMacroEnv if is_macro else RubiksCubeEnv
         self.envs: List[RubiksCubeEnv] = [
             env_cls(render_mode=render_mode, **env_kwargs) for _ in range(self.num_envs)
@@ -1623,6 +1637,7 @@ class VectorizedRubiksEnv(gym.Env):
             for other in self.envs:
                 other.current_depth = shared_depth
                 other.curriculum_promotions = shared_promos
+                other._steps_at_depth = 0
                 other.recent_successes.clear()
                 other.frontier_successes.clear()
             eff_target = self.get_target_success_rate()
