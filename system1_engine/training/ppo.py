@@ -739,7 +739,7 @@ class RecurrentPPOTrainer:
             if conf >= self.teacher_confidence_threshold:
                 return None
 
-            eff_top_k = max(self.teacher_top_k, 6 if d_e >= 8 else self.teacher_top_k)
+            eff_top_k = max(self.teacher_top_k, 5 if d_e >= 8 else self.teacher_top_k)
             _, top_indices = torch.topk(valid_probs, k=min(eff_top_k + 2, n_acts))
             cand_acts = [int(idx.item()) for idx in top_indices if int(idx.item()) not in avoid_acts][:eff_top_k]
             if not cand_acts:
@@ -922,11 +922,11 @@ class RecurrentPPOTrainer:
                             q_scores = torch.maximum(q_scores, 0.99 * best_q2_per_m)
 
                             # Ponte de Valor de 3º Passo (Q_3 = r_3 + gamma^3 * V(s_3)) para Batedores em D8+
-                            if sim_3step_fn is not None and d_e >= 8 and M2 >= 2 and float(v_cands2.max().item()) < 5.5:
+                            if sim_3step_fn is not None and d_e >= 8 and M2 >= 2 and float(v_cands2.max().item()) < 5.0:
                                 if logits3 is None:
                                     logits3 = self.agent.policy_head.linear(h_cands2).squeeze(1)
                                 _, top_i3_val = torch.topk(logits3, k=min(4, n_acts), dim=-1)
-                                top_m2_order = torch.argsort(q2_scores, descending=True)[: min(6, M2)]
+                                top_m2_order = torch.argsort(q2_scores, descending=True)[: min(4, M2)]
                                 obs3_list = []
                                 m2_ref_list = []
                                 p1_ref_list = []
@@ -1010,7 +1010,7 @@ class RecurrentPPOTrainer:
 
             best_t = torch.tensor(best_act, device=self.device)
             new_logp = dist_sample.log_prob(best_t[None, None])[e]
-            new_logp = torch.clamp(new_logp, min=-6.0, max=0.0)
+            new_logp = torch.clamp(new_logp, min=-10.0, max=0.0)
             return best_act, new_logp
 
         elif self.action_chunk_size == 2 and hasattr(env_e, "core"):
@@ -1237,8 +1237,6 @@ class RecurrentPPOTrainer:
                             ).clamp(min=0.02, max=1.00)
                         else:
                             env_scales = dynamic_scales.clamp(min=0.02, max=1.00)
-                        if self.teacher_sil_envs > 0 and (self.sil_enabled or self.scar_mode != "none"):
-                            env_scales[: min(self.teacher_sil_envs, E)] = 1.0
                         if self.action_chunk_size > 1:
                             env_scales = env_scales.unsqueeze(2)
                         scaled_logits = torch.nan_to_num(penalized_logits / env_scales, nan=0.0, posinf=35.0, neginf=-35.0).clamp(min=-35.0, max=35.0)
@@ -1281,13 +1279,14 @@ class RecurrentPPOTrainer:
                                 res = self._apply_teacher_lookahead(
                                     e=e,
                                     env_e=env_e,
-                                    dist_sample=dist_eval_rollout,
+                                    dist_sample=dist,
                                     current_hx=next_hx,
                                 )
                                 if res is not None:
                                     t_act, t_logp = res
                                     env_action[e] = t_act
                                     log_prob[e] = t_logp
+                                    env_scales[e] = -1.0
 
                     # Chunking adaptativo por incerteza: aborta a execução aberta caso a confiança caia
                     chunk_mask = None
@@ -1456,6 +1455,9 @@ class RecurrentPPOTrainer:
 
                         if len(traj_steps) > 0:
                             cur_d = int(d_info.get("scramble_depth", d_info.get("current_depth", self._get_current_curriculum_depth()))) if isinstance(d_info, dict) else self._get_current_curriculum_depth()
+                            if is_win and cur_d >= self.teacher_min_depth:
+                                ep_s = max(0, step - len(traj_steps) + 1)
+                                stored_scale[ep_s : step + 1, d_i] = -np.abs(stored_scale[ep_s : step + 1, d_i])
                             self._process_completed_trajectory(traj_steps, is_win, cur_d)
                         self._active_vec_trajectories[d_i].clear()
 
@@ -1648,33 +1650,36 @@ class RecurrentPPOTrainer:
             cur_promotions = primary_info.get("curriculum_promotions", 0)
             cur_promoted = primary_info.get("curriculum_promoted", False)
             cur_success_rate = primary_info.get("curriculum_success_rate", None)
-
-            if self._reward_ema is None:
-                self._reward_ema = float(mean_return)
-                delta_ret = 0.0
-            else:
-                delta_ret = mean_return - self._reward_ema
-                self._reward_ema = 0.85 * self._reward_ema + 0.15 * mean_return
-
-            # Escala de referência relativa independente da magnitude absoluta de recompensa
-            scale_ref = max(1.0, abs(self._reward_ema))
-            # Progresso real: ganho de pelo menos 2.5% em relação à escala de retorno típica
-            is_progress = delta_ret > 0.025 * scale_ref
+            target_sr = float(primary_info.get("target_success_rate", 0.80) or 0.80)
 
             if cur_promoted or cur_promotions > getattr(self, "_last_promotions", 0):
-                # Promoção curricular: novo patamar requer exploração revigorada
+                # Promoção curricular: novo patamar requer exploração revigorada e novo baseline de retorno
                 self._last_promotions = cur_promotions
                 self._stagnation_count = 0
+                self._reward_ema = None
                 self._adaptive_scale = max(self._adaptive_scale, 0.75)
-            elif is_progress or (cur_success_rate is not None and cur_success_rate >= 0.80):
-                # Progresso consistente ou quase domínio do nível: consolida e refina política
-                self._stagnation_count = 0
-                self._adaptive_scale = max(self._min_adaptive_scale, self._adaptive_scale - 0.03)
-            else:
-                # Platô ou declínio de retorno: incrementa contagem e aquece exploração para escapar de mínimos locais
-                self._stagnation_count += 1
-                if self._stagnation_count >= 2:
-                    self._adaptive_scale = min(self._max_adaptive_scale, self._adaptive_scale + 0.04)
+            elif not self.is_vectorized or len(self.episode_returns) >= self.episode_returns.maxlen:
+                if self._reward_ema is None:
+                    self._reward_ema = float(mean_return)
+                    delta_ret = 0.0
+                else:
+                    delta_ret = mean_return - self._reward_ema
+                    self._reward_ema = 0.85 * self._reward_ema + 0.15 * mean_return
+
+                # Escala de referência relativa independente da magnitude absoluta de recompensa
+                scale_ref = max(1.0, abs(self._reward_ema))
+                # Progresso real: ganho de pelo menos 2.5% em relação à escala de retorno típica
+                is_progress = delta_ret > 0.025 * scale_ref
+
+                if is_progress or (cur_success_rate is not None and cur_success_rate >= 0.85 * target_sr):
+                    # Progresso consistente ou quase domínio do nível: consolida e refina política
+                    self._stagnation_count = 0
+                    self._adaptive_scale = max(self._min_adaptive_scale, self._adaptive_scale - 0.03)
+                else:
+                    # Platô ou declínio de retorno: incrementa contagem e aquece exploração para escapar de mínimos locais
+                    self._stagnation_count += 1
+                    if self._stagnation_count >= 2:
+                        self._adaptive_scale = min(self._max_adaptive_scale, self._adaptive_scale + 0.04)
 
         # Dynamic Entropy Floor: Re-aquecimento térmico imediato de rollout em caso de inanição de entropia
         if self.entropy_floor_enabled and self.tracker is not None and getattr(self.tracker.metrics, "entropies", None):
@@ -2370,9 +2375,11 @@ class RecurrentPPOTrainer:
                 )
                 values_sq = values.squeeze(-1)  # [B, T]
 
+                guided_mask = None
                 if self.agent.is_discrete:
                     if getattr(batch, "env_scales", None) is not None:
-                        eff_scales = batch.env_scales.clamp(min=0.02, max=1.00)
+                        guided_mask = batch.env_scales < 0.0
+                        eff_scales = batch.env_scales.abs().clamp(min=0.02, max=1.00)
                         if self.action_chunk_size > 1:
                             eff_scales = eff_scales.unsqueeze(-1).unsqueeze(-1)
                         else:
@@ -2393,7 +2400,7 @@ class RecurrentPPOTrainer:
                         entropy = dist.entropy()                                       # [B, T]
                 else:
                     if getattr(batch, "env_scales", None) is not None:
-                        eff_scales = batch.env_scales.clamp(min=0.02, max=1.00)
+                        eff_scales = batch.env_scales.abs().clamp(min=0.02, max=1.00)
                         if self.action_chunk_size > 1:
                             eff_scales = eff_scales.unsqueeze(-1).unsqueeze(-1)
                         else:
@@ -2418,13 +2425,29 @@ class RecurrentPPOTrainer:
                 ratio = torch.exp(log_ratio)
 
                 norm_adv = batch.advantages
+                if guided_mask is not None:
+                    actor_adv = torch.where(guided_mask, torch.clamp(norm_adv, min=0.0), norm_adv)
+                else:
+                    actor_adv = norm_adv
 
-                surr1 = ratio * norm_adv
+                surr1 = ratio * actor_adv
                 surr2 = (
-                    torch.clamp(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range) * norm_adv
+                    torch.clamp(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range) * actor_adv
                 )
                 surr = torch.min(surr1, surr2)
                 policy_loss = -torch.clamp(surr, min=-15.0, max=15.0).mean()
+
+                if guided_mask is not None and self.agent.is_discrete:
+                    pos_guided = guided_mask & (norm_adv > 0.0)
+                    if pos_guided.any():
+                        unscaled_logp = (
+                            dist.log_prob(batch.actions).sum(dim=-1)
+                            if self.action_chunk_size > 1
+                            else dist.log_prob(batch.actions)
+                        )
+                        guided_w = torch.clamp(norm_adv, min=0.0, max=3.0) * pos_guided.float()
+                        teacher_bc_loss = -(unscaled_logp * guided_w).sum() / max(1, guided_w.numel())
+                        policy_loss = policy_loss + 0.35 * teacher_bc_loss
 
                 val_loss = self.agent.value_head.loss(val_logits, batch.returns)
 
@@ -2641,29 +2664,34 @@ class RecurrentPPOTrainer:
             metrics = self.train_epoch()
 
             cur_depth = self._get_current_curriculum_depth()
+            min_unbiased_eps = self.episode_returns.maxlen if self.is_vectorized else min(10, self.episode_returns.maxlen)
+            is_unbiased_window = len(self.episode_returns) >= min_unbiased_eps
+
             if cur_depth > best_state_depth:
                 # Promoção curricular: o novo nível mais profundo tem precedência hierárquica absoluta!
                 # Ancora imediatamente os pesos recém-promovidos para evitar rollback para níveis anteriores.
                 best_state_depth = cur_depth
                 self.best_state_depth = best_state_depth
-                best_depth_mean_return = max(0.0, mean_return) if len(self.episode_returns) >= 5 else 0.0
+                best_depth_mean_return = mean_return if is_unbiased_window else -float("inf")
                 self.best_depth_mean_return = best_depth_mean_return
                 self.best_state_dict = {
                     k: v.cpu().clone() for k, v in self.agent.state_dict().items()
                 }
 
             if len(self.episode_returns) > 0:
-                if mean_return > best_mean_return:
-                    best_mean_return = mean_return
-                    self.best_mean_return = best_mean_return
-                if cur_depth >= best_state_depth and mean_return > best_depth_mean_return:
-                    best_depth_mean_return = mean_return
-                    self.best_depth_mean_return = best_depth_mean_return
-                    self.best_state_depth = cur_depth
-                    self.best_state_dict = {
-                        k: v.cpu().clone() for k, v in self.agent.state_dict().items()
-                    }
-                if self.tracker is not None:
+                if is_unbiased_window or self.best_state_dict is None:
+                    if mean_return > best_mean_return:
+                        best_mean_return = mean_return
+                        self.best_mean_return = best_mean_return
+                    if cur_depth >= best_state_depth and (mean_return > best_depth_mean_return or self.best_state_dict is None):
+                        if is_unbiased_window:
+                            best_depth_mean_return = mean_return
+                            self.best_depth_mean_return = best_depth_mean_return
+                        self.best_state_depth = cur_depth
+                        self.best_state_dict = {
+                            k: v.cpu().clone() for k, v in self.agent.state_dict().items()
+                        }
+                if self.tracker is not None and best_mean_return > -float("inf"):
                     self.tracker.metrics.best_mean_return = best_mean_return
 
             if verbose and iteration % 2 == 0:
