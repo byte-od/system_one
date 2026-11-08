@@ -4,7 +4,7 @@
   "code_file": "name_that_llm_submission.ipynb",
   "language": "python",
   "kernel_type": "notebook",
-  "is_private": false,
+  "is_private": true,
   "enable_gpu": true,
   "enable_tpu": false,
   "enable_internet": false,
@@ -12,6 +12,9 @@
     "cosmorin/name-that-llm-0-622-reproduction-svc-cache",
     "nishantdahal/ntl-handwriting-blend",
     "prvsiyan/prvsiyans-extended-name-that-llm-dataset"
+  ],
+  "kernel_sources": [
+    "thetod/qwen-72b-to-mixture-of-scars-mos-converter"
   ],
   "competition_sources": [
     "name-that-llm"

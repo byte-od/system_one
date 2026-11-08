@@ -21,13 +21,13 @@ from safetensors import safe_open
 DEST_DIR = Path(__file__).resolve().parent.parent / "models" / "qwen25_72b_mos"
 
 
-def download_file(item_info):
+def download_file(item_info, force_overwrite: bool = True):
     file_name, url = item_info
     base_name = os.path.basename(file_name)
     target_path = DEST_DIR / base_name
     part_path = DEST_DIR / f"{base_name}.part"
 
-    if target_path.exists() and target_path.stat().st_size > 1000:
+    if not force_overwrite and target_path.exists() and target_path.stat().st_size > 1000:
         print(f"  ⏭️ Já existe: {base_name} ({target_path.stat().st_size / (1024**2):.1f} MB)")
         return base_name, target_path.stat().st_size
 
