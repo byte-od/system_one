@@ -1,10 +1,15 @@
-"""Módulo Nativo de Execução e Carregamento de Modelos em Escala 70B com Mixture of Scars (MoS).
+"""Módulo de Expansão de Profundidade via Base Compartilhada e Mixture of Scars (MoS).
 
-Permite carregar e executar modelos em escala profunda de 70B/72B (72 a 80 camadas completas)
-em ambientes com hardware limitado (como Kaggle com 16GB GPU ou Mac M2 com 16GB RAM) sem OOM:
-  1. Base Universal Compartilhada (W_base): As camadas compartilham tensores de alta capacidade.
-  2. Scar Experts de Baixo Rank (A @ B): Micro-especialistas de KBs no L1/L2 Cache.
-  3. SCache O(1): Cache de contexto rigorosamente constante via Delta Rule de Widrow-Hoff.
+Permite instanciar topologias profundas (72 a 80 camadas) sobre modelos compactos (ex: Qwen2.5-3B)
+em ambientes com hardware limitado (16GB GPU / Mac M2) via compartilhamento de pesos e micro-especialistas:
+  1. Base Universal Compartilhada (W_base): As camadas base são reutilizadas ciclicamente em profundidade.
+  2. Scar Experts de Baixo Rank (A @ B): Micro-especialistas de cicatriz por camada para especialização vertical.
+  3. SCache O(1): Cache de contexto com consumo fixo via Delta Rule de Widrow-Hoff.
+
+NOTA DE RIGOR CIENTÍFICO:
+  Na inicialização zero-shot (`expert.A.zero_()`), a topologia atua como uma passagem recorrente
+  sobre as camadas base (equivalente ao regime Universal Transformer / ALBERT). A divergência funcional
+  entre camadas profundas requer calibração ou fine-tuning dos micro-especialistas de cicatriz.
 """
 
 from __future__ import annotations
@@ -107,8 +112,8 @@ class NativeMoS70B:
                 layer.mlp.down_proj = mos
                 mos_count += 1
 
-        print(f"  ✓ {mos_count} camadas MLP convertidas para Mixture of Scars (MoS)!")
-        print(f"  ✓ Topologia de 70B pronta na VRAM/RAM ({target_layers} camadas ativas com zero inchaço)!\n")
+        print(f"  ✓ {mos_count} camadas base equipadas com adaptadores Mixture of Scars (MoS)!")
+        print(f"  ✓ Topologia expandida para {target_layers} camadas em profundidade recorrente ({base_count} camadas base compartilhadas).\n")
 
         return cls(
             model=base_model,
