@@ -92,6 +92,8 @@ def test_mixture_of_scars_shared_base_memory_reduction():
     x = torch.randn(2, in_dim)
     # Inicializa um especialista em uma camada para diferenciar
     with torch.no_grad():
+        mos_layers[0].router.weight[0].fill_(100.0)
+        mos_layers[0].experts[0].A.fill_(0.5)
         mos_layers[0].experts[0].B.fill_(0.5)
 
     out0 = mos_layers[0](x)

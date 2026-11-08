@@ -18,7 +18,7 @@ from scar_cache.projections import (
     project_conflicting_gradients_per_slot,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "SCache",
