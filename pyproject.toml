@@ -3,24 +3,26 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "scar-cache"
-version = "0.3.0"
-description = "Universal O(1) Gradient Scar Memory, Multi-Slot Tensorization & Delta-Rule Associative Cache to replace KV Cache in PyTorch and HuggingFace LLMs"
+name = "mixture-of-scars"
+version = "0.4.0"
+description = "Mixture of Scars (MoS) & SCache: Radical Static Weight Compression & O(1) Constant Memory KV-Cache Replacement for LLMs"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
-    { name = "DeepMind & Antigravity Research Lab" }
+    { name = "Julio Cesar Reis Filho" }
 ]
 keywords = [
-    "deep-learning",
-    "reinforcement-learning",
+    "llm",
+    "kv-cache",
+    "mixture-of-experts",
+    "moe",
+    "mixture-of-scars",
+    "transformers",
     "fast-weights",
-    "memory-augmented-neural-networks",
-    "test-time-adaptation",
-    "continual-learning",
     "hebbian-learning",
-    "pytorch"
+    "pytorch",
+    "huggingface"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -41,6 +43,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
+    "transformers>=4.40.0",
 ]
 
 [tool.setuptools.packages.find]
