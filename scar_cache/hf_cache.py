@@ -16,15 +16,17 @@ from scar_cache.multi_slot import MultiSlotSCache
 class SCacheDynamicLayer(DynamicLayer):
     """Camada de Cache do HuggingFace com tamanho físico estritamente limitado O(1).
 
-    Mantém no máximo `window_size` tokens físicos em memória para atenção local exata.
-    Tokens mais antigos que deslizam para fora da janela são comprimidos atômica e
-    continuamente no MultiSlotSCache (no L1 Cache) usando a Regra Delta.
+    Combina:
+      1. Attention Sinks (os primeiros `num_sink_tokens` preservados para ancoragem estável do Softmax)
+      2. Janela deslizante local (os últimos `window_size - num_sink_tokens` tokens mais recentes)
+      3. MultiSlotSCache (todos os tokens intermediários desalojados são comprimidos via Regra Delta)
     """
 
-    def __init__(self, window_size: int = 64, num_slots: int = 8):
+    def __init__(self, window_size: int = 64, num_slots: int = 8, num_sink_tokens: int = 4):
         super().__init__()
         self.window_size = int(window_size)
         self.num_slots = int(num_slots)
+        self.num_sink_tokens = min(int(num_sink_tokens), self.window_size // 2) if num_sink_tokens > 0 else 0
         self.scache: Optional[MultiSlotSCache] = None
         self.total_tokens_absorbed: int = 0
 
@@ -44,10 +46,11 @@ class SCacheDynamicLayer(DynamicLayer):
         self.keys = torch.cat([self.keys, key_states], dim=-2)
         self.values = torch.cat([self.values, value_states], dim=-2)
 
-        # Se ultrapassou a janela máxima, comprime o excedente antigo no SCache O(1)
+        # Se ultrapassou a janela máxima, comprime o excedente intermediário no SCache O(1)
         if self.keys.shape[-2] > self.window_size:
-            excess_k = self.keys[..., : -self.window_size, :]
-            excess_v = self.values[..., : -self.window_size, :]
+            slide_len = self.window_size - self.num_sink_tokens
+            excess_k = self.keys[..., self.num_sink_tokens : -slide_len, :]
+            excess_v = self.values[..., self.num_sink_tokens : -slide_len, :]
             num_excess = excess_k.shape[-2]
 
             # Comprime no MultiSlotSCache via Regra Delta em float32
@@ -61,9 +64,17 @@ class SCacheDynamicLayer(DynamicLayer):
 
             self.total_tokens_absorbed += num_excess
 
-            # Trunca fisicamente o tensor: MEMÓRIA CONGELADA EM O(1)!
-            self.keys = self.keys[..., -self.window_size :, :]
-            self.values = self.values[..., -self.window_size :, :]
+            # Reconstrói os tensores: Sinks (início) + Slide (fim): MEMÓRIA CONGELADA EM O(1)!
+            if self.num_sink_tokens > 0:
+                sink_k = self.keys[..., : self.num_sink_tokens, :]
+                sink_v = self.values[..., : self.num_sink_tokens, :]
+                slide_k = self.keys[..., -slide_len :, :]
+                slide_v = self.values[..., -slide_len :, :]
+                self.keys = torch.cat([sink_k, slide_k], dim=-2)
+                self.values = torch.cat([sink_v, slide_v], dim=-2)
+            else:
+                self.keys = self.keys[..., -self.window_size :, :]
+                self.values = self.values[..., -self.window_size :, :]
 
         return self.keys, self.values
 
@@ -87,16 +98,19 @@ class SCacheDynamicCache(DynamicCache):
         >>> from transformers import AutoModelForCausalLM
         >>> from scar_cache import SCacheDynamicCache
         >>> model = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM2-135M-Instruct")
-        >>> cache = SCacheDynamicCache(window_size=64, num_slots=8)
+        >>> cache = SCacheDynamicCache(window_size=64, num_slots=8, num_sink_tokens=4)
         >>> out = model.generate(**inputs, past_key_values=cache)
     """
 
-    def __init__(self, window_size: int = 64, num_slots: int = 8):
+    def __init__(self, window_size: int = 64, num_slots: int = 8, num_sink_tokens: int = 4):
         super().__init__()
         self.window_size = int(window_size)
         self.num_slots = int(num_slots)
+        self.num_sink_tokens = int(num_sink_tokens)
         self.layer_class_to_replicate = lambda: SCacheDynamicLayer(
-            window_size=self.window_size, num_slots=self.num_slots
+            window_size=self.window_size,
+            num_slots=self.num_slots,
+            num_sink_tokens=self.num_sink_tokens,
         )
 
     @property
