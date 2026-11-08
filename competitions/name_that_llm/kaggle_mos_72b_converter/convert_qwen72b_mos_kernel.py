@@ -223,28 +223,11 @@ def run_kaggle_qwen72b_mos_conversion(
         except Exception:
             pass
 
-        # Verifica se algum grupo completou todas as suas camadas para descarregar no disco
-        for g in range(10):
-            # Se o grupo acumulou mais de 50 tensores, descarrega imediatamente
-            if len(group_buffers[g]) >= 50:
-                shard_fname = f"mos_group_{g}.safetensors"
-                shard_fpath = os.path.join(output_dir, shard_fname)
-                save_file(group_buffers[g], shard_fpath)
-                sz_mb = os.path.getsize(shard_fpath) / (1024 * 1024)
-                print(f"  💾 Grupo MoS {g} salvo em disco: {shard_fname} ({sz_mb:.1f} MB | {len(group_buffers[g])} tensores).")
-                for tensor_k in group_buffers[g].keys():
-                    final_weight_map[tensor_k] = shard_fname
-                group_buffers[g].clear()
-                # Libera a base da memória se já passou do grupo
-                for p in projections:
-                    base_tensors.pop((g, p), None)
-                gc.collect()
-
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    # Descarrega qualquer buffer restante
-    print("\n[Passo 3/4] Finalizando e salvando shards residuais...")
+    # Descarrega todos os 10 grupos de forma consolidada e completa no disco
+    print("\n[Passo 3/4] Consolidando e salvando os 10 Grupos MoS completos...")
     for g in range(10):
         if len(group_buffers[g]) > 0:
             shard_fname = f"mos_group_{g}.safetensors"

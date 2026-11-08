@@ -54,5 +54,15 @@ ENV/
 env.bak/
 venv.bak/
 
+# Model Weights and Large Binaries
+*.safetensors
+*.safetensors.part
+*.bin
+*.pt
+*.pth
+*.onnx
+models/**/*.safetensors
+models/**/*.safetensors.part
+
 # macOS
 .DS_Store
