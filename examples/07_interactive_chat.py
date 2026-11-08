@@ -18,7 +18,6 @@ from scar_cache import SlotScarAttention
 def tokenize(text: str) -> list[str]:
     """Tokeniza texto separando palavras e pontuações em minúsculas."""
     text = text.lower()
-    # Separa pontuação com espaços
     text = re.sub(r"([.,!?])", r" \1 ", text)
     return text.split()
 
@@ -59,70 +58,66 @@ class ScarWordChatModel(nn.Module):
         return self.head(x)
 
 
-def build_and_train_chat():
-    corpus = (
-        "humano : oi , boa noite !\n"
-        "scache : ola ! boa noite , tudo bem com voce ?\n\n"
-        "humano : oi , tudo bem ?\n"
-        "scache : tudo otimo ! como posso te ajudar hoje ?\n\n"
-        "humano : ola , tudo bem ?\n"
-        "scache : ola ! tudo bem por aqui , e um prazer conversar com voce .\n\n"
-        "humano : como voce funciona ?\n"
-        "scache : eu uso memoria associativa de cicatriz de gradiente sem kv cache .\n\n"
-        "humano : voce gasta muita memoria ?\n"
-        "scache : nao ! minha memoria e constante no cache l1 do processador .\n\n"
-        "humano : quanto de memoria voce consome ?\n"
-        "scache : consumo apenas sessenta e oito kilobytes fixos para sempre .\n\n"
-        "humano : o que e o scar cache ?\n"
-        "scache : e um mecanismo que substitui buffers gigantes de memoria em redes neurais .\n\n"
-        "humano : quem te criou ?\n"
-        "scache : fui desenvolvido na arquitetura system 1 como prova de conceito .\n\n"
-        "humano : voce esquece as coisas ?\n"
-        "scache : meus slots gravam o contexto com regra delta e decaimento multi escala .\n\n"
-        "humano : isso e muito rapido ?\n"
-        "scache : sim , minha latencia e de microssegundos em fluxo continuo no hardware .\n\n"
-        "humano : legal !\n"
-        "scache : muito obrigado ! vamos conversar mais .\n\n"
-        "humano : erro ?\n"
-        "scache : nenhum erro ! o sistema opera perfeitamente com memoria congelada no l1 .\n\n"
-        "humano : obrigado !\n"
-        "scache : de nada ! estou sempre a disposicao para ajudar .\n\n"
-    )
+PAIRS = [
+    ("humano : qual seu nome ?", "scache : meu nome e scache , a inteligencia artificial sem kv cache ."),
+    ("humano : como e seu nome ?", "scache : meu nome e scache , a inteligencia artificial sem kv cache ."),
+    ("humano : quem e voce ?", "scache : sou o scache , uma inteligencia artificial que roda no cache l1 ."),
+    ("humano : boa noite , tudo bem ?", "scache : boa noite ! tudo bem por aqui , como posso te ajudar ?"),
+    ("humano : boa noite !", "scache : boa noite ! tudo bem com voce ?"),
+    ("humano : oi , boa noite !", "scache : ola ! boa noite , tudo bem com voce ?"),
+    ("humano : oi , tudo bem ?", "scache : ola ! tudo otimo com voce ?"),
+    ("humano : ola , tudo bem ?", "scache : ola ! tudo bem por aqui , e um prazer conversar com voce ."),
+    ("humano : como voce funciona ?", "scache : eu uso memoria associativa de cicatriz de gradiente sem kv cache ."),
+    ("humano : voce gasta muita memoria ?", "scache : nao ! consumo apenas sessenta e oito kilobytes fixos no cache l1 ."),
+    ("humano : quanto de memoria voce consome ?", "scache : consumo apenas sessenta e oito kilobytes fixos para sempre ."),
+    ("humano : o que e o scar cache ?", "scache : e um mecanismo que substitui buffers gigantes de memoria em redes neurais ."),
+    ("humano : quem te criou ?", "scache : fui desenvolvido na arquitetura system 1 como prova de conceito ."),
+    ("humano : voce esquece as coisas ?", "scache : meus slots gravam o contexto com regra delta e decaimento multi escala ."),
+    ("humano : isso e muito rapido ?", "scache : sim , minha latencia e de microssegundos em fluxo continuo no hardware ."),
+    ("humano : legal !", "scache : muito obrigado ! vamos conversar mais ."),
+    ("humano : erro ?", "scache : nenhum erro ! o sistema opera perfeitamente com memoria congelada no l1 ."),
+    ("humano : obrigado !", "scache : de nada ! estou sempre a disposicao para ajudar ."),
+]
 
-    tokens = tokenize(corpus)
-    vocab = ["<unk>", "<pad>", "humano", "scache", ":"] + sorted(list(set(tokens) - {"humano", "scache", ":"}))
+
+def build_and_train_chat():
+    all_tokens = []
+    for q, a in PAIRS:
+        all_tokens.extend(tokenize(q + " " + a))
+
+    vocab = ["<unk>", "<pad>", "humano", "scache", ":"] + sorted(list(set(all_tokens) - {"humano", "scache", ":"}))
     word2idx = {w: i for i, w in enumerate(vocab)}
     idx2word = {i: w for i, w in enumerate(vocab)}
     vocab_size = len(vocab)
 
     print(f"Vocabulário conversacional: {vocab_size} palavras reais em português.")
-    print("Treinando o modelo de chat Word-Level em CPU (~3 segundos)...")
+    print("Treinando o modelo de chat Word-Level em CPU (~2 segundos)...")
 
     torch.manual_seed(42)
     model = ScarWordChatModel(vocab_size=vocab_size, d_model=64, num_heads=2, num_slots=8)
-
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.012)
-    seq = torch.tensor([word2idx.get(w, 0) for w in tokens], dtype=torch.long)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.015)
 
     model.train()
-    epochs = 120
+    epochs = 70
     for ep in range(epochs):
-        model.reset_cache()
-        total_loss = 0.0
-        optimizer.zero_grad()
-        # Treino seqüencial
-        for t in range(len(seq) - 1):
-            inp = seq[t : t + 1]
-            target = seq[t + 1 : t + 2]
-            logits = model.forward_step(inp, update_memory=True)
-            loss = F.cross_entropy(logits, target)
-            total_loss += loss
+        for q, a in PAIRS:
+            model.reset_cache()
+            tokens = tokenize(q + " " + a)
+            seq = torch.tensor([word2idx[w] for w in tokens], dtype=torch.long)
 
-        total_loss = total_loss / (len(seq) - 1)
-        total_loss.backward()
-        optimizer.step()
+            optimizer.zero_grad()
+            pair_loss = 0.0
+            for t in range(len(seq) - 1):
+                inp = seq[t : t + 1]
+                target = seq[t + 1 : t + 2]
+                logits = model.forward_step(inp, update_memory=True)
+                pair_loss = pair_loss + F.cross_entropy(logits, target)
 
-    print(f"Modelo pronto para conversar! Perda final: {total_loss.item():.4f}\n")
+            pair_loss = pair_loss / (len(seq) - 1)
+            pair_loss.backward()
+            optimizer.step()
+
+    print(f"Modelo pronto para conversar!\n")
     return model, word2idx, idx2word
 
 
@@ -134,13 +129,13 @@ def chat_session(model, word2idx, idx2word, interactive: bool = True):
     print("=" * 75)
 
     model.eval()
-    model.reset_cache()
 
     test_queries = [
-        "oi, boa noite",
-        "como voce funciona?",
-        "voce gasta muita memoria?",
-        "erro?",
+        "Boa noite, tudo bem?",
+        "Qual seu nome?",
+        "Como voce funciona?",
+        "Voce gasta muita memoria?",
+        "Erro?",
     ]
 
     query_idx = 0
@@ -163,6 +158,9 @@ def chat_session(model, word2idx, idx2word, interactive: bool = True):
             print("Encerrando conversa...")
             break
 
+        # Limpa o cache para o novo diálogo mantendo a capacidade associativa
+        model.reset_cache()
+
         # Tokeniza entrada do usuário
         user_tokens = tokenize(user_msg)
         prompt_tokens = ["humano", ":"] + user_tokens + ["scache", ":"]
@@ -183,17 +181,13 @@ def chat_session(model, word2idx, idx2word, interactive: bool = True):
 
             for step in range(35):
                 logits = model.forward_step(curr_id, update_memory=True)
-                # Temperatura 0.20 para precisão sintática limpa
-                probs = F.softmax(logits / 0.20, dim=-1)
-                next_id = torch.multinomial(probs, num_samples=1).squeeze(0)
+                next_id = torch.argmax(logits).unsqueeze(0)
                 next_word = idx2word.get(next_id.item(), "<unk>")
 
-                # Condição de parada
+                # Condição de parada (início de uma fala do humano ou token nulo)
                 if next_word in ("humano", "<pad>", "<unk>"):
                     break
-                if next_word == "scache" and step > 0:
-                    break
-                if next_word == ":" and step > 0:
+                if next_word == ":" and step > 1:
                     break
 
                 response_words.append(next_word)

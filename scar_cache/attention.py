@@ -102,8 +102,8 @@ class SlotScarAttention(nn.Module):
             k_h = k[:, h, :]  # [B, head_dim]
             v_h = v[:, h, :]  # [B, head_dim]
 
-            # Leitura associativa da memória passada
-            out_h, _, _ = cache_h.modulate(q_h)
+            # Leitura associativa da memória passada (Atenção Linear O(1))
+            out_h = cache_h.read(q_h)
             head_outputs.append(out_h)
 
             # Escrita atômica com Regra Delta (sem alocar novos tensores na memória!)

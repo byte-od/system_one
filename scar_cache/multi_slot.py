@@ -337,25 +337,37 @@ class MultiSlotSCache(nn.Module):
                 self.z_target.copy_(norm_k)
                 return err
 
+    def read(self, q: torch.Tensor) -> torch.Tensor:
+        """Leitura associativa pura Multi-Head Linear Attention (sem gating amortecedor).
+
+        Args:
+            q: Vetor de consulta [Batch, slot_dim].
+
+        Returns:
+            Vetor recuperado da memória associativa [Batch, slot_dim].
+        """
+        if int(self.scars_count.sum().item()) == 0:
+            return torch.zeros_like(q)
+
+        w_eff = self.W_scar.clone()
+        routing_weights, slots = self.route_tokens(q)
+        # deltas: [B, K, D] = slots @ W_scar^T
+        deltas = torch.einsum("bki,kij->bkj", slots, w_eff)
+        # Recombina a recuperação ponderada pelos pesos de atenção de slot
+        w_expanded = routing_weights.unsqueeze(-1)  # [B, K, 1]
+        retrieved = (w_expanded * deltas).sum(dim=1)  # [B, D]
+        return retrieved
+
     def read_key(
         self,
         key: torch.Tensor,
         slot_index: Optional[int] = None,
     ) -> torch.Tensor:
-        """Recupera o valor associado a uma chave na memória (Pilar 2).
-
-        Args:
-            key: Vetor de consulta [slot_dim].
-            slot_index: Se fornecido, lê exclusivamente daquele slot.
-
-        Returns:
-            O valor recuperado da memória associativa.
-        """
+        """Alias de recuperação para consultas individuais."""
         with torch.no_grad():
-            norm_k = key / (torch.norm(key, dim=-1, keepdim=True) + 1e-6)
             if slot_index is not None:
+                norm_k = key / (torch.norm(key, dim=-1, keepdim=True) + 1e-6)
                 return torch.matmul(self.W_scar[int(slot_index)], norm_k)
-            else:
-                # Retorna a média ou valores por slot: [K, D]
-                # W_scar: [K, D, D], norm_k: [D] -> [K, D]
-                return torch.einsum("kij,j->ki", self.W_scar, norm_k)
+            k_in = key.unsqueeze(0) if key.dim() == 1 else key
+            out = self.read(k_in)
+            return out.squeeze(0) if key.dim() == 1 else out
