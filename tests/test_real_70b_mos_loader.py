@@ -77,10 +77,10 @@ def run_integrity_audit():
     print("\n[3/3] Testando inferência real com desquantização on-demand e epilogue residual:")
     g0_path = MODEL_DIR / "mos_group_0.safetensors"
     with safe_open(g0_path, framework="pt", device="cpu") as f:
-        # Base da camada 0
-        base_down_packed = f.get_tensor("model.layers.0.mlp.down_proj.weight")
-        base_down_scales = f.get_tensor("model.layers.0.mlp.down_proj.weight.scales")
-        print(f"  ✓ Camada 0 Base down_proj: packed={list(base_down_packed.shape)}, scales={list(base_down_scales.shape)}")
+        # Base universal do Grupo 0
+        base_down_packed = f.get_tensor("mos_base.group_0.mlp.down_proj.weight")
+        base_down_scales = f.get_tensor("mos_base.group_0.mlp.down_proj.weight.scales")
+        print(f"  ✓ Grupo 0 Base down_proj: packed={list(base_down_packed.shape)}, scales={list(base_down_scales.shape)}")
 
         # Desquantiza para BF16
         t0 = time.time()
@@ -88,21 +88,25 @@ def run_integrity_audit():
         dt_deq = time.time() - t0
         print(f"  ✓ Desquantização on-demand: {dt_deq*1000:.2f} ms | Shape desquantizado: {list(w_base.shape)}")
 
-        # Scar da camada 1
-        scar_A = f.get_tensor("model.layers.1.mlp.down_proj.scar_A")  # [8192, 64]
-        scar_B = f.get_tensor("model.layers.1.mlp.down_proj.scar_B")  # [64, 29568]
+        # Scar residual da camada 1
+        scar_A = f.get_tensor("model.layers.1.mlp.down_proj.expert.A")  # [29568, 64] ou [8192, 64]
+        scar_B = f.get_tensor("model.layers.1.mlp.down_proj.expert.B")  # [64, 8192] ou [64, 29568]
         print(f"  ✓ Camada 1 Scar down_proj: A={list(scar_A.shape)}, B={list(scar_B.shape)}")
 
         # Simula forward pass
+        # Entrada x tem dimensão intermediária 29568 para down_proj
         x = torch.randn(1, 16, 29568, dtype=torch.bfloat16)
         t_fwd = time.time()
-        # y = x @ W_base.T + (x @ B.T) @ A.T
+        # y_base: x @ W_base.T (W_base é [8192, 29568]) -> [1, 16, 8192]
         y_base = F.linear(x, w_base)
-        y_scar = F.linear(F.linear(x, scar_B), scar_A)
+        # y_scar: x @ diff.T onde diff = U @ S @ V.T = A @ B.T
+        # diff.T = B @ A.T -> x @ (B @ A.T) = (x @ B) @ A.T
+        # y_scar: x @ scar_A @ scar_B = [1, 16, 29568] @ [29568, 64] @ [64, 8192] -> [1, 16, 8192]
+        y_scar = (x @ scar_A) @ scar_B
         y = y_base + y_scar
         dt_fwd = time.time() - t_fwd
         print(f"  ✓ Forward pass completo (Seq 16, Dim 29568 -> 8192): {dt_fwd*1000:.2f} ms")
-        print(f"  ✓ Saída do Bloco MoS: mean={y.mean().item():.4f}, std={y.std().item():.4f}")
+        print(f"  ✓ Saída do Bloco MoS Real: mean={y.mean().item():.4f}, std={y.std().item():.4f}")
 
     print("\n" + "=" * 80)
     print("🏆 AUDITORIA CONCLUÍDA COM SUCESSO: O MODELO 70B MoS É 100% OPERACIONAL!")
