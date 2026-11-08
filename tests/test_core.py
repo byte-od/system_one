@@ -60,15 +60,17 @@ def test_batch_modulation_scope():
     g = torch.randn(1, 8)
     cache.record_scar(z, g, surprise=1.0)
 
-    batch_x = torch.randn(4, 8)
+    # Estados alinhados com o manifold de vitória (afinidade positiva)
+    batch_x = z.repeat(4, 1) + 0.05 * torch.randn(4, 8)
     # Batedor 0 tem escala 0.0 (exploração pura), Batedor 3 tem escala 1.0 (aproveitamento total)
     scales = torch.tensor([0.0, 0.3, 0.6, 1.0])
 
     with cache.batch_modulation_scope(scale_vec=scales):
-        guided, _, _ = cache.modulate(batch_x)
-        # Batedor 0 não deve ter nenhuma alteração
+        guided, _, affinity = cache.modulate(batch_x)
+        assert (affinity > 0).all()
+        # Batedor 0 não deve ter nenhuma alteração (escala 0.0)
         assert torch.allclose(guided[0], batch_x[0], atol=1e-6)
-        # Batedor 3 deve ter alteração significativa
+        # Batedor 3 deve ter alteração significativa (escala 1.0)
         assert not torch.allclose(guided[3], batch_x[3], atol=1e-4)
 
     # Fora do escopo, retorna à escala original
