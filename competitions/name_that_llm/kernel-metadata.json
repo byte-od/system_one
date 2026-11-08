@@ -9,11 +9,15 @@
   "enable_tpu": false,
   "enable_internet": false,
   "dataset_sources": [
+    "cosmorin/name-that-llm-0-622-reproduction-svc-cache",
+    "nishantdahal/ntl-handwriting-blend",
     "prvsiyan/prvsiyans-extended-name-that-llm-dataset"
   ],
   "competition_sources": [
     "name-that-llm"
   ],
-  "kernel_sources": [],
-  "model_sources": []
+  "model_sources": [
+    "qwen-lm/qwen-3/Transformers/14b-base/1",
+    "qwen-lm/qwen2.5/Transformers/14b/1"
+  ]
 }
