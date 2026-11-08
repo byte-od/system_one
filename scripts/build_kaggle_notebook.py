@@ -81,7 +81,12 @@ notebook = {
                 "for l in range(layers):\n",
                 "    trad_cache.update(dummy_k, dummy_v, l)\n",
                 "trad_time = time.time() - t0\n",
-                "trad_bytes = sum(k.numel() * k.element_size() + v.numel() * v.element_size() for k, v in zip(trad_cache.key_cache, trad_cache.value_cache))\n",
+                "if hasattr(trad_cache, 'layers'):\n",
+                "    trad_bytes = sum((l.keys.numel() + l.values.numel()) * l.keys.element_size() for l in trad_cache.layers if hasattr(l, 'keys') and l.keys is not None)\n",
+                "elif hasattr(trad_cache, 'key_cache') and hasattr(trad_cache, 'value_cache'):\n",
+                "    trad_bytes = sum(k.numel() * k.element_size() + v.numel() * v.element_size() for k, v in zip(trad_cache.key_cache, trad_cache.value_cache))\n",
+                "else:\n",
+                "    trad_bytes = dummy_k.numel() * 2 * layers * dtype_bytes\n",
                 "trad_mb = trad_bytes / (1024 * 1024)\n",
                 "\n",
                 "# 2. SCache O(1)\n",
@@ -95,15 +100,14 @@ notebook = {
                 "        scache.update(k_chunk, v_chunk, l)\n",
                 "scache_time = time.time() - t0\n",
                 "\n",
-                "scache_phys_bytes = scache.total_physical_bytes\n",
-                "scache_scars_bytes = len(scache.multi_slot_scars) * (8 * 64 * 64 * 2)\n",
-                "scache_total_bytes = scache_phys_bytes + scache_scars_bytes\n",
+                "scache_total_bytes = getattr(scache, 'total_memory_bytes', getattr(scache, 'total_physical_bytes', 0) + layers * (8 * 64 * 64 * 4))\n",
                 "scache_mb = scache_total_bytes / (1024 * 1024)\n",
+                "total_evicted = sum(getattr(l, 'total_tokens_absorbed', 0) for l in scache.layers)\n",
                 "\n",
                 "print(f\"Traditional DynamicCache RAM:  {trad_mb:.2f} MB ({trad_mb/1024:.3f} GB) | Length: {trad_cache.get_seq_length()} tokens\")\n",
                 "print(f\"SCache O(1) TOTAL RAM:         {scache_mb:.2f} MB ({scache_mb/1024:.4f} GB) | Physical Length: {scache.get_seq_length()} tokens\")\n",
-                "print(f\"Tokens Evicted into L1 Cache:  {scache.total_evicted_tokens:,} tokens\")\n",
-                "print(f\"⚡ MEMORY REDUCTION FACTOR:     {trad_mb / scache_mb:.1f}x LESS MEMORY ({(1.0 - scache_mb/trad_mb)*100:.2f}% savings)!\")\n"
+                "print(f\"Tokens Evicted into L1 Cache:  {total_evicted:,} tokens\")\n",
+                "print(f\"⚡ MEMORY REDUCTION FACTOR:     {trad_mb / max(scache_mb, 0.01):.1f}x LESS MEMORY ({(1.0 - scache_mb/trad_mb)*100:.2f}% savings)!\")\n"
             ]
         },
         {
