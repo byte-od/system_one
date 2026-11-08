@@ -53,14 +53,11 @@ class SCacheDynamicLayer(DynamicLayer):
             excess_v = self.values[..., self.num_sink_tokens : -slide_len, :]
             num_excess = excess_k.shape[-2]
 
-            # Comprime no MultiSlotSCache via Regra Delta em float32
+            # Comprime no MultiSlotSCache via Regra Delta Vetorizada em Bloco (1 único solver BLAS/GPU!)
             with torch.no_grad():
-                for b in range(excess_k.shape[0]):
-                    for h in range(excess_k.shape[1]):
-                        for t in range(num_excess):
-                            k_vec = excess_k[b, h, t].float()
-                            v_vec = excess_v[b, h, t].float()
-                            self.scache.write_key_value(k_vec, v_vec)
+                k_chunk = excess_k.reshape(-1, num_excess, excess_k.shape[-1]).float()
+                v_chunk = excess_v.reshape(-1, num_excess, excess_v.shape[-1]).float()
+                self.scache.write_chunk_key_value(k_chunk, v_chunk)
 
             self.total_tokens_absorbed += num_excess
 

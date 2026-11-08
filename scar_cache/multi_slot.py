@@ -17,6 +17,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from scar_cache.projections import (
+    chunked_delta_rule_update,
     delta_rule_update,
     hebbian_outer_product,
     project_conflicting_gradients_per_slot,
@@ -335,6 +336,54 @@ class MultiSlotSCache(nn.Module):
                 self.W_scar.add_(dW)
                 self.scars_count.add_(1)
                 self.z_target.copy_(norm_k)
+                return err
+
+    def write_chunk_key_value(
+        self,
+        keys: torch.Tensor,
+        values: torch.Tensor,
+        slot_index: Optional[int] = None,
+        decay: Optional[float] = None,
+        learning_rate: float = 1.0,
+    ) -> torch.Tensor:
+        """Atualização vetorizada em bloco de pares Chave-Valor via Chunked Delta Rule.
+
+        Elimina 100% de laços for sequenciais token a token, executando a atualização do bloco
+        em um único solver triangular batched acelerado em GPU/BLAS.
+
+        Args:
+            keys: Chaves de consulta do bloco [..., num_tokens, slot_dim].
+            values: Valores alvo do bloco [..., num_tokens, slot_dim].
+            slot_index: Slot específico para gravação (ou None para slots broadcast).
+            decay: Fator de decaimento temporal por passo.
+            learning_rate: Taxa de aprendizado da Regra Delta (padrão: 1.0).
+
+        Returns:
+            Erros residuais do bloco [..., num_tokens, slot_dim].
+        """
+        with torch.no_grad():
+            T = keys.shape[-2]
+            D = keys.shape[-1]
+            if slot_index is not None:
+                k = int(slot_index)
+                dec = float(self.decay_rates[k].item()) if decay is None else float(decay)
+                W_slot = self.W_scar[k]
+                W_new, err = chunked_delta_rule_update(
+                    W_slot, keys, values, decay=dec, learning_rate=learning_rate
+                )
+                self.W_scar[k].copy_(W_new)
+                self.scars_count[k].add_(T)
+                return err
+            else:
+                dec = float(self.decay_rates[0].item()) if decay is None else float(decay)
+                # Para entradas batched [B_eff, T, D], calcula a média representativa ou atualiza slot 0
+                k_repr = keys.reshape(-1, T, D).mean(dim=0)
+                v_repr = values.reshape(-1, T, D).mean(dim=0)
+                W_new, err = chunked_delta_rule_update(
+                    self.W_scar[0], k_repr, v_repr, decay=dec, learning_rate=learning_rate
+                )
+                self.W_scar[0].copy_(W_new)
+                self.scars_count[0].add_(T)
                 return err
 
     def read(self, q: torch.Tensor) -> torch.Tensor:

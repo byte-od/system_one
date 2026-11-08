@@ -5,13 +5,19 @@
   "language": "python",
   "kernel_type": "notebook",
   "is_private": false,
-  "enable_gpu": false,
+  "enable_gpu": true,
   "enable_tpu": false,
   "enable_internet": false,
-  "dataset_sources": [],
+  "keywords": [
+    "gpu"
+  ],
+  "dataset_sources": [
+    "prvsiyan/prvsiyans-extended-name-that-llm-dataset"
+  ],
+  "kernel_sources": [],
   "competition_sources": [
     "name-that-llm"
   ],
-  "kernel_sources": [],
-  "model_sources": []
+  "model_sources": [],
+  "machine_shape": "NvidiaTeslaT4"
 }

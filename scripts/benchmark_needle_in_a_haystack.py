@@ -185,18 +185,23 @@ def evaluate_scache_gated(
         scores = torch.matmul(evicted_keys, scache.slot_queries.t())
         slot_assignments = torch.argmax(scores, dim=-1)
         
-        for t in range(len(evicted_keys)):
-            k_t = evicted_keys[t]
-            v_t = evicted_vals[t]
-            s_val = evicted_surp[t].item()
-            s_k = slot_assignments[t].item()
+        # Despejo com Gating de Surpresa em Bloco (100% vetorizado):
+        # 1. Agulhas/Tokens inéditos com surpresa > 0.5 gravam cicatrizes exatas via Chunked Delta Rule
+        # 2. Tokens comuns/redundantes sofrem decaimento temporal suave
+        for s in range(num_slots):
+            slot_mask = (slot_assignments == s)
+            if not slot_mask.any():
+                continue
+            surp_slot = evicted_surp[slot_mask]
+            high_surp_mask = surp_slot > 0.5
             
-            if s_val > 0.5:
-                # Fato inédito / Agulha: grava cicatriz via Regra Delta exata
-                scache.write_key_value(k_t, v_t, slot_index=s_k, learning_rate=1.0)
+            if high_surp_mask.any():
+                k_slot = evicted_keys[slot_mask][high_surp_mask]
+                v_slot = evicted_vals[slot_mask][high_surp_mask]
+                scache.write_chunk_key_value(k_slot, v_slot, slot_index=s, learning_rate=1.0)
             else:
-                # Token comum / redundante: decaimento temporal suave
-                scache.W_scar[s_k].mul_(0.99995)
+                count_common = int(slot_mask.sum().item())
+                scache.W_scar[s].mul_(0.99995 ** count_common)
 
     mem_bytes = cached_keys.numel() * 4 + cached_values.numel() * 4 + scache.memory_bytes
     
@@ -259,11 +264,15 @@ def evaluate_scache_continuous(
         scores = torch.matmul(evicted_keys, scache.slot_queries.t())
         slot_assignments = torch.argmax(scores, dim=-1)
         
-        for t in range(len(evicted_keys)):
-            k_t = evicted_keys[t]
-            v_t = evicted_vals[t]
-            s_k = slot_assignments[t].item()
-            scache.write_key_value(k_t, v_t, slot_index=s_k, learning_rate=learning_rate)
+        # Despejo contínuo vetorizado em bloco (sem laço Python token a token)
+        for s in range(num_slots):
+            slot_mask = (slot_assignments == s)
+            if slot_mask.any():
+                k_slot = evicted_keys[slot_mask]
+                v_slot = evicted_vals[slot_mask]
+                scache.write_chunk_key_value(
+                    k_slot, v_slot, slot_index=s, learning_rate=learning_rate
+                )
 
     mem_bytes = cached_keys.numel() * 4 + cached_values.numel() * 4 + scache.memory_bytes
     
@@ -312,9 +321,16 @@ def evaluate_multi_needle_capacity(
             needles_k.append(k)
             needles_v.append(v)
             
-            scores = torch.matmul(k, scache.slot_queries.t())
-            s_k = int(torch.argmax(scores).item())
-            scache.write_key_value(k, v, slot_index=s_k, learning_rate=1.0)
+        needles_k_tensor = torch.stack(needles_k)
+        needles_v_tensor = torch.stack(needles_v)
+        scores = torch.matmul(needles_k_tensor, scache.slot_queries.t())
+        slot_assignments = torch.argmax(scores, dim=-1)
+        for s in range(num_slots):
+            mask = (slot_assignments == s)
+            if mask.any():
+                scache.write_chunk_key_value(
+                    needles_k_tensor[mask], needles_v_tensor[mask], slot_index=s, learning_rate=1.0
+                )
             
         success_count = 0
         sims = []
