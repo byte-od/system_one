@@ -7,6 +7,7 @@
 [![KV Cache Reduction](https://img.shields.io/badge/KV%20Cache%20Reduction-187.5x-success.svg)]()
 [![Static Weights Reduction](https://img.shields.io/badge/Static%20Weights%20Reduction-90x-success.svg)]()
 [![Tests Passing](https://img.shields.io/badge/Tests-26%2F26%20Passing-brightgreen.svg)]()
+[![Kaggle](https://kaggle.com/static/images/open-in-kaggle.svg)](https://www.kaggle.com/code/thetod/mixture-of-scars-benchmark)
 
 > **"Breaking the barrier between LLMs and hardware."**  
 > Modern Large Language Models have been crippled by a Dual Memory Wall: static weight bloat ($O(N)$) and linear context explosion ($O(L)$).  
@@ -96,12 +97,12 @@ cd mixture-of-scars
 pip install -e .
 ```
 
-### ⚡ Run Online in 1 Click (Kaggle & Colab)
+### ⚡ Run Online in 1 Click (Kaggle Official)
 
-Run the full interactive benchmark on **Kaggle's free GPU/CPU environment** without local setup:
+Run the full interactive benchmark on **Kaggle's free GPU/CPU environment** without installing anything locally:
 
-* **Official Kaggle Notebook:** [`notebooks/mixture_of_scars_official_benchmark.ipynb`](notebooks/mixture_of_scars_official_benchmark.ipynb)
-* **How to run on Kaggle:** Go to [kaggle.com/code](https://www.kaggle.com/code) $\rightarrow$ Click **New Notebook** $\rightarrow$ **File** $\rightarrow$ **Upload Notebook** $\rightarrow$ Select `mixture_of_scars_official_benchmark.ipynb`.
+👉 **Live Interactive Kaggle Notebook:** [**thetod/mixture-of-scars-benchmark**](https://www.kaggle.com/code/thetod/mixture-of-scars-benchmark)  
+* **Source Notebook File:** [`notebooks/mixture_of_scars_official_benchmark.ipynb`](notebooks/mixture_of_scars_official_benchmark.ipynb)
 
 ### 1. Drop-in HuggingFace KV-Cache Replacement (1 Line of Code)
 
