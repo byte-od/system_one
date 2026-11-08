@@ -1,0 +1,15 @@
+{
+  "id": "thetod/qwen-72b-to-mixture-of-scars-mos-converter",
+  "title": "Qwen 72B to Mixture of Scars MoS Converter",
+  "code_file": "qwen_72b_mos_converter.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}
