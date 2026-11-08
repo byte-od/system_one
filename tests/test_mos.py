@@ -33,7 +33,7 @@ def test_mixture_of_scars_linear_forward():
 
     # Teste com tensor 2D [Batch, Dim]
     x_2d = torch.randn(8, 128)
-    out_2d, routing, topk = mos(x_2d)
+    out_2d, routing, topk = mos(x_2d, return_routing=True)
 
     assert out_2d.shape == (8, 64)
     assert routing.shape == (8, 2)
@@ -41,9 +41,14 @@ def test_mixture_of_scars_linear_forward():
     # Softmax sobre top-k deve somar aproximadamente 1.0
     assert torch.allclose(routing.sum(dim=-1), torch.ones(8), atol=1e-5)
 
+    # Teste como drop-in padrão (return_routing=False)
+    single_out = mos(x_2d)
+    assert isinstance(single_out, torch.Tensor)
+    assert single_out.shape == (8, 64)
+
     # Teste com tensor 3D [Batch, SeqLen, Dim]
     x_3d = torch.randn(4, 16, 128)
-    out_3d, routing_3d, topk_3d = mos(x_3d)
+    out_3d, routing_3d, topk_3d = mos(x_3d, return_routing=True)
 
     assert out_3d.shape == (4, 16, 64)
     assert routing_3d.shape == (4, 16, 2)
@@ -89,8 +94,8 @@ def test_mixture_of_scars_shared_base_memory_reduction():
     with torch.no_grad():
         mos_layers[0].experts[0].B.fill_(0.5)
 
-    out0, _, _ = mos_layers[0](x)
-    out1, _, _ = mos_layers[1](x)
+    out0 = mos_layers[0](x)
+    out1 = mos_layers[1](x)
     # Como as camadas têm especialistas distintos, as saídas devem divergir
     assert not torch.allclose(out0, out1)
 
@@ -99,7 +104,7 @@ def test_mixture_of_scars_autograd():
     """Verifica que o gradiente retropropaga corretamente para a base e para os especialistas."""
     mos = MixtureOfScarsLinear(in_features=32, out_features=16, num_experts=4, top_k=2, rank=4)
     x = torch.randn(4, 32, requires_grad=True)
-    out, _, _ = mos(x)
+    out = mos(x)
     loss = out.sum()
     loss.backward()
 

@@ -138,11 +138,15 @@ class MixtureOfScarsLinear(nn.Module):
         if shared_base is not None:
             self.base = shared_base
             self._shares_base = True
+            dtype = shared_base.weight.dtype
+            device = shared_base.weight.device
         else:
             self.base = nn.Linear(
                 in_features, out_features, bias=bias, device=device, dtype=dtype
             )
             self._shares_base = False
+            dtype = self.base.weight.dtype
+            device = self.base.weight.device
 
         # 2. Roteador de Especialistas (Linear Router: in_features -> num_experts)
         self.router = nn.Linear(
@@ -188,41 +192,48 @@ class MixtureOfScarsLinear(nn.Module):
         return self.base_bytes + self.scars_bytes
 
     def forward(
-        self, x: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, x: torch.Tensor, return_routing: bool = False
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         """Forward pass com MoS (Mixture of Scars).
 
-        Returns:
-            (output, routing_weights, topk_indices):
-                output: Tensor de saída [..., out_features].
-                routing_weights: Afinidades softmax dos top-k especialistas.
-                topk_indices: Índices dos especialistas ativados neste passo.
+        Args:
+            x: Tensor de entrada [..., in_features].
+            return_routing: Se True, retorna também routing_weights e topk_indices.
+                            Se False (padrão drop-in para nn.Linear), retorna apenas o tensor de saída.
         """
+        orig_dtype = x.dtype
+        # Converte x para o dtype dos parâmetros se necessário
+        target_dtype = self.router.weight.dtype
+        if x.dtype != target_dtype:
+            x_in = x.to(target_dtype)
+        else:
+            x_in = x
+
         # 1. Projeção Base Universal
-        h_base = self.base(x)
+        h_base = self.base(x_in)
 
         # 2. Roteamento Competitivo: logits = x @ W_router^T / sqrt(D)
-        router_logits = self.router(x) / math.sqrt(self.in_features)
+        router_logits = self.router(x_in) / math.sqrt(self.in_features)
 
         # 3. Seleção Top-K
         topk_logits, topk_indices = torch.topk(router_logits, k=self.top_k, dim=-1)
         routing_weights = F.softmax(topk_logits, dim=-1)  # [..., top_k]
 
         # 4. Injeção dos Especialistas em Cicatriz (apenas os Top-K são computados)
-        # delta_total = sum_k (alpha_k * ScarExpert_k(x))
         delta_total = torch.zeros_like(h_base)
 
-        # Processamento vetorizado ou por especialista ativo
         for k_idx in range(self.top_k):
             weight_k = routing_weights[..., k_idx].unsqueeze(-1)  # [..., 1]
             idx_k = topk_indices[..., k_idx]
 
-            # Computa a contribuição de cada especialista ativo
             for expert_id, expert in enumerate(self.experts):
                 mask = (idx_k == expert_id).unsqueeze(-1)  # [..., 1]
                 if mask.any():
-                    expert_out = expert(x)
+                    expert_out = expert(x_in)
                     delta_total = delta_total + mask * (weight_k * expert_out)
 
-        out = h_base + delta_total
-        return out, routing_weights, topk_indices
+        out = (h_base + delta_total).to(orig_dtype)
+
+        if return_routing:
+            return out, routing_weights, topk_indices
+        return out

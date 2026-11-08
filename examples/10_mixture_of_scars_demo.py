@@ -89,7 +89,7 @@ def main():
         mos_layers[0].experts[i].calibrate_direction(domain_vectors[i])
 
     layer0 = mos_layers[0]
-    out, routing_weights, topk_indices = layer0(domain_vectors)
+    out, routing_weights, topk_indices = layer0(domain_vectors, return_routing=True)
 
     print(f"Roteamento observado na Camada 0:")
     for i, domain in enumerate(domains):
