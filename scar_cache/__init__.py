@@ -5,6 +5,7 @@ imunidade de gating por manifold, projeção de conflito ortogonal (PCGrad)
 e arquitetura tensorial Multi-Slot com Regra Delta para substituição do KV Cache.
 """
 
+from scar_cache.attention import SlotScarAttention
 from scar_cache.core import GradientScarMemory, SCache
 from scar_cache.modules import ScarGatedLayer, ScarLinear, SlotScarLinear
 from scar_cache.multi_slot import MultiSlotSCache
@@ -21,6 +22,7 @@ __all__ = [
     "SCache",
     "GradientScarMemory",
     "MultiSlotSCache",
+    "SlotScarAttention",
     "ScarLinear",
     "ScarGatedLayer",
     "SlotScarLinear",
