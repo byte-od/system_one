@@ -1,6 +1,7 @@
 {
   "title": "Qwen 2.5 72B Mixture of Scars (MoS) Compressed",
   "id": "thetod/qwen25-72b-mos",
+  "isPrivate": true,
   "licenses": [
     {
       "name": "apache-2.0"

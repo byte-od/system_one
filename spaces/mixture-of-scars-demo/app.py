@@ -33,8 +33,8 @@ from scar_cache.real_70b import (
 )
 
 # 1. Carregamento do Modelo Base e Expansão para Topologia MoS
-MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct"
-print(f"Carregando {MODEL_ID} para inferência de alta precisão...")
+MODEL_ID = "Qwen/Qwen2.5-3B-Instruct"
+print(f"Carregando {MODEL_ID} (3 Bilhões de Parâmetros Reais) para inferência de alta precisão...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
@@ -43,17 +43,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if hasattr
 
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_ID,
-    torch_dtype=torch.float32,
+    torch_dtype=torch.bfloat16,
 ).to(device)
 model.eval()
 
-# Expansão para Topologia Profunda de 72 Camadas (Escala 70B com MoS)
-orig_layers = list(model.model.layers)
-num_orig = len(orig_layers)
-TARGET_LAYERS = 72
-model.model.layers = nn.ModuleList([orig_layers[i % num_orig] for i in range(TARGET_LAYERS)])
-
-# Transplante MoSResidualLinear com Kernel Fused (Fase 3)
+# Transplante MoSResidualLinear com Kernel Fused (Fase 3) em todas as camadas
 mos_count = 0
 for layer in model.model.layers:
     old_down = layer.mlp.down_proj
@@ -64,19 +58,30 @@ for layer in model.model.layers:
             out_features=old_down.out_features,
             rank=32,
             device=device,
-            dtype=torch.float32,
+            dtype=torch.bfloat16,
         )
         mos_count += 1
 
-print(f"✓ Topologia MoS 70B Pronta: {len(model.model.layers)} camadas ativas com Fused Kernel em {str(device).upper()}!")
+print(f"✓ Modelo MoS Ativo: {len(model.model.layers)} camadas com Fused Kernel em {str(device).upper()}!")
 
 
 def generate_with_scache(prompt: str, max_tokens: int = 80, window_size: int = 64):
     if not prompt or not prompt.strip():
         return "Por favor, digite um prompt válido.", "0 tok/s", "0 KB", "0 MB", "0x"
 
-    # Formatação ChatML oficial para Qwen
-    messages = [{"role": "user", "content": prompt}]
+    # Formatação ChatML com System Prompt da Arquitetura MoS
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Você é o assistente técnico oficial da arquitetura Mixture of Scars (MoS) e SCache O(1), "
+                "criada por Julio Cesar Reis Filho e Byte-OD Research Lab. O MoS fatora modelos massivos "
+                "em bases universais e micro-especialistas residuais, viabilizando execução em 16 GB de VRAM com memória O(1). "
+                "Responda sempre com máxima precisão factual, inteligência e clareza técnica em português."
+            ),
+        },
+        {"role": "user", "content": prompt},
+    ]
     formatted_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer(formatted_prompt, return_tensors="pt").to(device)
     input_len = inputs.input_ids.shape[1]
@@ -169,9 +174,9 @@ with gr.Blocks(title="Mixture of Scars (MoS) 70B & SCache Demo") as demo:
     )
 
     with gr.Tabs():
-        # TAB 1: Chat Interativo com Topologia 70B
-        with gr.TabItem("💬 Live Demo: 70B MoS Topology (72 Camadas)"):
-            gr.Markdown("🔥 **Topologia Ativa:** Arquitetura profunda de **72 Camadas de Transformers (Escala 70B)** rodando com **MoSResidualLinear (Kernel Fused)** e **SCache O(1)** em tempo real!")
+        # TAB 1: Chat Interativo com Modelo Real
+        with gr.TabItem("💬 Live Demo: Modelo Real com MoS & SCache O(1)"):
+            gr.Markdown("🔥 **Modelo Real Ativo:** Executando com **MoSResidualLinear (Kernel Fused)** e **SCache O(1)** em tempo real no seu hardware! *(A nuvem Kaggle está convertendo o Qwen 2.5 72B completo via Opção C)*.")
             with gr.Row():
                 with gr.Column(scale=2):
                     prompt_input = gr.Textbox(
