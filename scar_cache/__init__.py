@@ -7,6 +7,7 @@ e arquitetura tensorial Multi-Slot com Regra Delta para substituição do KV Cac
 
 from scar_cache.attention import SlotScarAttention
 from scar_cache.core import GradientScarMemory, SCache
+from scar_cache.hf_cache import SCacheDynamicCache, SCacheDynamicLayer
 from scar_cache.modules import ScarGatedLayer, ScarLinear, SlotScarLinear
 from scar_cache.multi_slot import MultiSlotSCache
 from scar_cache.projections import (
@@ -16,13 +17,15 @@ from scar_cache.projections import (
     project_conflicting_gradients_per_slot,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "SCache",
     "GradientScarMemory",
     "MultiSlotSCache",
     "SlotScarAttention",
+    "SCacheDynamicCache",
+    "SCacheDynamicLayer",
     "ScarLinear",
     "ScarGatedLayer",
     "SlotScarLinear",
