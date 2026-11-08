@@ -111,12 +111,9 @@ def build_70b_mos_model(
     orig_layers = list(model.model.layers)
     num_orig = len(orig_layers)
 
-    print(f"🧬 Expandindo arquitetura para {target_layers} camadas com Mixture of Scars (MoS)...")
-    # Compartilha a base física densa em 72 camadas profundas
-    model.model.layers = nn.ModuleList([orig_layers[i % num_orig] for i in range(target_layers)])
-
-    # Equipa cada camada com micro-especialistas MoS de baixo rank
-    for layer in model.model.layers:
+    print(f"🧬 Equipando camadas com Mixture of Scars (MoS) e expandindo para {target_layers} camadas...")
+    # 1. Equipa as camadas originais com especialistas de cicatriz MoS
+    for layer in orig_layers:
         old_down = layer.mlp.down_proj
         if not isinstance(old_down, MixtureOfScarsLinear):
             layer.mlp.down_proj = MixtureOfScarsLinear(
@@ -127,6 +124,9 @@ def build_70b_mos_model(
                 shared_base=old_down,
             ).to(device)
 
+    # 2. Expande para 72 camadas profundas compartilhando a base física
+    model.model.layers = nn.ModuleList([orig_layers[i % num_orig] for i in range(target_layers)])
+
     return model, tokenizer
 
 
@@ -135,10 +135,10 @@ def extract_70b_mos_representations(
     tokenizer: Any,
     texts: List[str],
     device: str = "cpu",
-    batch_size: int = 4,
+    batch_size: int = 8,
     max_length: int = 256,
 ) -> np.ndarray:
-    """Extrai representações semânticas profundas através das 72 camadas MoS + SCache O(1)."""
+    """Extrai representações semânticas profundas através das 72 camadas MoS."""
     embeddings = []
     
     for i in range(0, len(texts), batch_size):
@@ -151,17 +151,13 @@ def extract_70b_mos_representations(
             return_tensors="pt",
         ).to(device)
 
-        # Utiliza o SCache para garantir complexidade de memória O(1)
-        cache = SCacheDynamicCache(window_size=64, num_sink_tokens=4)
-
         with torch.no_grad():
             outputs = model(
                 **inputs,
-                past_key_values=cache,
                 output_hidden_states=True,
-                use_cache=True,
+                use_cache=False,
             )
-            # Pool da última camada oculta (camada 72 MoS)
+            # Pool da camada 72 MoS
             last_hidden = outputs.hidden_states[-1]  # [B, T, D]
             mask = inputs.attention_mask.unsqueeze(-1)  # [B, T, 1]
             pooled = (last_hidden * mask).sum(dim=1) / (mask.sum(dim=1) + 1e-6)
