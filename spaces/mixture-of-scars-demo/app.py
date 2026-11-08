@@ -19,32 +19,27 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from scar_cache import SCacheDynamicCache
 from scar_cache.mos import MixtureOfScarsLinear
 
-# Lazy load lightweight model for free Hugging Face Spaces
+# Pre-load lightweight model for instant response
 MODEL_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
-tokenizer = None
-model = None
+print(f"Pre-loading {MODEL_ID} for zero-latency inference...")
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
 
-
-def load_model_if_needed():
-    global tokenizer, model
-    if model is None:
-        print(f"Loading {MODEL_ID}...")
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-        model = AutoModelForCausalLM.from_pretrained(
-            MODEL_ID,
-            torch_dtype=torch.float32,
-            device_map="cpu",
-        )
-        model.eval()
-        print("✓ Model loaded successfully!")
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model = AutoModelForCausalLM.from_pretrained(
+    MODEL_ID,
+    dtype=torch.float32,
+).to(device)
+model.eval()
+print(f"✓ Model loaded successfully on {device.upper()}!")
 
 
 def generate_with_scache(prompt: str, max_tokens: int = 100, window_size: int = 64):
-    load_model_if_needed()
     if not prompt or not prompt.strip():
         return "Por favor, digite um prompt válido.", "0 tok/s", "0 KB", "0 MB", "0x"
 
-    inputs = tokenizer(prompt, return_tensors="pt")
+    inputs = tokenizer(prompt, return_tensors="pt").to(device)
     input_len = inputs.input_ids.shape[1]
 
     # Instancia o SCache O(1)
@@ -218,4 +213,4 @@ with gr.Blocks(theme=custom_theme, title="Mixture of Scars (MoS) & SCache Demo")
             )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(server_name="0.0.0.0", server_port=7860, share=True)
