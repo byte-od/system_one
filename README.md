@@ -96,6 +96,13 @@ cd mixture-of-scars
 pip install -e .
 ```
 
+### ⚡ Run Online in 1 Click (Kaggle & Colab)
+
+Run the full interactive benchmark on **Kaggle's free GPU/CPU environment** without local setup:
+
+* **Official Kaggle Notebook:** [`notebooks/mixture_of_scars_official_benchmark.ipynb`](notebooks/mixture_of_scars_official_benchmark.ipynb)
+* **How to run on Kaggle:** Go to [kaggle.com/code](https://www.kaggle.com/code) $\rightarrow$ Click **New Notebook** $\rightarrow$ **File** $\rightarrow$ **Upload Notebook** $\rightarrow$ Select `mixture_of_scars_official_benchmark.ipynb`.
+
 ### 1. Drop-in HuggingFace KV-Cache Replacement (1 Line of Code)
 
 Use `SCacheDynamicCache` with any HuggingFace model (Llama 3, Qwen 2.5, SmolLM2, Mistral). Memory remains permanently capped at $O(1)$:
