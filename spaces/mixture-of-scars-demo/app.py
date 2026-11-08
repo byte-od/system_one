@@ -81,8 +81,8 @@ def generate_with_scache(prompt: str, max_tokens: int = 80, window_size: int = 6
     inputs = tokenizer(formatted_prompt, return_tensors="pt").to(device)
     input_len = inputs.input_ids.shape[1]
 
-    # Instancia o SCache O(1)
-    cache = SCacheDynamicCache(window_size=int(window_size), num_sink_tokens=4)
+    # Instancia o SCache O(1) garantindo sequencia limpa (project_slots=False)
+    cache = SCacheDynamicCache(window_size=int(window_size), num_sink_tokens=4, project_slots=False)
 
     t0 = time.time()
     with torch.no_grad():
@@ -93,12 +93,14 @@ def generate_with_scache(prompt: str, max_tokens: int = 80, window_size: int = 6
             do_sample=True,
             temperature=0.7,
             top_p=0.9,
+            repetition_penalty=1.1,
         )
     dt = max(time.time() - t0, 0.001)
 
     generated_tokens = outputs.shape[1] - input_len
     speed_tok_s = generated_tokens / dt
     output_text = tokenizer.decode(outputs[0][input_len:], skip_special_tokens=True).strip()
+    print(f"[Gradio Gen] Tokens: {generated_tokens} | Tempo: {dt:.2f}s | Output: {output_text[:60]}...")
 
     # Métricas de Memória Física
     total_tokens = outputs.shape[1]

@@ -364,7 +364,10 @@ class MultiSlotSCache(nn.Module):
         with torch.no_grad():
             T = keys.shape[-2]
             D = keys.shape[-1]
-            if slot_index is not None:
+            if self.num_slots == 0 or len(self.W_scar) == 0:
+                return 0.0
+
+            if slot_index is not None and slot_index < self.num_slots:
                 k = int(slot_index)
                 dec = float(self.decay_rates[k].item()) if decay is None else float(decay)
                 W_slot = self.W_scar[k]
@@ -375,7 +378,7 @@ class MultiSlotSCache(nn.Module):
                 self.scars_count[k].add_(T)
                 return err
             else:
-                dec = float(self.decay_rates[0].item()) if decay is None else float(decay)
+                dec = float(self.decay_rates[0].item()) if (decay is None and len(self.decay_rates) > 0) else (float(decay) if decay is not None else 0.999)
                 # Para entradas batched [B_eff, T, D], calcula a média representativa ou atualiza slot 0
                 k_repr = keys.reshape(-1, T, D).mean(dim=0)
                 v_repr = values.reshape(-1, T, D).mean(dim=0)

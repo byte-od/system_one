@@ -22,11 +22,18 @@ class SCacheDynamicLayer(DynamicLayer):
       3. MultiSlotSCache (todos os tokens intermediários desalojados são comprimidos via Regra Delta)
     """
 
-    def __init__(self, window_size: int = 64, num_slots: int = 8, num_sink_tokens: int = 4):
+    def __init__(
+        self,
+        window_size: int = 64,
+        num_slots: int = 8,
+        num_sink_tokens: int = 4,
+        project_slots: bool = False,
+    ):
         super().__init__()
         self.window_size = int(window_size)
         self.num_slots = int(num_slots)
         self.num_sink_tokens = min(int(num_sink_tokens), self.window_size // 2) if num_sink_tokens > 0 else 0
+        self.project_slots = bool(project_slots)
         self.scache: Optional[MultiSlotSCache] = None
         self.total_tokens_absorbed: int = 0
 
@@ -73,8 +80,8 @@ class SCacheDynamicLayer(DynamicLayer):
                 self.keys = self.keys[..., -self.window_size :, :]
                 self.values = self.values[..., -self.window_size :, :]
 
-        # Se houver slots associativos ativos e tokens absorvidos, projeta tokens de memória virtual
-        if self.num_slots > 0 and self.total_tokens_absorbed > 0 and self.scache is not None:
+        # Se projeção explícita de slots estiver habilitada (ex: benchmarks de recuperação associativa)
+        if self.project_slots and self.num_slots > 0 and self.total_tokens_absorbed > 0 and self.scache is not None:
             B, H = self.keys.shape[0], self.keys.shape[1]
             k_slots = self.scache.slot_queries.unsqueeze(0).unsqueeze(0).expand(B, H, -1, -1).to(self.keys.dtype)
             v_slots = torch.matmul(self.scache.W_scar, self.scache.slot_queries.unsqueeze(-1)).squeeze(-1)
@@ -115,15 +122,23 @@ class SCacheDynamicCache(DynamicCache):
         >>> out = model.generate(**inputs, past_key_values=cache)
     """
 
-    def __init__(self, window_size: int = 64, num_slots: int = 8, num_sink_tokens: int = 4):
+    def __init__(
+        self,
+        window_size: int = 64,
+        num_slots: int = 8,
+        num_sink_tokens: int = 4,
+        project_slots: bool = False,
+    ):
         super().__init__()
         self.window_size = int(window_size)
         self.num_slots = int(num_slots)
         self.num_sink_tokens = int(num_sink_tokens)
+        self.project_slots = bool(project_slots)
         self.layer_class_to_replicate = lambda: SCacheDynamicLayer(
             window_size=self.window_size,
             num_slots=self.num_slots,
             num_sink_tokens=self.num_sink_tokens,
+            project_slots=self.project_slots,
         )
 
     @property
