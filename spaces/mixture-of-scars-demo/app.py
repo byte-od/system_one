@@ -19,9 +19,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from scar_cache import SCacheDynamicCache
 from scar_cache.mos import MixtureOfScarsLinear
 
-# Pre-load lightweight model for instant response
-MODEL_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
-print(f"Pre-loading {MODEL_ID} for zero-latency inference...")
+# Native Multilingual Model (Portuguese, English, Spanish) with SCache O(1)
+MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct"
+print(f"Pre-loading {MODEL_ID} for fluent multilingual inference...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
@@ -32,14 +32,17 @@ model = AutoModelForCausalLM.from_pretrained(
     dtype=torch.float32,
 ).to(device)
 model.eval()
-print(f"✓ Model loaded successfully on {device.upper()}!")
+print(f"✓ Multilingual Model loaded successfully on {device.upper()}!")
 
 
 def generate_with_scache(prompt: str, max_tokens: int = 100, window_size: int = 64):
     if not prompt or not prompt.strip():
         return "Por favor, digite um prompt válido.", "0 tok/s", "0 KB", "0 MB", "0x"
 
-    inputs = tokenizer(prompt, return_tensors="pt").to(device)
+    # Formatação ChatML oficial para Qwen
+    messages = [{"role": "user", "content": prompt}]
+    formatted_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    inputs = tokenizer(formatted_prompt, return_tensors="pt").to(device)
     input_len = inputs.input_ids.shape[1]
 
     # Instancia o SCache O(1)
