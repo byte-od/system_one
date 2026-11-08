@@ -108,9 +108,9 @@ class SlotScarAttention(nn.Module):
 
             # Escrita atômica com Regra Delta (sem alocar novos tensores na memória!)
             if update_state:
-                # Usa a média do batch para atualizar a memória associativa
-                mean_k = k_h.mean(dim=0)
-                mean_v = v_h.mean(dim=0)
+                # Usa a média do batch desconectada do grafo para atualizar a memória associativa
+                mean_k = k_h.mean(dim=0).detach()
+                mean_v = v_h.mean(dim=0).detach()
                 cache_h.write_key_value(mean_k, mean_v)
 
         concat_out = torch.cat(head_outputs, dim=-1)  # [B, d_model]

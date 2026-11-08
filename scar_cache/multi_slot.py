@@ -187,12 +187,15 @@ class MultiSlotSCache(nn.Module):
         # Projeção tensorial paralela em batch: slots @ W_scar^T
         # slots: [B, K, D], W_scar: [K, D, D] -> deltas: [B, K, D]
         # Para cada slot k: delta[:, k, :] = slots[:, k, :] @ W_scar[k, :, :].t()
-        deltas = torch.einsum("bki,kij->bkj", slots, self.W_scar)
+        # clone() em W_scar e z_target desacopla mutações in-place do grafo autograd
+        w_eff = self.W_scar.clone()
+        z_eff = self.z_target.clone()
+        deltas = torch.einsum("bki,kij->bkj", slots, w_eff)
 
         # Gating de Manifold Imunológico por Slot:
         # affinity_k = cos(slots_k, z_target_k)
         norm_s = slots / (torch.norm(slots, dim=-1, keepdim=True) + 1e-6)
-        norm_z = self.z_target / (torch.norm(self.z_target, dim=-1, keepdim=True) + 1e-6)
+        norm_z = z_eff / (torch.norm(z_eff, dim=-1, keepdim=True) + 1e-6)
         # affinities: [B, K]
         affinities = torch.einsum("bki,ki->bk", norm_s, norm_z)
 
