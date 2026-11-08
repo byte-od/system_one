@@ -1,0 +1,7 @@
+torch>=2.1.0
+transformers>=4.40.0
+accelerate>=0.28.0
+gradio>=4.40.0
+matplotlib>=3.8.0
+numpy>=1.24.0
+git+https://github.com/byte-od/mixture-of-scars.git
