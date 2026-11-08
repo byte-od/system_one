@@ -604,6 +604,70 @@ def test_hud_server_telemetry_curriculum_spike_sanitization():
     assert snap_after_dip["curriculum_depth_best_success_rate"] == 0.42
 
 
+def test_hud_external_telemetry_real_technical_cards(tmp_path):
+    """Garante que os 6 cards de status recebem dados técnicos 100% reais e sem extrapolação sintética."""
+    import math
+    import os
+    from system1_engine.hud.server import HUDServer
+
+    log_file = tmp_path / "warmup_real_test.log"
+    log_file.write_text(
+        "================================================================================\n"
+        "🔥 INICIANDO TREINO WARM-UP DE 15 MILHÕES DE PASSOS (D10+ | 24 BATEDORES EM LOTE)\n"
+        "   Checkpoint Base: Manual_1 (Nível Inicial: D10 | Cicatrizes Herdadas: 936,612)\n"
+        "   Arquitetura: Universal S1 Agent (Linear Attention + LRU Residual Trunk)\n"
+        "   Memória: Híbrido v2 Puríssimo (pure_scars=True, scale=0.15, beta=0.20, 4.25 KB O(1))\n"
+        "   Batedores 3-Step em Lote: 24/128 envs (D6+, conf<0.85, excluídos da aprovação curricular)\n"
+        "   Passos Alvo: 15,000,000 (Acumulado Alvo: 106,500,160) | Ambientes: 128\n"
+        "================================================================================\n"
+        "🏃 [Maratona 2,457,600/15,000,000 (16.4%)] Depth: D10 | Scars: 958,878 | FPS: 1510 | ETA: 2.31h | ||W||: 1.23 | ||z||: 4.08 | ||g||: 6.07\n"
+        "[Step 2465792/15000000] Mean Return (last 20 ep): 4.54 | Calibração: 1.00 | Profundidade: 10/None | Fronteira: 36/128 (29.5%) | Entropia: 0.282\n"
+        "[Step 2539520/15000000] Mean Return (last 20 ep): 3.83 | Calibração: 1.00 | Profundidade: 10/None | Fronteira: 19/128 (14.8%) | Entropia: 0.251\n",
+        encoding="utf-8",
+    )
+
+    server = HUDServer(host="127.0.0.1", port=9006, open_browser=False)
+    server.runner.external_pid = os.getpid()
+    server.runner.external_log_path = str(log_file)
+    server.runner.status = "RUNNING"
+    server.runner.current_config = {
+        "cmd": "python scratch/run_hybrid_pure_warmup_15m_d10.py --base-ckpt Manual_1 --target-steps 15000000 --num-envs 128 --teacher-envs 24"
+    }
+
+    with server:
+        time.sleep(0.55)
+        snap = server.get_telemetry_snapshot()
+
+    # Zero extrapolação sub-segundo em passos ou cicatrizes
+    assert snap["total_steps"] == 2539520
+    assert snap["target_steps"] == 15000000
+    assert snap["scars_count"] == 958878
+    assert snap["fps"] == 1510.0
+    assert snap["training_regime"] == "WARM-UP"
+    assert snap["base_checkpoint"] == "Manual_1"
+    assert snap["num_envs"] == 128
+    assert snap["teacher_envs"] == 24
+    assert snap["return_window_eps"] == 128
+    # Grade curricular exclui os 24 batedores: 128 - 24 = 104
+    assert snap["curriculum_samples"] == 104
+    assert snap["curriculum_wins"] == round(0.148 * 104)
+    assert snap["curriculum_depth_best_wins"] == round(0.295 * 104)
+    assert snap["curriculum_depth_best_return"] == 4.54
+    assert snap["entropy_floor"] == 0.18
+    assert snap["entropy_floor_active"] is False
+    assert snap["mean_entropy"] == 0.251
+    assert snap["confidence_source"] == "entropy_certainty"
+    expected_cert = round(1.0 - 0.251 / math.log(12.0), 4)
+    assert snap["mean_confidence"] == expected_cert
+    assert snap["latency_p50_us"] == 0.0
+    assert snap["step_cost_us"] == round(1_000_000.0 / 1510.0, 1)
+    assert snap["scar_badge"] == "Híbrido Puro • λ=0.15 β=0.20"
+    assert snap["scar_memory_kb"] == 4.25
+    assert snap["policy_loss"] == 0.0
+    assert snap["value_loss"] == 0.0
+
+
+
 
 
 

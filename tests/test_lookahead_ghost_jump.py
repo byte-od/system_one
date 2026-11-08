@@ -106,6 +106,8 @@ def test_standardized_scar_memory_record_and_autoload():
     agent2.load_state_dict(sd, strict=True)
     assert agent2.scar_memory is not None
     assert int(agent2.scar_memory.scars_count.item()) == 1
+    assert abs(agent2.scar_memory.scale - 0.15) < 1e-6
+    assert abs(agent2.scar_memory.resonance_beta - 0.20) < 1e-6
 
 
 def test_act_fast_ghost_jump_and_soft_scar():
@@ -255,4 +257,62 @@ def test_temporal_cache_bit_exactness_and_victory_scar_after_inference_mode():
         surprise=2.5,
     )
     assert ok is True
+
+
+def test_scout_envs_excluded_from_curriculum_promotion():
+    from system1_engine.env.adapters.rubiks import VectorizedRubiksEnv
+    from system1_engine.training.ppo import RecurrentPPOTrainer
+
+    raw_env = VectorizedRubiksEnv(num_envs=8, curriculum=True, min_depth=1, curriculum_window=8)
+    # 1. Direct adapter test: set_scout_envs(3) isolates Curriculum if used standalone
+    raw_env.set_scout_envs(3)
+    assert raw_env.curriculum_window == 5
+    for idx in range(3):
+        assert raw_env.envs[idx].record_curriculum is False
+    for idx in range(3, 8):
+        assert raw_env.envs[idx].record_curriculum is True
+
+    # 2. Caminho A Universal Contract: RecurrentPPOTrainer forces 0 scouts (100% pure S1 fleet)
+    env = UniversalS1Wrapper(raw_env, tri_compass=True)
+    agent = UniversalS1Agent(
+        obs_space=env.observation_space,
+        action_space=env.action_space,
+        trunk_type="lru",
+        action_chunk_size=1,
+        tri_compass=True,
+    ).to("cpu")
+
+    trainer = RecurrentPPOTrainer(
+        agent=agent,
+        env=env,
+        rollout_steps=64,
+        chunk_length=8,
+        chunk_batch_size=4,
+        scar_mode="hybrid",
+        pure_scars=True,
+        sil_enabled=False,
+        teacher_sil_envs=3,  # Legacy arg must be clamped to 0 in Universal Caminho A
+        device=torch.device("cpu"),
+    )
+    assert trainer.teacher_sil_envs == 0
+    assert raw_env.curriculum_window == 8  # 100% da frota (8/8) conta na grade curricular
+    assert raw_env.frontier_successes.maxlen == 8
+    for idx in range(8):
+        assert raw_env.envs[idx].record_curriculum is True
+
+    env.reset(seed=123)
+    assert len(raw_env.frontier_successes) == 0
+
+    # Solving in env 0 and env 4 both count cleanly as pure System 1 curriculum wins
+    inv0 = raw_env.inverse_action_map[raw_env.envs[0].core.ATOMIC_MOVES.index(raw_env.envs[0]._last_scramble_moves[0])]
+    _, _, term0, _, _ = raw_env.envs[0].step(inv0)
+    assert term0 is True
+    assert len(raw_env.frontier_successes) == 1
+
+    inv4 = raw_env.inverse_action_map[raw_env.envs[4].core.ATOMIC_MOVES.index(raw_env.envs[4]._last_scramble_moves[0])]
+    _, _, term4, _, _ = raw_env.envs[4].step(inv4)
+    assert term4 is True
+    assert len(raw_env.frontier_successes) == 2
+    assert raw_env.frontier_successes[-1] == 1.0
+
 

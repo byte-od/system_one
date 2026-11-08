@@ -192,8 +192,8 @@ class UniversalS1Agent(nn.Module):
                 slot_dim=slot_dim,
                 num_slots=num_slots,
                 mode="hybrid",
-                scale=0.0,
-                resonance_beta=0.0,
+                scale=0.15,
+                resonance_beta=0.20,
             ).to(self.device)
             self.set_scar_memory(sm)
         if self.scar_memory is not None and isinstance(state_dict, dict):
@@ -244,10 +244,23 @@ class UniversalS1Agent(nn.Module):
             else:
                 t_delta = torch.zeros((1, T_len, delta_dim), dtype=torch.float32, device=dev)
 
-            if traj_prev_act is not None:
-                t_act = torch.as_tensor(traj_prev_act, dtype=torch.long, device=dev).view(1, T_len)
+            if self.is_discrete:
+                if traj_prev_act is not None:
+                    act_arr = np.asarray(traj_prev_act, dtype=np.int64)
+                    if act_arr.ndim == 1:
+                        t_act = torch.as_tensor(act_arr, dtype=torch.long, device=dev).view(1, T_len)
+                    else:
+                        t_act = torch.as_tensor(act_arr, dtype=torch.long, device=dev).reshape(1, T_len, -1)
+                else:
+                    act_shape = (1, T_len) if self.action_chunk_size == 1 else (1, T_len, self.action_chunk_size)
+                    t_act = torch.zeros(act_shape, dtype=torch.long, device=dev)
             else:
-                t_act = torch.zeros((1, T_len), dtype=torch.long, device=dev)
+                act_dim = int(np.prod(self.action_space.shape)) * self.action_chunk_size
+                if traj_prev_act is not None:
+                    act_arr = np.asarray(traj_prev_act, dtype=np.float32)
+                    t_act = torch.as_tensor(act_arr, dtype=torch.float32, device=dev).reshape(1, T_len, -1)
+                else:
+                    t_act = torch.zeros((1, T_len, act_dim), dtype=torch.float32, device=dev)
 
             if traj_prev_rew is not None:
                 t_rew = torch.as_tensor(traj_prev_rew, dtype=torch.float32, device=dev).view(1, T_len, 1)
@@ -349,9 +362,13 @@ class UniversalS1Agent(nn.Module):
                     g_loc = torch.autograd.grad(val.sum(), z_in, retain_graph=True)[0]
                     res = torch.matmul(g_loc[..., :32], norm_t)
 
-            if res is not None and hasattr(dist, "logits") and self.is_discrete:
-                new_logits = self.scar_memory.modulate_logits(dist.logits, res)
-                dist = torch.distributions.Categorical(logits=new_logits)
+            if res is not None:
+                if hasattr(dist, "logits") and self.is_discrete:
+                    new_logits = self.scar_memory.modulate_logits(dist.logits, res)
+                    dist = torch.distributions.Categorical(logits=new_logits)
+                elif hasattr(dist, "loc") and hasattr(dist, "scale") and not self.is_discrete:
+                    new_scale = self.scar_memory.modulate_scale(dist.scale, res)
+                    dist = torch.distributions.Normal(loc=dist.loc, scale=new_scale)
         if return_latent:
             return dist, val, next_hx, h
         if return_value_logits:
@@ -623,6 +640,12 @@ class UniversalS1Agent(nn.Module):
                 # Repetição tripla consecutiva
                 avoid_set.add(hist[-1])
 
+        effective_env = env or getattr(self, "default_env", None)
+        inv_map: Optional[Dict[int, int]] = (
+            getattr(effective_env, "inverse_action_map", None)
+            or getattr(getattr(effective_env, "unwrapped", None), "inverse_action_map", None)
+        )
+
         # Policy decision
         if self.is_discrete:
             if self.action_chunk_size > 1:
@@ -676,11 +699,10 @@ class UniversalS1Agent(nn.Module):
                         else:
                             act_i = best_act_i
 
-                    # Anti-reversal dentro do chunk para cubo atômico (12 ações)
-                    if n_acts == 12 and len(chunk_actions) >= 1:
-                        last_a = chunk_actions[-1]
-                        inv_a = (last_a + 1) if (last_a % 2 == 0) else (last_a - 1)
-                        if act_i == inv_a and conf_i < 0.95 and n_acts > 1:
+                    # Anti-reversal universal dentro do chunk via mapa opcional de inversas
+                    if isinstance(inv_map, dict) and len(chunk_actions) >= 1:
+                        inv_a = inv_map.get(int(chunk_actions[-1]))
+                        if inv_a is not None and act_i == inv_a and conf_i < 0.95 and n_acts > 1:
                             top_indices = torch.argsort(probs_i, descending=True)
                             for alt_idx in top_indices:
                                 alt_a = int(alt_idx.item())
@@ -780,20 +802,17 @@ class UniversalS1Agent(nn.Module):
                 eff_temp = 1.0
                 calib = 0.0 if deterministic else (noise_scale if noise_scale > 0.0 else 1.0)
 
-            # Filtro de Qualidade de Ação (Action Quality Filter)
-            # Em cubo atômico (12 ações), o movimento imediatamente inverso (ex: U -> U')
-            # anula o passo anterior e desperdiça tempo. Evita reversão direta se não houver convicção quase total.
-            # Também detecta e quebra o comutador de 4 passos [a1, a2, inv(a1)] -> inv(a2) que preserva a identidade [F, B'] = I.
-            if (quality_filter or (is_auto_calib and self._stagnation_count >= 2)) and probs.shape[0] == 12:
+            # Filtro Universal de Qualidade de Ação (via inverse_action_map opcional do ambiente)
+            if (quality_filter or (is_auto_calib and self._stagnation_count >= 2)) and isinstance(inv_map, dict):
                 if len(hist) >= 1:
-                    last_act = hist[-1]
-                    inv_act = (last_act + 1) if (last_act % 2 == 0) else (last_act - 1)
-                    avoid_set.add(inv_act)
+                    inv_act = inv_map.get(int(hist[-1]))
+                    if inv_act is not None:
+                        avoid_set.add(inv_act)
                 if len(hist) >= 3:
-                    a1, a2, a3 = hist[-3], hist[-2], hist[-1]
-                    inv_a1 = (a1 + 1) if (a1 % 2 == 0) else (a1 - 1)
-                    inv_a2 = (a2 + 1) if (a2 % 2 == 0) else (a2 - 1)
-                    if a3 == inv_a1:
+                    a1, a2, a3 = int(hist[-3]), int(hist[-2]), int(hist[-1])
+                    inv_a1 = inv_map.get(a1)
+                    inv_a2 = inv_map.get(a2)
+                    if inv_a1 is not None and inv_a2 is not None and a3 == inv_a1:
                         avoid_set.add(inv_a2)
 
             if is_deterministic_mode:
@@ -1127,8 +1146,8 @@ class UniversalS1Agent(nn.Module):
 
                                 for idx_m in alive_m:
                                     a1 = valid_cands[idx_m]
-                                    if n_acts == 12:
-                                        inv_a1 = (a1 + 1) if (a1 % 2 == 0) else (a1 - 1)
+                                    inv_a1 = inv_map.get(int(a1)) if isinstance(inv_map, dict) else None
+                                    if inv_a1 is not None:
                                         valid_a2s = [
                                             int(next_top_idx[idx_m, k_i].item())
                                             for k_i in range(next_top_idx.shape[1])
@@ -1281,7 +1300,7 @@ class UniversalS1Agent(nn.Module):
                                             if float(v_cands2[m2_i].item()) <= 1.2:
                                                 continue
                                             a1_v, a2_v = a1_list[m2_i], act2_list[m2_i]
-                                            inv_a2 = ((a2_v + 1) if (a2_v % 2 == 0) else (a2_v - 1)) if n_acts == 12 else -1
+                                            inv_a2 = inv_map.get(int(a2_v), -1) if isinstance(inv_map, dict) else -1
                                             for k_idx in range(top_i3.shape[1]):
                                                 a3_v = int(top_i3[m2_i, k_idx].item())
                                                 if a3_v == inv_a2:
@@ -1319,7 +1338,7 @@ class UniversalS1Agent(nn.Module):
                                             for t_m2 in top_m2_order:
                                                 m2_i = int(t_m2.item())
                                                 a1_v, a2_v = a1_list[m2_i], act2_list[m2_i]
-                                                inv_a2 = ((a2_v + 1) if (a2_v % 2 == 0) else (a2_v - 1)) if n_acts == 12 else -1
+                                                inv_a2 = inv_map.get(int(a2_v), -1) if isinstance(inv_map, dict) else -1
                                                 added_k3 = 0
                                                 for k_idx in range(top_i3_val.shape[1]):
                                                     a3_v = int(top_i3_val[m2_i, k_idx].item())

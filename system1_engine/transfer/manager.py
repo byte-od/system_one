@@ -287,25 +287,22 @@ class KnowledgeTransferManager:
         loaded_keys: List[str] = []
 
         with torch.no_grad():
-            # 1. State encoder
-            for k in ["weight", "bias"]:
-                for idx in [0, 2]:
-                    src_k = f"front_end.state_encoder.net.{idx}.{k}"
-                    if src_k in raw_state_dict:
-                        agent.state_dict()[src_k].copy_(raw_state_dict[src_k])
-                        loaded_keys.append(src_k)
+            # 1. State encoder (copia 100% dos submódulos, incluindo camadas relacionais e LayerNorms)
+            agent_sd = agent.state_dict()
+            for src_k, src_v in raw_state_dict.items():
+                if src_k.startswith("front_end.state_encoder.") and src_k in agent_sd and agent_sd[src_k].shape == src_v.shape:
+                    agent_sd[src_k].copy_(src_v)
+                    loaded_keys.append(src_k)
 
             # 2. Local, Origin, and Goal delta encoders from source delta encoder
-            for k in ["weight", "bias"]:
-                for idx in [0, 2]:
-                    src_k = f"front_end.delta_encoder.net.{idx}.{k}"
-                    if src_k in raw_state_dict:
-                        val = raw_state_dict[src_k]
-                        for prefix in ["local_delta_encoder", "origin_delta_encoder", "goal_delta_encoder"]:
-                            target_k = f"front_end.{prefix}.net.{idx}.{k}"
-                            if target_k in agent.state_dict():
-                                agent.state_dict()[target_k].copy_(val)
-                                loaded_keys.append(target_k)
+            for src_k, src_v in raw_state_dict.items():
+                if src_k.startswith("front_end.delta_encoder."):
+                    suffix = src_k[len("front_end.delta_encoder.") :]
+                    for prefix in ["local_delta_encoder", "origin_delta_encoder", "goal_delta_encoder"]:
+                        target_k = f"front_end.{prefix}.{suffix}"
+                        if target_k in agent_sd and agent_sd[target_k].shape == src_v.shape:
+                            agent_sd[target_k].copy_(src_v)
+                            loaded_keys.append(target_k)
 
             # 3. Action and Reward encoders
             if "front_end.action_encoder.encoder.weight" in raw_state_dict:

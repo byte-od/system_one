@@ -392,13 +392,16 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         except (ValueError, TypeError):
             scramble_depth = None
 
-    if env_id.lower().replace("_", "-") in ("rubikscube-v0", "rubikscubemacro-v0", "rubiks", "rubik"):
+    is_rubiks = env_id.lower().replace("_", "-") in ("rubikscube-v0", "rubikscubemacro-v0", "rubiks", "rubik")
+    if is_rubiks:
         if scramble_depth:
             print(f"🎲 Cubo Mágico: Treino com Curriculum Ativo (1 -> {scramble_depth} passos)")
         else:
             print(f"🎲 Cubo Mágico: Treino com Curriculum Aberto (1 -> ∞ passos)")
 
-    num_envs = int(config.get("num_envs", 64))
+    num_envs = int(config.get("num_envs", 128 if is_rubiks else 64))
+    if is_rubiks and rollout_steps < num_envs * 32:
+        rollout_steps = num_envs * 32
     env = build_hud_env(
         env_id,
         scenario=config.get("scenario"),
@@ -475,7 +478,14 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
             train_calibration = "auto"
             print("⚡ Modo de Exploração no Treino: AUTO / HOMEOSTASE DINÂMICA (Auto-correção ativa)")
 
-    hindsight_replay = bool(config.get("hindsight_replay", True))
+    scar_mode = str(config.get("scar_mode", "none")).lower()
+    scar_decay = float(config.get("scar_decay", 0.995))
+    scar_scale = float(config.get("scar_scale", 0.15))
+    scar_beta = float(config.get("scar_beta", 0.20))
+    pure_scars = bool(config.get("pure_scars", True))
+
+    default_her = not (is_rubiks and scar_mode != "none")
+    hindsight_replay = bool(config.get("hindsight_replay", default_her))
     hindsight_bonus = float(config.get("hindsight_bonus", 2.0))
     hindsight_min_gain = float(config.get("hindsight_min_gain", 0.02))
 
@@ -484,7 +494,8 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     else:
         print("⚡ Hindsight Experience Replay (B.2): DESATIVADO")
 
-    sil_enabled = bool(config.get("sil_enabled", True))
+    default_sil = scar_mode == "none"
+    sil_enabled = bool(config.get("sil_enabled", config.get("sil", default_sil)))
     sil_coef = float(config.get("sil_coef", 0.08))
     sil_batch_size = int(config.get("sil_batch_size", 8))
     raw_max_traj = config.get("sil_max_trajectories", None)
@@ -518,17 +529,11 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     else:
         print("⚡ Self-Imitation Learning (SIL Replay): DESATIVADO")
 
-    value_rerank = bool(config.get("value_rerank", True))
-    raw_env_obj = getattr(env, "unwrapped", env)
-    actual_num_envs = getattr(raw_env_obj, "num_envs", num_envs if hasattr(raw_env_obj, "envs") else 1)
-    teacher_sil_envs_default = (
-        max(4, actual_num_envs // 8)
-        if (value_rerank and actual_num_envs >= 16)
-        else (1 if (value_rerank and actual_num_envs >= 4) else 0)
-    )
-    teacher_sil_envs = int(config.get("teacher_sil_envs", teacher_sil_envs_default))
-    teacher_min_depth = int(config.get("teacher_min_depth", 5))
-    teacher_confidence_threshold = float(config.get("teacher_confidence_threshold", 0.30))
+    # Caminho A (Universalidade S1): Reflexo puro O(1) em 100% da frota (sem batedores/simuladores white-box no treino)
+    value_rerank = bool(config.get("value_rerank", False))
+    teacher_sil_envs = 0
+    teacher_min_depth = int(config.get("teacher_min_depth", 6))
+    teacher_confidence_threshold = float(config.get("teacher_confidence_threshold", 0.85))
     teacher_top_k = int(config.get("teacher_top_k", 4))
 
     entropy_floor_enabled = bool(config.get("entropy_floor_enabled", True))
@@ -540,17 +545,12 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
     else:
         print("⚡ Dynamic Entropy Floor: DESATIVADO")
 
-    if teacher_sil_envs > 0 and sil_enabled:
-        print(f"🎓 Teacher-Assisted SIL Rollouts: ATIVO ({teacher_sil_envs} workers professores com 1-Step Lookahead para D>={teacher_min_depth}, conf<{teacher_confidence_threshold:.2f})")
-    else:
-        print("⚡ Teacher-Assisted SIL Rollouts: DESATIVADO (Reflexo puro em 100% dos workers)")
+    print("⚡ System 1 Universal (Caminho A): Reflexo Puro O(1) em 100% dos workers PPO (0 simuladores white-box)")
 
-    scar_mode = str(config.get("scar_mode", "none")).lower()
-    scar_decay = float(config.get("scar_decay", 0.995))
-    scar_scale = float(config.get("scar_scale", 0.15))
-    scar_beta = float(config.get("scar_beta", 0.20))
     if scar_mode != "none":
-        print(f"🧬 Gradient Scar Memory (O(1)): ATIVO (mode={scar_mode}, decay={scar_decay}, scale={scar_scale}, beta={scar_beta})")
+        print(f"🧬 Gradient Scar Memory (O(1)): ATIVO (mode={scar_mode}, pure_scars={pure_scars}, decay={scar_decay}, scale={scar_scale}, beta={scar_beta})")
+
+    external_scout_envs = int(config.get("external_scout_envs", 24 if scar_mode != "none" else 0))
 
     if tracker is not None:
         tracker.metrics.action_chunk_size = action_chunk_size
@@ -562,6 +562,8 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         scar_decay=scar_decay,
         scar_scale=scar_scale,
         scar_beta=scar_beta,
+        pure_scars=pure_scars,
+        external_scout_envs=external_scout_envs,
         action_chunk_size=action_chunk_size,
         adaptive_chunk=bool(config.get("adaptive_chunk", False)),
         learning_rate=lr,
@@ -600,6 +602,13 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         entropy_floor_coef=entropy_floor_coef,
         adaptive_entropy_coef=adaptive_entropy_coef,
     )
+
+    if getattr(trainer, "external_scout_envs", 0) > 0:
+        print(f"🛰️ Batedores Intuitivos Externos: ATIVO ({trainer.external_scout_envs} workers paralelos fora do buffer PPO, 0 impacto na grade X/128)")
+
+    if trainer.scar_memory is not None and (not checkpoint_to_load or bool(config.get("reset_scars", False))):
+        trainer.scar_memory.reset_scars()
+        print("🧹 [GradientScarMemory] Cicatrizes zeradas para regime Tabula Rasa 100% limpo.")
 
     raw_env = getattr(env, "unwrapped", env)
     if (
@@ -728,19 +737,139 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
 
     def train_callback(cur_steps: int, mean_ret: float) -> None:
         nonlocal last_telemetry_ts, last_ckpt_step, last_ckpt_promotions, best_saved_mean_return
+        import math as _math
+        import platform as _platform
+
         now = time.time()
         snap = tracker.snapshot()
         snap["grad_norms"] = tracker.metrics.grad_norms
-        if hasattr(trainer, "scar_memory") and trainer.scar_memory is not None:
-            snap["sil_full_wins"] = int(trainer.scar_memory.scars_count.item())
-            snap["sil_success_slices"] = int(trainer.scar_memory.scars_count.item())
-            snap["sil_memory_mb"] = round(trainer.scar_memory.memory_bytes / (1024 * 1024), 4)
-            snap["sil_tournament_size"] = f"Scar ({trainer.scar_mode})"
+
+        num_envs_cb = int(getattr(trainer, "num_envs", 1))
+        active_scouts_cb = int(trainer.teacher_sil_envs) if (trainer.sil_enabled or trainer.scar_mode != "none") else 0
+        snap["num_envs"] = num_envs_cb
+        snap["teacher_envs"] = active_scouts_cb
+        snap["external_scout_envs"] = int(getattr(trainer, "external_scout_envs", 0))
+        snap["scout_scars_count"] = int(getattr(trainer, "scout_scars_count", 0))
+        snap["scout_wins_count"] = int(getattr(trainer, "scout_wins_count", 0))
+        snap["return_window_eps"] = int(trainer.episode_returns.maxlen or max(20, num_envs_cb))
+
+        raw_env_cb = getattr(env, "unwrapped", env)
+        if hasattr(raw_env_cb, "current_depth") and getattr(raw_env_cb, "curriculum", False):
+            cur_d_cb = int(raw_env_cb.current_depth)
+            eff_grade_cb = (
+                max(1, num_envs_cb - active_scouts_cb)
+                if (active_scouts_cb > 0 and num_envs_cb > active_scouts_cb)
+                else int(getattr(raw_env_cb, "curriculum_window", num_envs_cb))
+            )
+            f_deq_cb = getattr(raw_env_cb, "frontier_successes", None)
+            c_wins_cb = int(round(sum(f_deq_cb))) if (f_deq_cb is not None and len(f_deq_cb) > 0) else 0
+            snap["curriculum_wins"] = min(eff_grade_cb, c_wins_cb)
+            snap["curriculum_samples"] = eff_grade_cb
+            if hasattr(raw_env_cb, "get_target_success_rate"):
+                snap["target_success_rate"] = float(raw_env_cb.get_target_success_rate(cur_d_cb))
+            best_wins_map = getattr(train_callback, "_best_wins_by_depth", {})
+            best_wins_map[cur_d_cb] = max(best_wins_map.get(cur_d_cb, 0), snap["curriculum_wins"])
+            train_callback._best_wins_by_depth = best_wins_map
+            snap["curriculum_depth_best_wins"] = best_wins_map[cur_d_cb]
+
+        # Memória de Cicatriz O(1) — campos técnicos reais esperados pelo painel HUD
+        scar_mode_cb = str(getattr(trainer, "scar_mode", "none"))
+        pure_scars_cb = bool(getattr(trainer, "pure_scars", False))
+        snap["scar_mode"] = scar_mode_cb
+        snap["pure_scars"] = pure_scars_cb
+        if hasattr(trainer, "scar_memory") and trainer.scar_memory is not None and scar_mode_cb != "none":
+            sm = trainer.scar_memory
+            scar_count = int(sm.scars_count.item())
+            mem_kb = round(getattr(sm, "memory_bytes", 0) / 1024.0, 2)
+            s_scale = round(float(getattr(sm, "scale", 0.15)), 3)
+            s_beta = round(float(getattr(sm, "resonance_beta", 0.20)), 3)
+            s_prefix = "Híbrido Puro" if (scar_mode_cb == "hybrid" and pure_scars_cb) else (
+                "Híbrido v2" if scar_mode_cb == "hybrid" else f"Scar ({scar_mode_cb})"
+            )
+            snap["scars_count"] = scar_count
+            snap["scar_memory_kb"] = mem_kb
+            snap["scar_scale"] = s_scale
+            snap["scar_beta"] = s_beta
+            snap["scar_badge"] = f"{s_prefix} • λ={s_scale:.2f} β={s_beta:.2f}"
+            snap["sil_full_wins"] = scar_count
+            snap["sil_success_slices"] = scar_count
+            snap["sil_memory_mb"] = round(mem_kb / 1024.0, 4)
+            snap["sil_tournament_size"] = s_prefix
+
+            # Normas dos tensores de cicatriz (W=fast-weights, z=ressonância, g=gradiente alvo)
+            try:
+                import torch as _torch
+                snap["scar_w_norm"] = round(float(_torch.norm(sm.W_scar).item()), 4) if hasattr(sm, "W_scar") else 0.0
+                snap["scar_z_norm"] = round(float(_torch.norm(sm.z_target).item()), 4) if hasattr(sm, "z_target") else 0.0
+                snap["scar_g_norm"] = round(float(_torch.norm(sm.g_target).item()), 4) if hasattr(sm, "g_target") else 0.0
+            except Exception:
+                snap["scar_w_norm"] = 0.0
+                snap["scar_z_norm"] = 0.0
+                snap["scar_g_norm"] = 0.0
         elif hasattr(trainer, "sil_buffer"):
             snap["sil_full_wins"] = trainer.sil_buffer.count_full_wins()
             snap["sil_success_slices"] = trainer.sil_buffer.count_success_slices()
-            snap["sil_memory_mb"] = round(trainer.sil_buffer.memory_bytes / (1024 * 1024), 2)
+            mem_mb_sil = round(trainer.sil_buffer.memory_bytes / (1024 * 1024), 2)
+            snap["sil_memory_mb"] = mem_mb_sil
+            snap["scar_memory_kb"] = round(trainer.sil_buffer.memory_bytes / 1024.0, 2)
+            snap["scar_badge"] = "SIL Episódico" if trainer.sil_enabled else "PPO Puro"
             snap["sil_tournament_size"] = getattr(trainer.sil_buffer, "tournament_size", 5)
+            snap["scars_count"] = snap["sil_full_wins"]
+            snap["scar_w_norm"] = 0.0
+            snap["scar_z_norm"] = 0.0
+            snap["scar_g_norm"] = 0.0
+
+        # Dispositivo, Arquitetura e Entropia reais
+        dev_type = device.type.lower()
+        is_arm_mac = sys.platform == "darwin" and _platform.machine() == "arm64"
+        snap["device_label"] = (
+            "GPU • NVIDIA CUDA"
+            if dev_type == "cuda"
+            else ("GPU • Apple MPS" if dev_type == "mps" else ("CPU • Apple Silicon" if is_arm_mac else "CPU Universal"))
+        )
+        trunk_tag = str(getattr(agent, "trunk_type", config.get("trunk", "lru"))).upper()
+        rel_tag = " + Rel" if getattr(agent, "relational", False) else ""
+        mem_tag = (
+            "Pure Scars"
+            if (scar_mode_cb != "none" and pure_scars_cb)
+            else (f"Scar {scar_mode_cb}" if scar_mode_cb != "none" else ("SIL" if trainer.sil_enabled else "PPO"))
+        )
+        snap["arch_label"] = f"{trunk_tag}{rel_tag} • {mem_tag}"
+
+        ent_floor_cb = float(getattr(trainer, "entropy_floor", 0.18))
+        cur_ent_cb = float(snap.get("mean_entropy", 0.0) or 0.0)
+        snap["entropy_floor"] = round(ent_floor_cb, 3)
+        snap["entropy_floor_active"] = bool(
+            getattr(trainer, "entropy_floor_enabled", True) and cur_ent_cb > 0.0 and cur_ent_cb < ent_floor_cb
+        )
+        snap["effective_entropy_coef"] = round(float(getattr(trainer, "entropy_coef", 0.007)), 4)
+        if hasattr(env.action_space, "n"):
+            snap["max_entropy"] = round(_math.log(max(2, int(env.action_space.n))), 3)
+        snap["confidence_source"] = "max_prob"
+
+        fps_cb = float(snap.get("fps", 0.0) or 0.0)
+        snap["step_cost_us"] = round(1_000_000.0 / fps_cb, 1) if fps_cb > 0 else 0.0
+
+        # Contexto de execução esperado pelo painel
+        snap["training_regime"] = (
+            "WARM-UP" if (config.get("transfer_from") or config.get("load")) else "TABULA RASA"
+        )
+        snap["base_checkpoint"] = checkpoint_to_load
+        snap["env"] = config.get("env", "RubiksCube-v0")
+
+        # ETA estimado com base no progresso atual
+        target_steps = int(steps or config.get("steps", 0) or 0)
+        snap["target_steps"] = target_steps
+        if target_steps > 0 and cur_steps > 0:
+            elapsed = now - getattr(train_callback, "_t0", now)
+            train_callback._t0 = getattr(train_callback, "_t0", now)
+            if cur_steps > 0:
+                rate = cur_steps / max(elapsed, 1e-6)
+                remaining = max(0, target_steps - cur_steps)
+                snap["eta"] = f"{remaining / rate / 3600.0:.2f}h" if rate > 0 else "--"
+        else:
+            snap["eta"] = "--"
+
         snap["value_head_type"] = "Two-Hot Symlog (255 bins)"
         hud_client.send_telemetry(snap)
         last_telemetry_ts = now
@@ -781,6 +910,17 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
         if now - last_telemetry_ts >= 0.1:
             snap = tracker.snapshot()
             snap["grad_norms"] = tracker.metrics.grad_norms
+            snap["external_scout_envs"] = int(getattr(trainer, "external_scout_envs", 0))
+            snap["scout_scars_count"] = int(getattr(trainer, "scout_scars_count", 0))
+            snap["scout_wins_count"] = int(getattr(trainer, "scout_wins_count", 0))
+            raw_env_step = getattr(env, "unwrapped", env)
+            if hasattr(raw_env_step, "current_depth") and getattr(raw_env_step, "curriculum", False):
+                num_envs_step = int(getattr(trainer, "num_envs", 1))
+                eff_grade_step = int(getattr(raw_env_step, "curriculum_window", num_envs_step))
+                f_deq_step = getattr(raw_env_step, "frontier_successes", None)
+                c_wins_step = int(round(sum(f_deq_step))) if (f_deq_step is not None and len(f_deq_step) > 0) else 0
+                snap["curriculum_wins"] = min(eff_grade_step, c_wins_step)
+                snap["curriculum_samples"] = eff_grade_step
             hud_client.send_telemetry(snap)
             last_telemetry_ts = now
 
@@ -815,6 +955,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
                 pass
 
     try:
+        train_callback(0, 0.0)
         final_return = trainer.train(
             max_steps=steps,
             target_return=target_return,
@@ -841,6 +982,7 @@ def run_worker_train(config: Dict[str, Any], hud_client: HUDClient) -> None:
                 print(f"[HUD Worker] Aviso ao salvar checkpoint de interrupção: {e}")
 
     finally:
+        trainer.close_scout_env()
         explainer.close()
         env.close()
 
@@ -967,7 +1109,7 @@ def run_worker_eval(config: Dict[str, Any], hud_client: HUDClient) -> None:
     )
 
     ensemble_fallback = bool(config.get("ensemble_fallback", True))
-    value_rerank = bool(config.get("value_rerank", True))
+    value_rerank = bool(config.get("value_rerank", False))
     value_rerank_top_k = int(config.get("value_rerank_top_k", 2))
     value_rerank_threshold = float(config.get("value_rerank_threshold", 0.85))
     mode_desc = "Reflexo Neural S1"

@@ -96,6 +96,11 @@ class UniversalS1Wrapper(gym.Wrapper):
         """Configura ou atualiza o atrator geodésico de meta auto-descoberto."""
         self.elite_goal_obs = np.asarray(goal_obs, dtype=np.float32).copy()
 
+    @property
+    def inverse_action_map(self) -> Optional[dict[int, int]]:
+        """Delega mapa opcional de ações inversas do ambiente base de forma agnóstica."""
+        return getattr(self.env, "inverse_action_map", None)
+
     def _get_initial_action(self) -> Union[int, np.ndarray]:
         if self.is_vectorized:
             if isinstance(self.action_space, gym.spaces.Discrete):
@@ -441,9 +446,21 @@ class UniversalS1Wrapper(gym.Wrapper):
         # =====================================================================
         if self.is_vectorized:
             act_arr = np.asarray(action)
-            # Verifica se é um chunk temporal vetorizado [num_envs, k] onde k > 1
-            if act_arr.ndim == 2 and act_arr.shape[0] == self.num_envs and act_arr.shape[1] > 1:
-                E, k = act_arr.shape
+            # Verifica se é um chunk temporal vetorizado:
+            # - Para Discrete: [num_envs, k] onde k > 1
+            # - Para Box: [num_envs, k, *action_space.shape] onde k > 1
+            is_vec_chunk = False
+            if isinstance(self.action_space, gym.spaces.Discrete):
+                if act_arr.ndim == 2 and act_arr.shape[0] == self.num_envs and act_arr.shape[1] > 1:
+                    is_vec_chunk = True
+            elif isinstance(self.action_space, gym.spaces.Box):
+                expected_chunk_ndim = 2 + len(self.action_space.shape)
+                if act_arr.ndim == expected_chunk_ndim and act_arr.shape[0] == self.num_envs and act_arr.shape[1] > 1:
+                    is_vec_chunk = True
+
+            if is_vec_chunk:
+                E = act_arr.shape[0]
+                k = act_arr.shape[1]
                 total_rewards = np.zeros(E, dtype=np.float32)
                 discounts = np.ones(E, dtype=np.float32)
                 all_terminateds = np.zeros(E, dtype=bool)

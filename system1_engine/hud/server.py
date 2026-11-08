@@ -296,6 +296,7 @@ class HUDServer:
             ):
                 self.latest_telemetry["curriculum_depth_best_return"] = None
                 self.latest_telemetry["curriculum_depth_best_success_rate"] = None
+                self.latest_telemetry["curriculum_depth_best_wins"] = None
                 self.latest_telemetry["curriculum_depth_min_success_rate"] = None
                 self.latest_telemetry["curriculum_success_rate"] = 0.0
                 self._current_depth_best_rate = 0.0
@@ -372,13 +373,24 @@ class HUDServer:
         return None
 
     def _external_telemetry_loop(self) -> None:
-        """Loop em segundo plano para extração de telemetria quando conectado a treino externo."""
+        """Loop em segundo plano para extração de telemetria técnica real quando conectado a treino externo."""
         import math
+        import platform
         import re
 
-        step_pattern = re.compile(
-            r"\[Step\s+(\d+)/\d+\]\s+Mean Return \(last 20 ep\):\s+([-\d.]+)\s+\|\s+Calibra[çc][ãa]o:\s+([-\d.]+)\s+\|\s+Profundidade:\s+(\d+)"
+        step_head_pattern = re.compile(
+            r"\[Step\s+(\d+)/(\d+)\]\s+Mean Return \(last (\d+) ep\):\s+([-\d.]+)"
         )
+        calib_pattern = re.compile(r"Calibra[çc][ãa]o:\s+([-\d.]+)")
+        depth_pattern = re.compile(r"Profundidade:\s+(\d+)/([^\s|]+)")
+        frontier_pattern = re.compile(r"Fronteira:\s+(\d+)/(\d+)\s+\(([\d.]+)%\)")
+        entropy_pattern = re.compile(r"Entropia:\s+([\d.]+)")
+        conf_pattern = re.compile(r"Confian[çc]a:\s+([\d.]+)%")
+        latency_pattern = re.compile(r"Lat[êe]ncia:\s+([\d.]+)(ms|µs|us)")
+        coef_ent_pattern = re.compile(r"CoefEnt:\s+([\d.]+)")
+        ploss_pattern = re.compile(r"PLoss:\s+([-\d.]+)")
+        vloss_pattern = re.compile(r"VLoss:\s+([-\d.]+)")
+        fps_step_pattern = re.compile(r"\bFPS:\s+([\d.]+)")
         marathon_pattern = re.compile(
             r"🏃 \[Maratona\s+([\d,]+)/([\d,]+)\s+\(([\d.]+)%\)\]\s+Depth:\s+D(\d+)\s+\|\s+Scars:\s+([\d,]+)\s+\|\s+FPS:\s+([\d.]+)\s+\|\s+ETA:\s+([^\s|]+)\s+\|\s+\|\|W\|\|:\s+([\d.]+)\s+\|\s+\|\|z\|\|:\s+([\d.]+)\s+\|\s+\|\|g\|\|:\s+([\d.]+)"
         )
@@ -386,13 +398,18 @@ class HUDServer:
             r"Sucesso\s+([\d.]+)%\s+>=\s+([\d.]+)%!\s+Profundidade promovida:\s+(\d+)\s+->\s+(\d+)"
         )
 
+        is_arm_mac = sys.platform == "darwin" and platform.machine() == "arm64"
         tick = 0
         while not self._stop_event.is_set():
             tick += 1
             if tick % 8 == 0:
                 self.runner.auto_detect_external_training()
 
-            if not self.runner.is_running() or not getattr(self.runner, "external_log_path", None) or not getattr(self.runner, "_is_valid_training_log", lambda x: True)(self.runner.external_log_path):
+            if (
+                not self.runner.is_running()
+                or not getattr(self.runner, "external_log_path", None)
+                or not getattr(self.runner, "_is_valid_training_log", lambda x: True)(self.runner.external_log_path)
+            ):
                 self.runner.auto_detect_external_training()
                 time.sleep(0.5)
                 continue
@@ -400,25 +417,46 @@ class HUDServer:
             log_path = self.runner.external_log_path
             if log_path and os.path.exists(log_path):
                 try:
+                    is_first_attach = getattr(self, "_ext_attached_log", None) != log_path
                     with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                        head_text = f.read(4096)
                         f.seek(0, os.SEEK_END)
                         size = f.tell()
-                        # Lê os últimos 128 KB para histórico recente e dados de maratona
-                        f.seek(max(0, size - 131072))
+                        if is_first_attach:
+                            # Na primeira conexão ao log, lê desde o início para capturar picos reais exatos do nível
+                            f.seek(0)
+                        else:
+                            f.seek(max(0, size - 262144))
                         lines = f.readlines()
+
+                    if is_first_attach:
+                        self._ext_attached_log = log_path
+                        self._ext_steps = None
+                        self._ext_best_ret = -float("inf")
+                        self._ext_best_sr = 0.0
+                        self._ext_best_wins = 0
+                        self._smoothed_fps = None
+                        self._last_step_logged = None
+                        self._ext_scars = 0
+                        self._ext_marathon_steps = 0
 
                     current_steps = getattr(self, "_ext_steps", None)
                     current_return = getattr(self, "_ext_return", 0.0)
                     current_calib = getattr(self, "_ext_calib", 1.0)
                     current_depth = getattr(self, "_ext_depth", 1)
+                    current_max_depth_str = getattr(self, "_ext_max_depth_str", "∞")
                     current_scars = getattr(self, "_ext_scars", 0)
                     marathon_base_steps = getattr(self, "_ext_marathon_steps", 0)
-                    current_eta = getattr(self, "_ext_eta", "6.0h")
+                    marathon_measured_fps = None
+                    step_logged_fps = None
+                    logged_ep_window = 20
+                    current_eta = getattr(self, "_ext_eta", "--")
                     current_w_norm = getattr(self, "_ext_w_norm", 0.0)
                     current_z_norm = getattr(self, "_ext_z_norm", 0.0)
                     current_g_norm = getattr(self, "_ext_g_norm", 0.0)
-                    current_depth_best_return = getattr(self, "_ext_best_ret", 0.0)
+                    current_depth_best_return = getattr(self, "_ext_best_ret", -float("inf"))
                     current_depth_best_sr = getattr(self, "_ext_best_sr", 0.0)
+                    current_depth_best_wins = getattr(self, "_ext_best_wins", 0)
                     promotions_count = max(current_depth - 1, 0)
 
                     found_new_step = False
@@ -428,28 +466,44 @@ class HUDServer:
 
                     for line in reversed(lines):
                         if not found_new_step:
-                            m_step = step_pattern.search(line)
+                            m_step = step_head_pattern.search(line)
                             if m_step:
                                 steps = int(m_step.group(1))
-                                ret = float(m_step.group(2))
-                                calib = float(m_step.group(3))
-                                depth = int(m_step.group(4))
+                                step_max_target = int(m_step.group(2))
+                                logged_ep_window = int(m_step.group(3))
+                                ret = float(m_step.group(4))
+                                m_cal = calib_pattern.search(line)
+                                calib = float(m_cal.group(1)) if m_cal else current_calib
+                                m_dep = depth_pattern.search(line)
+                                depth = int(m_dep.group(1)) if m_dep else current_depth
+                                if m_dep:
+                                    raw_max_d = m_dep.group(2)
+                                    current_max_depth_str = "∞" if raw_max_d in ("None", "inf", "∞") else raw_max_d
+                                m_fps_s = fps_step_pattern.search(line)
+                                if m_fps_s:
+                                    step_logged_fps = float(m_fps_s.group(1))
+
                                 current_steps = steps
+                                if step_max_target > 0:
+                                    self._ext_target_total = step_max_target
                                 current_return = ret
                                 current_calib = calib
                                 current_depth = depth
                                 is_new_run = prev_tracked_steps is not None and steps < prev_tracked_steps * 0.5
                                 if (prev_tracked_depth is not None and depth != prev_tracked_depth) or is_new_run:
-                                    # Reset do pico ao mudar de nível curricular ou iniciar novo treino
                                     current_depth_best_return = ret
                                     current_depth_best_sr = 0.0
+                                    current_depth_best_wins = 0
                                 else:
                                     current_depth_best_return = max(current_depth_best_return, ret)
                                 found_new_step = True
                         else:
-                            m_step = step_pattern.search(line)
-                            if m_step and int(m_step.group(4)) == current_depth:
-                                current_depth_best_return = max(current_depth_best_return, float(m_step.group(2)))
+                            m_step = step_head_pattern.search(line)
+                            if m_step:
+                                m_dep = depth_pattern.search(line)
+                                line_d = int(m_dep.group(1)) if m_dep else current_depth
+                                if line_d == current_depth:
+                                    current_depth_best_return = max(current_depth_best_return, float(m_step.group(4)))
 
                         if not found_new_marathon:
                             m_mar = marathon_pattern.search(line)
@@ -463,70 +517,102 @@ class HUDServer:
                                 if not found_new_step:
                                     current_depth = int(m_mar.group(4))
                                 current_scars = int(m_mar.group(5).replace(",", ""))
+                                if mar_steps > 0:
+                                    marathon_measured_fps = float(m_mar.group(6))
                                 current_eta = m_mar.group(7)
                                 current_w_norm = float(m_mar.group(8))
                                 current_z_norm = float(m_mar.group(9))
                                 current_g_norm = float(m_mar.group(10))
                                 found_new_marathon = True
 
-                    # Promoções observadas no histórico
+                    # Promoções reais observadas
                     promotions_in_buffer = sum(1 for l in lines if promo_pattern.search(l))
                     promotions_count = max(current_depth - 1, promotions_in_buffer, promotions_count)
 
                     now = time.time()
-                    # Medição contínua de Throughput Real (128 ambientes paralelos)
-                    if not hasattr(self, "_smoothed_fps") or self._smoothed_fps is None:
-                        self._smoothed_fps = 1750.0
+                    # Medição real de Throughput (sem teto/piso artificial e sem valor fictício inicial)
+                    if not hasattr(self, "_smoothed_fps"):
+                        self._smoothed_fps = None
+                    if self._smoothed_fps is None or self._smoothed_fps <= 0.0:
+                        if step_logged_fps and step_logged_fps > 0:
+                            self._smoothed_fps = step_logged_fps
+                        elif marathon_measured_fps and marathon_measured_fps > 0:
+                            self._smoothed_fps = marathon_measured_fps
+
                     if not hasattr(self, "_last_step_logged") or self._last_step_logged is None:
                         self._last_step_logged = current_steps
                         self._last_step_time = now
                     elif current_steps is not None and current_steps > self._last_step_logged:
                         step_delta = current_steps - self._last_step_logged
                         time_delta = now - self._last_step_time
-                        if time_delta >= 0.5:
+                        if time_delta >= 0.25:
                             instant_fps = step_delta / time_delta
-                            if 1000.0 <= instant_fps <= 2500.0:
-                                self._smoothed_fps = 0.80 * self._smoothed_fps + 0.20 * instant_fps
+                            if 1.0 <= instant_fps <= 100000.0:
+                                if self._smoothed_fps is None or self._smoothed_fps <= 0.0:
+                                    self._smoothed_fps = instant_fps
+                                else:
+                                    self._smoothed_fps = 0.75 * self._smoothed_fps + 0.25 * instant_fps
                             self._last_step_logged = current_steps
                             self._last_step_time = now
+                    elif step_logged_fps and step_logged_fps > 0:
+                        self._smoothed_fps = step_logged_fps
 
-                    # Extrapolação sub-segundo para animação viva e suave dos cards a cada 300ms
-                    time_since_step = max(0.0, min(5.0, now - getattr(self, "_last_step_time", now))) if current_steps is not None else 0.0
-                    live_steps = current_steps + int(self._smoothed_fps * time_since_step) if current_steps is not None else 0
+                    eff_fps = float(self._smoothed_fps) if (self._smoothed_fps is not None and self._smoothed_fps > 0) else 0.0
 
-                    # Extrapolação viva de Cicatrizes O(1)
-                    if current_scars is not None and current_scars > 0:
-                        steps_beyond_marathon = max(0, live_steps - marathon_base_steps)
-                        live_scars = current_scars + int(0.015 * min(500000, steps_beyond_marathon))
-                    else:
-                        live_scars = 0
+                    # Passos e Cicatrizes 100% reais (sem extrapolação sub-segundo sintética)
+                    live_steps = int(current_steps) if current_steps is not None else 0
+                    live_scars = int(current_scars) if current_scars is not None else 0
 
-                    # Determinação dinâmica do Total da Maratona (ex: 30M ou 100M)
+                    # Sincroniza cicatrizes reais de checkpoint rolling apenas se pertencer à mesma sessão ativa
+                    if os.path.dirname(os.path.abspath(log_path)) == os.path.abspath("scratch"):
+                        for rolling_pt in ("scratch/hybrid_pure_warmup_d10_latest.pt", "scratch/hybrid_pure_warmup_latest.pt"):
+                            if os.path.exists(rolling_pt):
+                                try:
+                                    st_pt = os.stat(rolling_pt)
+                                    log_mtime = os.path.getmtime(log_path)
+                                    if abs(st_pt.st_mtime - log_mtime) < 600.0:
+                                        cache_key = (rolling_pt, st_pt.st_mtime)
+                                        if getattr(self, "_ext_rolling_pt_cache_key", None) != cache_key:
+                                            import torch as _torch
+                                            pt_meta = _torch.load(rolling_pt, map_location="cpu", weights_only=False)
+                                            self._ext_rolling_pt_cache_key = cache_key
+                                            self._ext_rolling_pt_steps = int(pt_meta.get("total_steps", 0) or 0)
+                                            self._ext_rolling_pt_scars = int(pt_meta.get("scars_count", 0) or 0)
+                                        pt_steps = getattr(self, "_ext_rolling_pt_steps", 0)
+                                        if marathon_base_steps < pt_steps <= live_steps + 16384:
+                                            live_scars = max(live_scars, getattr(self, "_ext_rolling_pt_scars", 0))
+                                    break
+                                except Exception:
+                                    pass
+
+                    # Determinação exata do Total da Maratona
                     target_total = getattr(self, "_ext_target_total", None)
                     if not target_total:
                         cfg_steps = getattr(self.runner, "current_config", {}).get("steps")
                         if cfg_steps and cfg_steps > 0:
-                            target_total = cfg_steps
-                        elif "30" in str(getattr(self.runner, "current_config", {}).get("cmd", "")) or "30" in str(getattr(self.runner, "external_log_path", "")):
-                            target_total = 30_000_000
+                            target_total = int(cfg_steps)
                         else:
-                            target_total = 100_000_000
+                            target_total = 15_000_000
 
-                    # Recálculo de ETA em tempo real baseado no Throughput real (~1,600 FPS)
-                    if live_steps > 0 and self._smoothed_fps > 0:
+                    # ETA calculado sobre passos restantes reais e throughput real medido
+                    if live_steps > 0 and eff_fps > 0:
                         rem_steps = max(0, target_total - live_steps)
-                        rem_hours = (rem_steps / self._smoothed_fps) / 3600.0
-                        live_eta = f"{rem_hours:.1f}h"
+                        rem_hours = (rem_steps / eff_fps) / 3600.0
+                        live_eta = f"{rem_hours:.2f}h" if rem_hours < 10.0 else f"{rem_hours:.1f}h"
                     else:
                         live_eta = current_eta
 
-                    # Salva estado persistente para amortecer oscilações de leitura
+                    if current_depth_best_return <= -float("inf"):
+                        current_depth_best_return = current_return
+
+                    # Salva estado persistente
                     if current_steps is not None:
                         self._ext_steps = current_steps
                         self._ext_return = current_return
                         self._ext_calib = current_calib
                         self._ext_depth = current_depth
-                        self._ext_scars = current_scars
+                        self._ext_max_depth_str = current_max_depth_str
+                        self._ext_scars = live_scars
                         self._ext_marathon_steps = marathon_base_steps
                         self._ext_w_norm = current_w_norm
                         self._ext_z_norm = current_z_norm
@@ -534,48 +620,110 @@ class HUDServer:
                         self._ext_best_ret = current_depth_best_return
                         self._ext_promos = promotions_count
 
-                    if live_steps > 0:
-                        # Média das taxas de vitória observadas na janela recente do nível atual
+                    if live_steps > 0 or found_new_marathon:
+                        real_frontier_entries = []
                         recent_returns_current_depth = []
+                        latest_real_entropy = None
+                        latest_real_conf = None
+                        latest_real_lat_us = None
+                        latest_coef_ent = None
+                        latest_ploss = None
+                        latest_vloss = None
+
                         for line in lines:
-                            m_s = step_pattern.search(line)
-                            if m_s and int(m_s.group(4)) == current_depth:
-                                recent_returns_current_depth.append(float(m_s.group(2)))
+                            m_s = step_head_pattern.search(line)
+                            if m_s:
+                                m_dep = depth_pattern.search(line)
+                                line_d = int(m_dep.group(1)) if m_dep else current_depth
+                                if line_d == current_depth:
+                                    recent_returns_current_depth.append(float(m_s.group(4)))
+                                    m_f = frontier_pattern.search(line)
+                                    if m_f:
+                                        f_wins = int(m_f.group(1))
+                                        f_win = max(1, int(m_f.group(2)))
+                                        f_sr = float(m_f.group(3)) / 100.0
+                                        real_frontier_entries.append((f_wins, f_win, f_sr))
+                                    m_e = entropy_pattern.search(line)
+                                    if m_e:
+                                        latest_real_entropy = float(m_e.group(1))
+                                    m_c = conf_pattern.search(line)
+                                    if m_c:
+                                        latest_real_conf = float(m_c.group(1)) / 100.0
+                                    m_lat = latency_pattern.search(line)
+                                    if m_lat:
+                                        val_l = float(m_lat.group(1))
+                                        unit_l = m_lat.group(2)
+                                        latest_real_lat_us = val_l * 1000.0 if unit_l == "ms" else val_l
+                                    m_ce = coef_ent_pattern.search(line)
+                                    if m_ce:
+                                        latest_coef_ent = float(m_ce.group(1))
+                                    m_pl = ploss_pattern.search(line)
+                                    if m_pl:
+                                        latest_ploss = float(m_pl.group(1))
+                                    m_vl = vloss_pattern.search(line)
+                                    if m_vl:
+                                        latest_vloss = float(m_vl.group(1))
 
-                        # Retorno basal de episódios truncados cai com a profundidade devido à penalidade de horizonte (-0.02 * 5 * d)
-                        unsolved_base = max(0.05, 1.0 - 0.10 * current_depth)
-                        solve_span = 10.5
+                        # Extração de metadados técnicos reais do comando CLI e cabeçalho do treino
+                        raw_cmd = str(getattr(self.runner, "current_config", {}).get("cmd", ""))
+                        cmd_str = raw_cmd.lower()
 
-                        if recent_returns_current_depth:
-                            sample_window = recent_returns_current_depth[-6:]
-                            mean_ret_window = sum(sample_window) / len(sample_window)
-                            live_ret_blend = 0.50 * recent_returns_current_depth[-1] + 0.50 * mean_ret_window
-                            base_win_rate = min(1.0, max(0.0, (live_ret_blend - unsolved_base) / solve_span))
-                            # Calcula o pico da janela deslizante curricular (mesma escala de 64 ep que base_win_rate)
-                            rolling_peak_sr = base_win_rate
-                            n_rets = len(recent_returns_current_depth)
-                            start_idx = 3 if n_rets >= 4 else 0
-                            for idx in range(start_idx, n_rets):
-                                win_slice = recent_returns_current_depth[max(0, idx - 5) : idx + 1]
-                                slice_mean = sum(win_slice) / len(win_slice)
-                                slice_sr = min(1.0, max(0.0, (slice_mean - unsolved_base) / solve_span))
-                                if slice_sr > rolling_peak_sr:
-                                    rolling_peak_sr = slice_sr
-                            best_sr = min(1.0, max(base_win_rate, rolling_peak_sr, current_depth_best_sr))
+                        # Número de ambientes paralelos e batedores S1 (determinados antes da grade curricular)
+                        raw_logged_win = real_frontier_entries[-1][1] if real_frontier_entries else 128
+                        num_envs = raw_logged_win
+                        m_envs_cli = re.search(r"--num-envs\s+(\d+)", raw_cmd)
+                        m_envs_hdr = re.search(r"Ambientes:\s*(\d+)", head_text)
+                        if m_envs_cli:
+                            num_envs = int(m_envs_cli.group(1))
+                        elif m_envs_hdr:
+                            num_envs = int(m_envs_hdr.group(1))
+
+                        teacher_envs = 0
+                        m_scouts_cli = re.search(r"--teacher-envs\s+(\d+)", raw_cmd)
+                        m_scouts_hdr = re.search(r"Batedores[^:\n]*:\s*(\d+)/(\d+)", head_text)
+                        if m_scouts_cli:
+                            teacher_envs = int(m_scouts_cli.group(1))
+                        elif m_scouts_hdr:
+                            teacher_envs = int(m_scouts_hdr.group(1))
+                            if not m_envs_cli and not m_envs_hdr:
+                                num_envs = int(m_scouts_hdr.group(2))
+
+                        # Grade curricular efetiva: (num_envs - batedores), pois batedores não contam na aprovação
+                        grade_window = (
+                            max(1, num_envs - teacher_envs)
+                            if (teacher_envs > 0 and num_envs > teacher_envs)
+                            else max(1, raw_logged_win)
+                        )
+
+                        if real_frontier_entries:
+                            raw_wins, raw_win, cur_sr = real_frontier_entries[-1]
+                            cur_sr = min(1.0, max(0.0, cur_sr))
+                            cur_window = grade_window
+                            if raw_win == grade_window:
+                                cur_wins = raw_wins
+                                peak_obs_wins = max(x[0] for x in real_frontier_entries)
+                            else:
+                                # Normaliza logs legados com janela num_envs (128) para a grade real (128 - batedores)
+                                cur_wins = int(round(cur_sr * grade_window))
+                                peak_obs_wins = max(int(round(x[2] * grade_window)) for x in real_frontier_entries)
+                            peak_obs_sr = max(x[2] for x in real_frontier_entries)
+                            best_sr = min(1.0, max(cur_sr, peak_obs_sr, current_depth_best_sr))
+                            best_wins = max(cur_wins, peak_obs_wins, current_depth_best_wins)
                         else:
-                            base_win_rate = min(1.0, max(0.0, (current_return - unsolved_base) / solve_span))
-                            best_sr = min(1.0, max(base_win_rate, current_depth_best_sr))
+                            cur_window = grade_window
+                            cur_sr = 0.0
+                            cur_wins = 0
+                            best_sr = current_depth_best_sr
+                            best_wins = current_depth_best_wins
 
                         self._ext_best_sr = best_sr
-                        cur_sr = min(1.0, max(0.0, base_win_rate))
-                        cur_window = 64
-                        cur_wins = int(round(cur_sr * cur_window))
+                        self._ext_best_wins = best_wins
 
-                        # Meta curricular elástica dinâmica por nível
+                        # Meta curricular elástica idêntica a RubiksCubeEnv.get_target_success_rate
                         if current_depth <= 4:
                             target_sr = 0.85
-                        elif current_depth <= 6:
-                            target_sr = 0.65
+                        elif current_depth <= 7:
+                            target_sr = 0.70
                         elif current_depth <= 10:
                             target_sr = 0.50
                         elif current_depth <= 14:
@@ -583,89 +731,137 @@ class HUDServer:
                         else:
                             target_sr = 0.35
 
-                        # Dinâmica viva de entropia (oscila organicamente com passos e retornos)
-                        base_entropy = 1.05 + 0.035 * math.sin(live_steps / 8192.0) - 0.02 * (current_return / 5.0)
-                        mean_entropy = round(max(0.60, min(1.80, base_entropy)), 3)
+                        return_window_eps = max(20, num_envs, logged_ep_window)
 
-                        # Confiança dinâmica com resposta ao desempenho recente
-                        confidence = round(min(0.98, max(0.88, 0.935 + 0.015 * (current_return / 5.0) + 0.008 * math.cos(live_steps / 8192.0))), 3)
+                        # Checkpoint base e regime
+                        base_ckpt = None
+                        m_ckpt_cli = re.search(r"--base-ckpt\s+([^\s]+)", raw_cmd)
+                        m_ckpt_hdr = re.search(r"Checkpoint Base:\s*([^\s(]+)", head_text)
+                        if m_ckpt_cli:
+                            base_ckpt = m_ckpt_cli.group(1)
+                        elif m_ckpt_hdr:
+                            base_ckpt = m_ckpt_hdr.group(1)
 
-                        # Calibração Homeostática Adaptativa (0.00 a 0.80 conforme especificação do System 1)
-                        # Recompensa positiva/momentum reduz a temperatura; frustração/estagnação eleva a temperatura
-                        base_calib = 0.30 - 0.08 * (current_return / 5.0) + 0.35 * (1.0 - confidence)
-                        live_calib = round(
-                            max(
-                                0.05,
-                                min(
-                                    0.80,
-                                    base_calib
-                                    + 0.025 * math.sin(live_steps / 4096.0)
-                                    + 0.015 * math.cos(live_steps / 2048.0),
-                                ),
-                            ),
-                            2,
-                        )
-
-                        # Latência de inferência com micro-variação natural
-                        latency = round(28.2 + 0.5 * math.sin(live_steps / 4096.0), 1)
-
-                        # Micro-oscilações dos tensores de cicatriz
-                        w_norm = round(current_w_norm + 0.02 * math.sin(live_steps / 16384.0), 2)
-                        z_norm = round(current_z_norm + 0.03 * math.cos(live_steps / 16384.0), 2)
-                        g_norm = round(current_g_norm + 0.15 * math.sin(live_steps / 8192.0), 2)
-
-                        cmd_str = str(getattr(self.runner, "current_config", {}).get("cmd", "")).lower()
                         is_warmup = (
                             "warmup" in cmd_str
                             or "warm_up" in cmd_str
-                            or "base-ckpt" in cmd_str
-                            or any("WARM-UP" in l.upper() for l in lines[:30])
+                            or base_ckpt is not None
+                            or "WARM-UP" in head_text.upper()
                         )
                         regime_tag = "WARM-UP" if is_warmup else "TABULA RASA"
                         regime_title = "Warm-Up" if is_warmup else "Tabula Rasa"
 
+                        # Dispositivo de execução real
+                        m_dev_cli = re.search(r"--device\s+(\w+)", cmd_str)
+                        m_dev_hdr = re.search(r"Dispositivo de Execu[çc][ãa]o:\s*(\w+)", head_text, re.IGNORECASE)
+                        dev_key = (m_dev_cli.group(1) if m_dev_cli else (m_dev_hdr.group(1) if m_dev_hdr else "cpu")).lower()
+                        if dev_key == "cuda":
+                            device_label = "GPU • NVIDIA CUDA"
+                        elif dev_key == "mps":
+                            device_label = "GPU • Apple MPS"
+                        elif is_arm_mac:
+                            device_label = "CPU • Apple Silicon"
+                        else:
+                            device_label = "CPU Universal"
+
+                        # Memória de Cicatriz O(1) e hiperparâmetros reais
+                        pure_scars = ("pure_scars=True" in head_text) or ("Puríssimo" in head_text) or ("pure" in cmd_str)
+                        m_scale = re.search(r"scale=([\d.]+)", head_text)
+                        m_beta = re.search(r"beta=([\d.]+)", head_text)
+                        m_kb = re.search(r"([\d.]+)\s*KB", head_text)
+                        scar_scale = float(m_scale.group(1)) if m_scale else 0.15
+                        scar_beta = float(m_beta.group(1)) if m_beta else 0.20
+                        scar_memory_kb = float(m_kb.group(1)) if m_kb else 4.25
+                        scar_prefix = "Híbrido Puro" if pure_scars else "Híbrido v2"
+                        scar_badge = f"{scar_prefix} • λ={scar_scale:.2f} β={scar_beta:.2f}"
+
+                        # Arquitetura real
+                        has_lru = "LRU" in head_text or "lru" in cmd_str or getattr(self.runner, "current_config", {}).get("trunk") == "lru"
+                        has_rel = "Linear Attention" in head_text or "Relational" in head_text or has_lru
+                        trunk_str = "LRU + Rel" if (has_lru and has_rel) else ("LRU" if has_lru else "S1")
+                        arch_label = f"{trunk_str} • {'Pure Scars' if pure_scars else 'Scar O(1)'}"
+
+                        # Métricas de Entropia, Certeza/Confiança e Custo de Passo
+                        max_ent_rubiks = math.log(12.0)  # ln(12) = 2.4849 nats (espaço discreto de 12 ações)
+                        mean_entropy = round(latest_real_entropy, 3) if latest_real_entropy is not None else 0.0
+                        entropy_floor = 0.18
+                        entropy_floor_active = bool(latest_real_entropy is not None and latest_real_entropy < entropy_floor)
+                        effective_ent_coef = round(latest_coef_ent, 4) if latest_coef_ent is not None else 0.007
+
+                        if latest_real_conf is not None:
+                            confidence = round(latest_real_conf, 4)
+                            confidence_source = "max_prob"
+                        elif latest_real_entropy is not None:
+                            # Identidade exata de Shannon: Certeza Normalizada = 1 - H / ln(|A|)
+                            confidence = round(max(0.0, min(1.0, 1.0 - (latest_real_entropy / max_ent_rubiks))), 4)
+                            confidence_source = "entropy_certainty"
+                        else:
+                            confidence = 0.0
+                            confidence_source = "none"
+
+                        live_calib = round(float(current_calib), 2)
+                        latency = round(latest_real_lat_us, 1) if latest_real_lat_us is not None else 0.0
+                        step_cost_us = round(1_000_000.0 / eff_fps, 1) if eff_fps > 0 else 0.0
+                        w_norm = round(float(current_w_norm), 4)
+                        z_norm = round(float(current_z_norm), 4)
+                        g_norm = round(float(current_g_norm), 4)
+
                         self.update_telemetry({
                             "status": "RUNNING",
                             "training_regime": regime_tag,
+                            "base_checkpoint": base_ckpt,
                             "env": f"RubiksCube ({regime_title} D{current_depth})",
                             "total_steps": live_steps,
                             "target_steps": target_total,
-                            "fps": round(self._smoothed_fps, 1),
+                            "fps": round(eff_fps, 1),
                             "eta": live_eta,
+                            "num_envs": num_envs,
+                            "teacher_envs": teacher_envs,
+                            "return_window_eps": return_window_eps,
+                            "device_label": device_label,
+                            "arch_label": arch_label,
                             "curriculum_depth": current_depth,
-                            "curriculum_max_depth": "∞",
+                            "curriculum_max_depth": current_max_depth_str,
                             "curriculum_promotions": promotions_count,
                             "curriculum_success_rate": cur_sr,
                             "curriculum_wins": cur_wins,
                             "curriculum_samples": cur_window,
                             "curriculum_depth_best_success_rate": best_sr,
+                            "curriculum_depth_best_wins": best_wins,
                             "target_success_rate": target_sr,
                             "curriculum_depth_best_return": current_depth_best_return,
                             "mean_return_20": current_return,
-                            # Memória de Cicatriz O(1) (Híbrido v2)
+                            # Memória de Cicatriz O(1) Real
                             "scar_mode": "hybrid",
+                            "pure_scars": pure_scars,
+                            "scar_scale": scar_scale,
+                            "scar_beta": scar_beta,
+                            "scar_badge": scar_badge,
                             "scars_count": live_scars,
                             "scar_w_norm": w_norm,
                             "scar_z_norm": z_norm,
                             "scar_g_norm": g_norm,
-                            "scar_memory_kb": 4.25,
+                            "scar_memory_kb": scar_memory_kb,
                             # Compatibilidade com campos SIL
                             "sil_trajectories": live_scars,
                             "sil_full_wins": live_scars,
-                            "sil_memory_mb": 0.0042,
-                            "sil_tournament_size": "Híbrido Puríssimo",
-                            # Exploração e Calibração
+                            "sil_memory_mb": round(scar_memory_kb / 1024.0, 4),
+                            "sil_tournament_size": scar_prefix,
+                            # Exploração, Entropia e Calibração Reais
                             "calibration": live_calib,
                             "latency_p50_us": latency,
+                            "step_cost_us": step_cost_us,
                             "mean_confidence": confidence,
+                            "confidence_source": confidence_source,
                             "mean_entropy": mean_entropy,
                             "entropy": mean_entropy,
-                            "entropy_floor": 0.30,
-                            "entropy_floor_active": False,
-                            "effective_entropy_coef": 0.007,
-                            # Perdas e Gradientes
-                            "policy_loss": round(0.012 + 0.003 * math.cos(live_steps / 12288.0), 3),
-                            "value_loss": round(0.045 + 0.005 * (abs(current_return - 3.0) / 10.0), 3),
+                            "max_entropy": round(max_ent_rubiks, 3),
+                            "entropy_floor": entropy_floor,
+                            "entropy_floor_active": entropy_floor_active,
+                            "effective_entropy_coef": effective_ent_coef,
+                            # Perdas reais (0.0 quando não emitidas no log externo)
+                            "policy_loss": round(latest_ploss, 4) if latest_ploss is not None else 0.0,
+                            "value_loss": round(latest_vloss, 4) if latest_vloss is not None else 0.0,
                         })
                 except Exception:
                     pass

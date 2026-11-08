@@ -46,12 +46,13 @@ def compute_purity_score(
     actions: Union[List[Any], np.ndarray],
     is_atomic_cube: bool = False,
     is_discrete: Optional[bool] = None,
+    inverse_action_map: Optional[Dict[int, int]] = None,
 ) -> float:
     """Calcula a pureza da trajetória penalizando reversões imediatas e oscilações redundantes.
 
     Suporta espaços de ação discretos (inteiros) e contínuos (vetores multidimensionais).
     - Espaço Discreto: penaliza oscilações 2-passos (A -> B -> A), ciclos redundantes e
-      (se is_atomic_cube=True) pares reversos imediatos.
+      (se inverse_action_map for fornecido) pares reversos imediatos.
     - Espaço Contínuo: penaliza reversões bruscas direcionais (cosine similarity negativa)
       e alto jerk / jittering temporal de 2ª ordem.
     """
@@ -78,7 +79,10 @@ def compute_purity_score(
         for i in range(1, n_acts):
             a_prev = act_list[i - 1]
             a_curr = act_list[i]
-            if is_atomic_cube:
+            if isinstance(inverse_action_map, dict):
+                if a_curr == inverse_action_map.get(a_prev):
+                    penalties += 1.0
+            elif is_atomic_cube:
                 inv_prev = (a_prev + 1) if (a_prev % 2 == 0) else (a_prev - 1)
                 if a_curr == inv_prev:
                     penalties += 1.0
@@ -183,12 +187,17 @@ class ConfidenceGatedEnsemble:
             best_score = -float("inf")
             candidate_scores: Dict[int, float] = {}
 
+            def_env = getattr(agent, "default_env", None)
+            inv_map = getattr(def_env, "inverse_action_map", None) or getattr(
+                getattr(def_env, "unwrapped", None), "inverse_action_map", None
+            )
+
             for a in valid_candidates:
                 p = float(base_probs[a].item())
                 penalty = 0.0
-                if quality_filter and len(hist) >= 1 and n_acts == 12:
-                    inv_prev = (hist[-1] + 1) if (hist[-1] % 2 == 0) else (hist[-1] - 1)
-                    if a == inv_prev:
+                if quality_filter and len(hist) >= 1 and isinstance(inv_map, dict):
+                    inv_prev = inv_map.get(int(hist[-1]))
+                    if inv_prev is not None and a == inv_prev:
                         penalty += 0.40
                 if quality_filter and len(hist) >= 2 and a == hist[-2]:
                     penalty += 0.20

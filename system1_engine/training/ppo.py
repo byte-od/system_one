@@ -1,4 +1,7 @@
 from collections import deque
+from contextlib import contextmanager
+import copy
+import inspect
 import math
 import os
 import time
@@ -19,6 +22,188 @@ from system1_engine.training.buffer import (
     SuccessReplayBuffer,
     SuccessfulTrajectory,
 )
+
+
+class _ExternalMultiEnvAdapter(gym.Env):
+    """Adaptador universal caixa-preta para N cópias independentes de qualquer gym.Env."""
+
+    def __init__(self, envs: List[gym.Env], is_visual: bool = False, visual_channels: int = 3) -> None:
+        super().__init__()
+        self.envs = envs
+        self.num_envs = len(envs)
+        self.is_visual = bool(is_visual)
+        self.visual_channels = int(visual_channels)
+        self._raw_obs_space = envs[0].observation_space
+        self.action_space = envs[0].action_space
+        if self.is_visual:
+            self.observation_space = gym.spaces.Box(
+                low=0.0, high=1.0, shape=(self.visual_channels, 84, 84), dtype=np.float32
+            )
+        else:
+            obs_dim = UniversalS1Wrapper._compute_vector_dim(self._raw_obs_space)
+            self.observation_space = gym.spaces.Box(
+                low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
+            )
+
+    @property
+    def inverse_action_map(self) -> Optional[Dict[int, int]]:
+        return getattr(self.envs[0], "inverse_action_map", None)
+
+    def _encode_one(self, raw_obs: Any) -> np.ndarray:
+        if self.is_visual:
+            arr = np.asarray(raw_obs, dtype=np.float32)
+            if arr.ndim == 3 and arr.shape[-1] in (1, 3, 4) and arr.shape[0] not in (1, 3, 4):
+                arr = np.transpose(arr, (2, 0, 1))
+            if arr.max() > 1.01:
+                arr = arr / 255.0
+            return arr
+        return UniversalS1Wrapper._vectorize_obs(raw_obs, self._raw_obs_space)
+
+    def reset(
+        self,
+        *,
+        seed: Optional[int] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[np.ndarray, List[Dict[str, Any]]]:
+        obs_list = []
+        info_list = []
+        for i, e in enumerate(self.envs):
+            s_i = (seed + 10_000 + i) if seed is not None else None
+            o, inf = e.reset(seed=s_i, options=options)
+            obs_list.append(self._encode_one(o))
+            info_list.append(dict(inf) if isinstance(inf, dict) else {})
+        return np.stack(obs_list, axis=0), info_list
+
+    def step(
+        self, actions: Any, **kwargs: Any
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, List[Dict[str, Any]]]:
+        obs_list = []
+        rewards = np.empty(self.num_envs, dtype=np.float32)
+        terms = np.empty(self.num_envs, dtype=bool)
+        truncs = np.empty(self.num_envs, dtype=bool)
+        infos: List[Dict[str, Any]] = []
+
+        for i, e in enumerate(self.envs):
+            act_i = int(actions[i]) if isinstance(self.action_space, gym.spaces.Discrete) else actions[i]
+            o, r, term, trunc, inf = e.step(act_i)
+            inf_d = dict(inf) if isinstance(inf, dict) else {}
+            if term or trunc:
+                inf_d["terminal_observation"] = self._encode_one(o)
+                o_reset, _ = e.reset()
+                obs_list.append(self._encode_one(o_reset))
+            else:
+                obs_list.append(self._encode_one(o))
+            rewards[i] = float(r)
+            terms[i] = bool(term)
+            truncs[i] = bool(trunc)
+            infos.append(inf_d)
+        return np.stack(obs_list, axis=0), rewards, terms, truncs, infos
+
+    def set_curriculum_depth(self, depth: int) -> None:
+        for e in self.envs:
+            if hasattr(e, "set_curriculum_depth"):
+                e.set_curriculum_depth(depth)
+            elif hasattr(e, "current_depth"):
+                e.current_depth = int(depth)
+
+    def close(self) -> None:
+        for e in self.envs:
+            try:
+                e.close()
+            except Exception:
+                pass
+
+
+def _build_external_scout_env(
+    env: UniversalS1Wrapper,
+    num_scouts: int,
+) -> Optional[UniversalS1Wrapper]:
+    """Instancia de forma 100% universal uma frota externa independente de batedores intuitivos.
+
+    Opera estritamente via API padrão gym.Env (reset/step), com record_curriculum=False
+    para isolar integralmente a janela curricular principal.
+    """
+    if num_scouts <= 0:
+        return None
+
+    base_env = getattr(env, "env", env)
+    raw_env = getattr(env, "unwrapped", base_env)
+
+    # 1. Caminho nativo vetorizado quando a classe aceita num_envs (ex: VectorizedRubiksEnv)
+    try:
+        sig = inspect.signature(type(raw_env).__init__)
+        if "num_envs" in sig.parameters and hasattr(raw_env, "envs") and len(raw_env.envs) > 0:
+            sub0 = raw_env.envs[0]
+            vec_kwargs: Dict[str, Any] = {}
+            if "is_macro" in sig.parameters and hasattr(raw_env, "is_macro"):
+                vec_kwargs["is_macro"] = bool(raw_env.is_macro)
+            if "render_mode" in sig.parameters:
+                vec_kwargs["render_mode"] = None
+            has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+            if has_var_kw:
+                for attr in ("scramble_depth", "max_steps", "min_depth", "max_depth", "curriculum"):
+                    if hasattr(sub0, attr):
+                        vec_kwargs[attr] = getattr(sub0, attr)
+                if hasattr(sub0, "mixed_replay_rate"):
+                    vec_kwargs["mixed_replay_rate"] = 0.0
+            scout_raw = type(raw_env)(num_envs=int(num_scouts), **vec_kwargs)
+            for se in getattr(scout_raw, "envs", []):
+                if hasattr(se, "record_curriculum"):
+                    se.record_curriculum = False
+            if hasattr(raw_env, "current_depth") and hasattr(scout_raw, "set_curriculum_depth"):
+                scout_raw.set_curriculum_depth(int(raw_env.current_depth))
+            return UniversalS1Wrapper(
+                scout_raw,
+                is_visual=env.is_visual,
+                gamma=env.gamma,
+                tri_compass=env.tri_compass,
+            )
+    except Exception:
+        pass
+
+    # 2. Caminho universal para qualquer gym.Env singular ou vetorizado (CartPole, MuJoCo, Box2D, custom)
+    proto = raw_env.envs[0] if (hasattr(raw_env, "envs") and len(raw_env.envs) > 0) else base_env
+    instances: List[gym.Env] = []
+    for _ in range(int(num_scouts)):
+        inst = None
+        try:
+            inst = copy.deepcopy(proto)
+        except Exception:
+            spec = getattr(proto, "spec", None)
+            if spec is not None and getattr(spec, "id", None):
+                inst = gym.make(spec.id)
+        if inst is None:
+            return None
+        if hasattr(inst, "record_curriculum"):
+            inst.record_curriculum = False
+        unw = getattr(inst, "unwrapped", inst)
+        if hasattr(unw, "record_curriculum"):
+            unw.record_curriculum = False
+        instances.append(inst)
+
+    if getattr(env, "is_visual", False):
+        # Ambientes visuais: mantém adaptador vetorial de frames padronizados
+        adapter = _ExternalMultiEnvAdapter(
+            instances,
+            is_visual=True,
+            visual_channels=getattr(env, "visual_channels", 3),
+        )
+        return UniversalS1Wrapper(
+            adapter,
+            is_visual=True,
+            gamma=env.gamma,
+            tri_compass=False,
+        )
+
+    adapter = _ExternalMultiEnvAdapter(instances, is_visual=False)
+    if hasattr(raw_env, "current_depth"):
+        adapter.set_curriculum_depth(int(raw_env.current_depth))
+    return UniversalS1Wrapper(
+        adapter,
+        is_visual=False,
+        gamma=env.gamma,
+        tri_compass=env.tri_compass,
+    )
 
 
 class RecurrentPPOTrainer:
@@ -89,12 +274,14 @@ class RecurrentPPOTrainer:
         scar_scale: float = 0.15,
         scar_beta: float = 0.20,
         pure_scars: bool = True,
+        external_scout_envs: int = 0,
     ) -> None:
         self.agent = agent.to(device)
         self.env = env
         self.dynamic_frontier = bool(dynamic_frontier)
         self.proximal_decay = float(proximal_decay)
-        self.teacher_sil_envs = max(0, int(teacher_sil_envs))
+        # Caminho A Universal (System 1 Puro): zero batedores/simuladores no treino PPO
+        self.teacher_sil_envs = 0
         self.teacher_min_depth = max(1, int(teacher_min_depth))
         self.teacher_confidence_threshold = float(teacher_confidence_threshold)
         self.teacher_top_k = max(2, int(teacher_top_k))
@@ -259,19 +446,49 @@ class RecurrentPPOTrainer:
             from system1_engine.core.scar_memory import GradientScarMemory
             slot_dim = getattr(agent.front_end.state_encoder, "slot_dim", 32) if hasattr(agent.front_end, "state_encoder") else 32
             num_slots = getattr(agent.front_end.state_encoder, "num_slots", 8) if hasattr(agent.front_end, "state_encoder") else 8
-            self.scar_memory = GradientScarMemory(
-                slot_dim=slot_dim,
-                num_slots=num_slots,
-                mode=self.scar_mode,
-                decay=scar_decay,
-                scale=scar_scale,
-                resonance_beta=scar_beta,
-            ).to(self.device)
-            self.agent.set_scar_memory(self.scar_memory)
+            # Reuse the agent's scar memory if already restored from checkpoint (preserves existing scars)
+            if agent.scar_memory is not None and isinstance(agent.scar_memory, GradientScarMemory):
+                self.scar_memory = agent.scar_memory
+                # Apply config parameters to the existing instance (config changes take effect from now on)
+                self.scar_memory.mode = self.scar_mode
+                self.scar_memory.decay = float(scar_decay)
+                self.scar_memory.scale = float(scar_scale)
+                self.scar_memory.resonance_beta = float(scar_beta)
+                self.agent.set_scar_memory(self.scar_memory)
+            else:
+                self.scar_memory = GradientScarMemory(
+                    slot_dim=slot_dim,
+                    num_slots=num_slots,
+                    mode=self.scar_mode,
+                    decay=scar_decay,
+                    scale=scar_scale,
+                    resonance_beta=scar_beta,
+                ).to(self.device)
+                self.agent.set_scar_memory(self.scar_memory)
         else:
             self.scar_memory = None
 
         self.pure_scars = bool(pure_scars)
+        self._defer_scar_recording: bool = False
+        self._pending_scars: List[Tuple[Any, Any, Any, Any, float, bool]] = []
+        self.scout_scars_count: int = 0
+        self.scout_wins_count: int = 0
+
+        # Garante 100% da frota on-policy ativa no currículo (sem batedores off-policy internos)
+        raw_env_init = getattr(self.env, "unwrapped", self.env)
+        if hasattr(raw_env_init, "set_scout_envs"):
+            raw_env_init.set_scout_envs(0)
+
+        # Frota Externa de Batedores Intuitivos (roda FORA dos num_envs principais, 0 impacto em ValueHead/PPO/Grade X/128)
+        requested_ext_scouts = max(0, int(external_scout_envs)) if self.scar_mode != "none" else 0
+        self.scout_env: Optional[UniversalS1Wrapper] = (
+            _build_external_scout_env(self.env, requested_ext_scouts)
+            if requested_ext_scouts > 0
+            else None
+        )
+        self.external_scout_envs: int = (
+            int(self.scout_env.num_envs) if self.scout_env is not None else 0
+        )
 
         self._active_vec_trajectories: List[deque] = [deque(maxlen=200) for _ in range(self.num_envs)]
         self._active_single_trajectory: deque = deque(maxlen=200)
@@ -325,7 +542,6 @@ class RecurrentPPOTrainer:
                 self._vec_input_dict["delta_obs"] = self._vec_buf_delta
 
             self._vec_recent_actions: List[deque[int]] = [deque(maxlen=6) for _ in range(self.num_envs)]
-            self._vec_visited_hashes: List[Dict[int, int]] = [{} for _ in range(self.num_envs)]
             if self.num_envs >= 4:
                 # Cobertura Completa de Exploração de 0 à 1 em Ambientes Simultâneos (Quality-Diverse Spectrum):
                 # - Estrato Elite (0 .. E//4 - 1): determinístico / ultra-greedy (0.02 a 0.20) para trajetórias ótimas
@@ -352,13 +568,330 @@ class RecurrentPPOTrainer:
                 self._env_scale_multipliers = torch.ones((self.num_envs, 1, 1), dtype=torch.float32, device=self.device)
                 self._env_fixed_anchors = None
 
+        # Pré-alocação de tensores co-batched para Frota Externa de Batedores Intuitivos (E + E_scout em inference_mode)
+        self._scout_obs_dict: Optional[Dict[str, Any]] = None
+        self._scout_hx: Optional[torch.Tensor] = None
+        self._scout_tracked_depth: int = -1
+        if self.external_scout_envs > 0 and self.scout_env is not None:
+            es = self.external_scout_envs
+            self._active_scout_trajectories: List[deque] = [deque(maxlen=200) for _ in range(es)]
+            self._scout_recent_actions: List[deque[int]] = [deque(maxlen=6) for _ in range(es)]
+
+            # Espectro Intuitivo: Batedores de precisão (alto λ, β e baixa temp) -> Pioneiros (médio-alto λ, β e alta temp)
+            s_scales_np = np.linspace(
+                max(0.50, float(scar_scale) * 3.25),
+                max(0.25, float(scar_scale) * 1.65),
+                es,
+                dtype=np.float32,
+            )
+            s_betas_np = np.linspace(
+                max(0.65, float(scar_beta) * 3.25),
+                max(0.35, float(scar_beta) * 1.75),
+                es,
+                dtype=np.float32,
+            )
+            self._scout_scar_scales = torch.from_numpy(s_scales_np).to(self.device)
+            self._scout_scar_betas = torch.from_numpy(s_betas_np).to(self.device)
+
+            n_s_prec = max(1, es // 3)
+            n_s_pion = max(1, es // 3)
+            n_s_bal = max(0, es - n_s_prec - n_s_pion)
+            s_temp_mults = np.concatenate(
+                [
+                    np.linspace(0.15, 0.40, n_s_prec, dtype=np.float32),
+                    np.linspace(0.50, 0.85, n_s_bal, dtype=np.float32) if n_s_bal > 0 else np.empty(0, dtype=np.float32),
+                    np.linspace(0.90, 1.35, n_s_pion, dtype=np.float32),
+                ]
+            )
+            self._scout_scale_multipliers = torch.from_numpy(s_temp_mults).to(self.device).view(es, 1, 1)
+
+            # Buffers standalone para fallback quando num_envs == 1
+            self._scout_buf_obs = torch.zeros((es, 1, *obs_shape), dtype=torch.float32, device=self.device)
+            if is_discrete:
+                self._scout_buf_act = torch.zeros((es, 1), dtype=torch.long, device=self.device)
+            else:
+                self._scout_buf_act = torch.zeros((es, 1, *act_shape), dtype=torch.float32, device=self.device)
+            self._scout_buf_rew = torch.zeros((es, 1, 1), dtype=torch.float32, device=self.device)
+            if not env.is_visual:
+                s_delta_shape = (
+                    env.observation_space.spaces["delta_obs"].shape
+                    if hasattr(env, "observation_space")
+                    and isinstance(env.observation_space, gym.spaces.Dict)
+                    and "delta_obs" in env.observation_space.spaces
+                    else obs_shape
+                )
+                self._scout_buf_delta: Optional[torch.Tensor] = torch.zeros(
+                    (es, 1, *s_delta_shape), dtype=np.float32 if False else torch.float32, device=self.device
+                )
+            else:
+                self._scout_buf_delta = None
+            self._scout_input_dict: Dict[str, Any] = {
+                "obs": self._scout_buf_obs,
+                "prev_action": self._scout_buf_act,
+                "prev_reward": self._scout_buf_rew,
+            }
+            if self._scout_buf_delta is not None:
+                self._scout_input_dict["delta_obs"] = self._scout_buf_delta
+
+            # Buffers co-batched unificados (E + E_scout) para zero kernel extra em _collect_rollouts_vectorized
+            if self.is_vectorized:
+                etot = self.num_envs + es
+                self._comb_scar_scales = torch.cat(
+                    [
+                        torch.full((self.num_envs,), float(scar_scale), dtype=torch.float32, device=self.device),
+                        self._scout_scar_scales,
+                    ],
+                    dim=0,
+                )
+                self._comb_scar_betas = torch.cat(
+                    [
+                        torch.full((self.num_envs,), float(scar_beta), dtype=torch.float32, device=self.device),
+                        self._scout_scar_betas,
+                    ],
+                    dim=0,
+                )
+                self._comb_buf_obs = torch.zeros((etot, 1, *obs_shape), dtype=torch.float32, device=self.device)
+                if is_discrete:
+                    self._comb_buf_act = torch.zeros((etot, 1), dtype=torch.long, device=self.device)
+                else:
+                    self._comb_buf_act = torch.zeros((etot, 1, *act_shape), dtype=torch.float32, device=self.device)
+                self._comb_buf_rew = torch.zeros((etot, 1, 1), dtype=torch.float32, device=self.device)
+                if self._vec_buf_delta is not None:
+                    self._comb_buf_delta: Optional[torch.Tensor] = torch.zeros(
+                        (etot, 1, *self._vec_buf_delta.shape[2:]), dtype=torch.float32, device=self.device
+                    )
+                else:
+                    self._comb_buf_delta = None
+                self._comb_input_dict: Dict[str, Any] = {
+                    "obs": self._comb_buf_obs,
+                    "prev_action": self._comb_buf_act,
+                    "prev_reward": self._comb_buf_rew,
+                }
+                if self._comb_buf_delta is not None:
+                    self._comb_input_dict["delta_obs"] = self._comb_buf_delta
+
         # Persistent episode statistics across rollout batches (cobre toda a frota vetorizada para evitar ondas de truncamento)
         self.episode_returns: deque[float] = deque(maxlen=max(20, self.num_envs))
+        self._rollout_confidences: deque[float] = deque(maxlen=64)
+        self._rollout_latencies_us: deque[float] = deque(maxlen=64)
         self.curr_ep_return: float = 0.0
         self.total_steps: int = 0
         self.best_state_depth: int = self._get_current_curriculum_depth()
         self.best_depth_mean_return: float = -float("inf")
         self._rollout_tracked_depth: int = self.best_state_depth
+
+    def close_scout_env(self) -> None:
+        """Libera recursos da frota externa de batedores intuitivos."""
+        if self.scout_env is not None:
+            try:
+                self.scout_env.close()
+            except Exception:
+                pass
+            self.scout_env = None
+
+    def _sync_scout_curriculum_depth(self) -> None:
+        """Sincroniza a profundidade da fronteira ativa e meta geodésica para a frota externa."""
+        if self.scout_env is None:
+            return
+        cur_d = self._get_current_curriculum_depth()
+        if cur_d > 0 and cur_d != self._scout_tracked_depth:
+            scout_raw = getattr(self.scout_env, "unwrapped", getattr(self.scout_env, "env", self.scout_env))
+            if hasattr(scout_raw, "set_curriculum_depth"):
+                scout_raw.set_curriculum_depth(cur_d)
+            elif hasattr(self.scout_env.env, "set_curriculum_depth"):
+                self.scout_env.env.set_curriculum_depth(cur_d)
+            self._scout_tracked_depth = cur_d
+        # Sincronia bidirecional do atrator de meta Tri-Compass (universal)
+        if getattr(self.env, "elite_goal_obs", None) is not None and getattr(self.scout_env, "elite_goal_obs", None) is None:
+            self.scout_env.set_elite_goal_obs(self.env.elite_goal_obs)
+        elif (
+            getattr(self.scout_env, "elite_goal_obs", None) is not None
+            and getattr(self.scout_env, "_best_terminal_reward", -float("inf"))
+            > getattr(self.env, "_best_terminal_reward", -float("inf"))
+        ):
+            self.env.set_elite_goal_obs(self.scout_env.elite_goal_obs)
+            self.env._best_terminal_reward = float(self.scout_env._best_terminal_reward)
+
+    def _ensure_scout_initialized(self) -> None:
+        """Garante que os estados de observação e hx da frota externa estejam prontos."""
+        if self.scout_env is None or self.external_scout_envs <= 0:
+            return
+        self._sync_scout_curriculum_depth()
+        if self._scout_obs_dict is None:
+            self._scout_obs_dict, _ = self.scout_env.reset()
+        if self._scout_hx is None:
+            self._scout_hx = self.agent.get_initial_hx(batch_size=self.external_scout_envs, device=self.device)
+
+    def _prepare_comb_rollout_input(self, main_obs_dict: Dict[str, Any], scout_obs_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Preenche o buffer unificado (E + E_scout) sem alocações dinâmicas."""
+        e_main = self.num_envs
+        self._comb_buf_obs[:e_main, 0].copy_(torch.as_tensor(main_obs_dict["obs"], dtype=torch.float32))
+        self._comb_buf_obs[e_main:, 0].copy_(torch.as_tensor(scout_obs_dict["obs"], dtype=torch.float32))
+        if self.agent.is_discrete:
+            self._comb_buf_act[:e_main, 0].copy_(torch.as_tensor(main_obs_dict["prev_action"], dtype=torch.long))
+            self._comb_buf_act[e_main:, 0].copy_(torch.as_tensor(scout_obs_dict["prev_action"], dtype=torch.long))
+        else:
+            self._comb_buf_act[:e_main, 0].copy_(torch.as_tensor(main_obs_dict["prev_action"], dtype=torch.float32))
+            self._comb_buf_act[e_main:, 0].copy_(torch.as_tensor(scout_obs_dict["prev_action"], dtype=torch.float32))
+        self._comb_buf_rew[:e_main, 0, 0].copy_(torch.as_tensor(main_obs_dict["prev_reward"], dtype=torch.float32))
+        self._comb_buf_rew[e_main:, 0, 0].copy_(torch.as_tensor(scout_obs_dict["prev_reward"], dtype=torch.float32))
+        if self._comb_buf_delta is not None:
+            if "delta_obs" in main_obs_dict and main_obs_dict["delta_obs"] is not None:
+                self._comb_buf_delta[:e_main, 0].copy_(torch.as_tensor(main_obs_dict["delta_obs"], dtype=torch.float32))
+            if "delta_obs" in scout_obs_dict and scout_obs_dict["delta_obs"] is not None:
+                self._comb_buf_delta[e_main:, 0].copy_(torch.as_tensor(scout_obs_dict["delta_obs"], dtype=torch.float32))
+        return self._comb_input_dict
+
+    def _step_external_scouts_from_tensors(
+        self,
+        scout_logits_or_loc: torch.Tensor,
+        scout_scale_opt: Optional[torch.Tensor],
+        scout_val: torch.Tensor,
+        next_scout_hx: torch.Tensor,
+        curr_scale: float,
+    ) -> None:
+        """Executa 1 passo universal da frota externa de batedores intuitivos e filtra vitórias inéditas."""
+        if self.scout_env is None or self._scout_obs_dict is None:
+            return
+        es = self.external_scout_envs
+        s_scales = (max(0.15, curr_scale) * self._scout_scale_multipliers).clamp(min=0.05, max=1.35)
+        if self.action_chunk_size > 1:
+            s_scales_exp = s_scales.unsqueeze(2)
+        else:
+            s_scales_exp = s_scales
+
+        if self.agent.is_discrete:
+            s_logits = scout_logits_or_loc
+            pen_logits = s_logits.clone()
+            inv_map: Optional[Dict[int, int]] = getattr(self.scout_env, "inverse_action_map", None)
+            if inv_map is not None:
+                for s_i in range(es):
+                    s_hist = self._scout_recent_actions[s_i]
+                    if len(s_hist) >= 1:
+                        inv_a = inv_map.get(s_hist[-1])
+                        if inv_a is not None:
+                            if self.action_chunk_size > 1:
+                                pen_logits[s_i, 0, 0, inv_a] -= 12.0
+                            else:
+                                pen_logits[s_i, 0, inv_a] -= 12.0
+                    if len(s_hist) >= 3 and s_hist[-1] == s_hist[-3]:
+                        if self.action_chunk_size > 1:
+                            pen_logits[s_i, 0, 0, s_hist[-2]] -= 8.0
+                        else:
+                            pen_logits[s_i, 0, s_hist[-2]] -= 8.0
+            else:
+                for s_i in range(es):
+                    s_hist = self._scout_recent_actions[s_i]
+                    if len(s_hist) >= 3 and s_hist[-1] == s_hist[-3]:
+                        if self.action_chunk_size > 1:
+                            pen_logits[s_i, 0, 0, s_hist[-2]] -= 3.0
+                        else:
+                            pen_logits[s_i, 0, s_hist[-2]] -= 3.0
+
+            scaled_s_logits = torch.nan_to_num(pen_logits / s_scales_exp, nan=0.0, posinf=35.0, neginf=-35.0).clamp(
+                min=-35.0, max=35.0
+            )
+            s_dist = torch.distributions.Categorical(logits=scaled_s_logits)
+            s_act = s_dist.sample()
+            # Avalia surpresa na distribuição base (sem inflar Shannon por temperatura exploratória)
+            base_s_dist = torch.distributions.Categorical(
+                logits=torch.nan_to_num(s_logits, nan=0.0, posinf=35.0, neginf=-35.0).clamp(min=-35.0, max=35.0)
+            )
+            s_logp = base_s_dist.log_prob(s_act)
+            if self.action_chunk_size > 1:
+                s_logp = s_logp.sum(dim=-1)
+            s_env_act = s_act.squeeze(1).cpu().numpy()
+            for s_i in range(es):
+                last_a = int(s_env_act[s_i, -1]) if self.action_chunk_size > 1 else int(s_env_act[s_i])
+                self._scout_recent_actions[s_i].append(last_a)
+        else:
+            assert scout_scale_opt is not None
+            eff_s_std = (scout_scale_opt * s_scales_exp).clamp(min=1e-5)
+            s_dist = torch.distributions.Normal(loc=scout_logits_or_loc, scale=eff_s_std)
+            s_act = s_dist.sample()
+            base_s_dist = torch.distributions.Normal(loc=scout_logits_or_loc, scale=scout_scale_opt.clamp(min=1e-5))
+            if self.action_chunk_size > 1:
+                s_logp = base_s_dist.log_prob(s_act).sum(dim=(-2, -1))
+            else:
+                s_logp = base_s_dist.log_prob(s_act).sum(dim=-1)
+            s_env_act = s_act.squeeze(1).cpu().numpy()
+            if isinstance(self.scout_env.action_space, gym.spaces.Box):
+                s_env_act = np.clip(s_env_act, self.scout_env.action_space.low, self.scout_env.action_space.high)
+
+        next_s_obs, s_rews, s_terms, s_truncs, s_infos = self.scout_env.step(s_env_act)
+        s_dones = s_terms | s_truncs
+
+        s_logp_np = s_logp.squeeze(1).detach().cpu().numpy()
+        s_vals_np = scout_val.squeeze(1).squeeze(1).detach().cpu().numpy()
+        cur_s_obs = self._scout_obs_dict
+        has_delta = "delta_obs" in cur_s_obs and cur_s_obs["delta_obs"] is not None
+
+        for s_i in range(es):
+            delta_v = cur_s_obs["delta_obs"][s_i].copy() if has_delta else None
+            prev_act_v = cur_s_obs["prev_action"][s_i]
+            if hasattr(prev_act_v, "copy"):
+                prev_act_v = prev_act_v.copy()
+            act_v = s_env_act[s_i]
+            if hasattr(act_v, "copy"):
+                act_v = act_v.copy()
+            self._active_scout_trajectories[s_i].append(
+                {
+                    "obs": cur_s_obs["obs"][s_i].copy(),
+                    "delta_obs": delta_v,
+                    "prev_action": prev_act_v,
+                    "prev_reward": float(cur_s_obs["prev_reward"][s_i]),
+                    "action": act_v,
+                    "reward": float(s_rews[s_i]),
+                    "log_prob": float(s_logp_np[s_i]),
+                    "value": float(s_vals_np[s_i]),
+                }
+            )
+
+        done_s_idxs = np.where(s_dones)[0]
+        if len(done_s_idxs) > 0:
+            self._sync_scout_curriculum_depth()
+            for d_i in done_s_idxs:
+                self._scout_recent_actions[d_i].clear()
+                d_info = s_infos[d_i] if isinstance(s_infos, (list, tuple)) and d_i < len(s_infos) else {}
+                traj_steps = self._active_scout_trajectories[d_i]
+                is_solved = bool(d_info.get("is_solved", d_info.get("is_success", False))) if isinstance(d_info, dict) else False
+                is_win = is_solved or (bool(s_terms[d_i]) and float(s_rews[d_i]) >= 5.0)
+                if is_win:
+                    self.scout_wins_count += 1
+                    if len(traj_steps) > 0:
+                        cur_d = (
+                            int(d_info.get("scramble_depth", d_info.get("current_depth", self._get_current_curriculum_depth())))
+                            if isinstance(d_info, dict)
+                            else self._get_current_curriculum_depth()
+                        )
+                        self._process_completed_trajectory(traj_steps, True, cur_d, is_external_scout=True)
+                self._active_scout_trajectories[d_i].clear()
+            next_scout_hx[:, done_s_idxs, :] = 0.0
+
+        self._scout_obs_dict = next_s_obs
+        self._scout_hx = next_scout_hx
+
+    def _step_external_scouts_standalone(self, curr_scale: float) -> None:
+        """Executa 1 passo dos batedores externos quando o ambiente principal não é vetorizado (num_envs == 1)."""
+        if self.scout_env is None or self.external_scout_envs <= 0 or self.scar_memory is None:
+            return
+        self._ensure_scout_initialized()
+        assert self._scout_obs_dict is not None
+        self._scout_buf_obs[:, 0].copy_(torch.as_tensor(self._scout_obs_dict["obs"], dtype=torch.float32))
+        if self.agent.is_discrete:
+            self._scout_buf_act[:, 0].copy_(torch.as_tensor(self._scout_obs_dict["prev_action"], dtype=torch.long))
+        else:
+            self._scout_buf_act[:, 0].copy_(torch.as_tensor(self._scout_obs_dict["prev_action"], dtype=torch.float32))
+        self._scout_buf_rew[:, 0, 0].copy_(torch.as_tensor(self._scout_obs_dict["prev_reward"], dtype=torch.float32))
+        if self._scout_buf_delta is not None and "delta_obs" in self._scout_obs_dict and self._scout_obs_dict["delta_obs"] is not None:
+            self._scout_buf_delta[:, 0].copy_(torch.as_tensor(self._scout_obs_dict["delta_obs"], dtype=torch.float32))
+
+        with self.scar_memory.batch_modulation_scope(self._scout_scar_scales, self._scout_scar_betas):
+            s_dist, s_val, next_s_hx = self.agent.forward(self._scout_input_dict, hx=self._scout_hx, dones=None)
+        if self.agent.is_discrete:
+            self._step_external_scouts_from_tensors(s_dist.logits, None, s_val, next_s_hx, curr_scale)
+        else:
+            self._step_external_scouts_from_tensors(s_dist.loc, s_dist.scale, s_val, next_s_hx, curr_scale)
 
     @property
     def effective_gamma(self) -> float:
@@ -689,871 +1222,6 @@ class RecurrentPPOTrainer:
             self._vec_buf_delta[:, 0].copy_(torch.as_tensor(obs_dict["delta_obs"], dtype=torch.float32))
         return self._vec_input_dict
 
-    def _apply_teacher_lookahead(
-        self,
-        e: int,
-        env_e: Any,
-        dist_sample: Any,
-        current_hx: Optional[torch.Tensor],
-    ) -> Optional[Tuple[Union[int, np.ndarray], torch.Tensor]]:
-        """Aplica busca proximal 1-step lookahead guiada pelo Critic para o worker professor e.
-        Retorna (teacher_action, teacher_log_prob) se acionado, ou None se mantiver a política."""
-        if not hasattr(env_e, "simulate_step"):
-            return None
-
-        d_e = int(getattr(env_e, "_episode_depth", getattr(env_e, "current_depth", 1)))
-        if d_e < self.teacher_min_depth:
-            return None
-
-        if not self.agent.is_discrete or not hasattr(dist_sample, "logits"):
-            return None
-
-        raw_logits = dist_sample.logits[e]
-
-        if self.action_chunk_size == 1:
-            logits_1d = raw_logits.squeeze()
-            probs = torch.softmax(logits_1d, dim=-1)
-            n_acts = len(probs)
-
-            inv_last = -1
-            avoid_acts = set()
-            if n_acts == 12 and hasattr(self, "_vec_recent_actions") and e < len(self._vec_recent_actions):
-                r_hist = self._vec_recent_actions[e]
-                if len(r_hist) >= 1:
-                    last_a = int(r_hist[-1])
-                    inv_last = (last_a + 1) if (last_a % 2 == 0) else (last_a - 1)
-                    avoid_acts.add(inv_last)
-                if len(r_hist) >= 3:
-                    if r_hist[-1] == r_hist[-3]:
-                        avoid_acts.add(int(r_hist[-2]))
-                    inv_a1 = (int(r_hist[-3]) + 1) if (int(r_hist[-3]) % 2 == 0) else (int(r_hist[-3]) - 1)
-                    inv_a2 = (int(r_hist[-2]) + 1) if (int(r_hist[-2]) % 2 == 0) else (int(r_hist[-2]) - 1)
-                    if int(r_hist[-1]) == inv_a1:
-                        avoid_acts.add(inv_a2)
-
-            valid_probs = probs.clone()
-            for av_a in avoid_acts:
-                if 0 <= av_a < n_acts:
-                    valid_probs[av_a] = 0.0
-            conf = float(valid_probs.max().item())
-            if conf >= self.teacher_confidence_threshold:
-                return None
-
-            eff_top_k = max(self.teacher_top_k, 5 if d_e >= 8 else self.teacher_top_k)
-            _, top_indices = torch.topk(valid_probs, k=min(eff_top_k + 2, n_acts))
-            cand_acts = [int(idx.item()) for idx in top_indices if int(idx.item()) not in avoid_acts][:eff_top_k]
-            if not cand_acts:
-                cand_acts = [int(top_indices[0].item())]
-
-            visit_map = (
-                self._vec_visited_hashes[e]
-                if (hasattr(self, "_vec_visited_hashes") and e < len(self._vec_visited_hashes))
-                else {}
-            )
-            scar_pen = 0.25
-            cand_obs = []
-            cand_rews = []
-            cand_pens = []
-            valid_acts = []
-            immediate_solve = None
-
-            for a in cand_acts:
-                try:
-                    s_obs, s_rew, s_done, _ = env_e.simulate_step(a)
-                except Exception:
-                    continue
-                if s_done:
-                    immediate_solve = a
-                    break
-                o_arr = np.asarray(s_obs["obs"] if isinstance(s_obs, dict) else s_obs, dtype=np.float32)
-                v_cnt = visit_map.get(hash(o_arr.tobytes()), 0) if visit_map else 0
-                cand_obs.append(o_arr)
-                cand_rews.append(float(s_rew))
-                cand_pens.append(float(scar_pen * v_cnt))
-                valid_acts.append(a)
-
-            if immediate_solve is not None:
-                best_act = immediate_solve
-            elif len(valid_acts) > 1:
-                M = len(valid_acts)
-                stacked_obs = np.stack(cand_obs).astype(np.float32)
-                b_obs = torch.from_numpy(stacked_obs).unsqueeze(1).to(self.device)
-                b_act = torch.tensor(valid_acts, dtype=torch.long, device=self.device).view(M, 1)
-                b_rew = torch.tensor(cand_rews, dtype=torch.float32, device=self.device).view(M, 1, 1)
-
-                hx_e = current_hx[:, e : e + 1, :].repeat(1, M, 1) if current_hx is not None else None
-                use_tri_direct = (
-                    getattr(self.env, "tri_compass", False)
-                    and hasattr(self.agent.front_end, "forward_tri_direct")
-                    and getattr(self.env, "prev_obs", None) is not None
-                )
-                if use_tri_direct:
-                    t_prev = torch.from_numpy(self.env.prev_obs[e : e + 1]).to(self.device)
-                    t_init = (
-                        torch.from_numpy(self.env.init_obs[e : e + 1]).to(self.device)
-                        if getattr(self.env, "init_obs", None) is not None
-                        else None
-                    )
-                    t_goal = (
-                        torch.from_numpy(self.env.elite_goal_obs).view(1, -1).to(self.device)
-                        if getattr(self.env, "elite_goal_obs", None) is not None
-                        else None
-                    )
-                    z_cands = self.agent.front_end.forward_tri_direct(b_obs, t_prev, t_init, t_goal, b_act, b_rew)
-                else:
-                    b_delta = torch.zeros_like(b_obs)
-                    z_cands = self.agent.front_end(obs=b_obs, delta_obs=b_delta, prev_action=b_act, prev_reward=b_rew)
-
-                h_cands, nhx_cands = self.agent.trunk(z_cands, hx=hx_e)
-                v_cands = self.agent.value_head(h_cands).squeeze(-1).squeeze(-1)
-                q_scores = (
-                    torch.tensor(cand_rews, device=self.device)
-                    + self.effective_gamma * v_cands
-                    - torch.tensor(cand_pens, device=self.device)
-                )
-
-                sim_2step_fn = getattr(env_e, "simulate_2step", None)
-                sim_3step_fn = getattr(env_e, "simulate_3step", None)
-                if sim_2step_fn is not None:
-                    next_logits = self.agent.policy_head.linear(h_cands).squeeze(1)
-                    _, next_top_idx = torch.topk(next_logits, k=min(3, n_acts), dim=-1)
-                    q1_order = torch.argsort(q_scores, descending=True)
-                    best_m1 = int(q1_order[0].item())
-                    second_m1 = int(q1_order[1].item()) if M > 1 else best_m1
-                    best_q1_val = float(q_scores[best_m1].item())
-                    q1_margin = float((q_scores[best_m1] - q_scores[second_m1]).item())
-
-                    solve_2step_act = None
-                    obs2_list = []
-                    p_idx_list = []
-                    a1_list = []
-                    act2_list = []
-                    rew2_list = []
-                    pen2_list = []
-                    r1_ref_list = []
-                    best_m1_r2 = -1e9
-
-                    for idx_m in range(M):
-                        a1 = valid_acts[idx_m]
-                        inv_a1 = ((a1 + 1) if (a1 % 2 == 0) else (a1 - 1)) if n_acts == 12 else -1
-                        valid_a2s = [
-                            int(next_top_idx[idx_m, k_i].item())
-                            for k_i in range(next_top_idx.shape[1])
-                            if int(next_top_idx[idx_m, k_i].item()) != inv_a1
-                        ]
-                        if not valid_a2s:
-                            valid_a2s = [int(next_top_idx[idx_m, 0].item())]
-                        branch_k = 2 if (len(valid_a2s) >= 2 and (best_q1_val < 5.5 or idx_m == best_m1)) else 1
-                        for a2 in valid_a2s[:branch_k]:
-                            o2, rew2, done2 = sim_2step_fn(a1, a2)
-                            if done2:
-                                solve_2step_act = a1
-                                break
-                            if idx_m == best_m1 and float(rew2) > best_m1_r2:
-                                best_m1_r2 = float(rew2)
-                            if o2 is not None:
-                                o2_arr = np.asarray(o2, dtype=np.float32)
-                                v_cnt2 = visit_map.get(hash(o2_arr.tobytes()), 0) if visit_map else 0
-                                p_idx_list.append(idx_m)
-                                obs2_list.append(o2_arr)
-                                a1_list.append(a1)
-                                act2_list.append(a2)
-                                rew2_list.append(float(rew2))
-                                pen2_list.append(float(scar_pen * v_cnt2))
-                                r1_ref_list.append(cand_rews[idx_m])
-                        if solve_2step_act is not None:
-                            break
-
-                    if solve_2step_act is not None:
-                        best_act = solve_2step_act
-                    elif cand_pens[best_m1] == 0.0 and len(rew2_list) > 0 and best_q1_val >= 6.5 and q1_margin >= 0.25 and best_m1_r2 >= max(rew2_list):
-                        best_act = valid_acts[best_m1]
-                    elif len(obs2_list) > 0:
-                        M2 = len(obs2_list)
-                        st_obs2 = np.stack(obs2_list)
-                        b_obs2 = torch.from_numpy(st_obs2).unsqueeze(1).to(self.device)
-                        b_act2 = torch.tensor(act2_list, dtype=torch.long, device=self.device).view(M2, 1)
-                        b_rew2 = (
-                            torch.tensor(rew2_list, dtype=torch.float32, device=self.device)
-                            - torch.tensor(r1_ref_list, dtype=torch.float32, device=self.device)
-                        ).view(M2, 1, 1)
-                        if use_tri_direct:
-                            t_parent = torch.from_numpy(stacked_obs[p_idx_list]).to(self.device)
-                            z_cands2 = self.agent.front_end.forward_tri_direct(b_obs2, t_parent, t_init, t_goal, b_act2, b_rew2)
-                        else:
-                            z_cands2 = self.agent.front_end(obs=b_obs2, delta_obs=torch.zeros_like(b_obs2), prev_action=b_act2, prev_reward=b_rew2)
-                        hx_cands2 = nhx_cands[:, p_idx_list, :] if nhx_cands is not None else None
-                        h_cands2, nhx_cands2 = self.agent.trunk(z_cands2, hx=hx_cands2)
-                        v_cands2 = self.agent.value_head(h_cands2).squeeze(-1).squeeze(-1)
-                        q2_scores = (
-                            torch.tensor(rew2_list, device=self.device)
-                            + (self.effective_gamma ** 2) * v_cands2
-                            - torch.tensor(pen2_list, device=self.device)
-                        )
-
-                        solve_3step_act = None
-                        logits3 = None
-                        if sim_3step_fn is not None and float(v_cands2.max().item()) > 1.2:
-                            logits3 = self.agent.policy_head.linear(h_cands2).squeeze(1)
-                            _, top_i3 = torch.topk(logits3, k=min(4, n_acts), dim=-1)
-                            for m2_i in range(M2):
-                                if float(v_cands2[m2_i].item()) <= 1.2:
-                                    continue
-                                a1_v, a2_v = a1_list[m2_i], act2_list[m2_i]
-                                inv_a2 = ((a2_v + 1) if (a2_v % 2 == 0) else (a2_v - 1)) if n_acts == 12 else -1
-                                for k_idx in range(top_i3.shape[1]):
-                                    a3_v = int(top_i3[m2_i, k_idx].item())
-                                    if a3_v == inv_a2:
-                                        continue
-                                    _, _, done3 = sim_3step_fn(a1_v, a2_v, a3_v, return_obs=False)
-                                    if done3:
-                                        solve_3step_act = a1_v
-                                        break
-                                if solve_3step_act is not None:
-                                    break
-
-                        if solve_3step_act is not None:
-                            best_act = solve_3step_act
-                        else:
-                            best_q2_per_m = torch.full((M,), -1e9, device=self.device)
-                            for m2_i, p_i in enumerate(p_idx_list):
-                                if q2_scores[m2_i] > best_q2_per_m[p_i]:
-                                    best_q2_per_m[p_i] = q2_scores[m2_i]
-                            q_scores = torch.maximum(q_scores, 0.99 * best_q2_per_m)
-
-                            # Ponte de Valor de 3º Passo (Q_3 = r_3 + gamma^3 * V(s_3)) para Batedores em D8+
-                            if sim_3step_fn is not None and d_e >= 8 and M2 >= 2 and float(v_cands2.max().item()) < 5.0:
-                                if logits3 is None:
-                                    logits3 = self.agent.policy_head.linear(h_cands2).squeeze(1)
-                                _, top_i3_val = torch.topk(logits3, k=min(4, n_acts), dim=-1)
-                                top_m2_order = torch.argsort(q2_scores, descending=True)[: min(4, M2)]
-                                obs3_list = []
-                                m2_ref_list = []
-                                p1_ref_list = []
-                                act3_list = []
-                                rew3_list = []
-                                pen3_list = []
-                                r2_ref_list = []
-                                for t_m2 in top_m2_order:
-                                    m2_i = int(t_m2.item())
-                                    a1_v, a2_v = a1_list[m2_i], act2_list[m2_i]
-                                    inv_a2 = ((a2_v + 1) if (a2_v % 2 == 0) else (a2_v - 1)) if n_acts == 12 else -1
-                                    added_k3 = 0
-                                    for k_idx in range(top_i3_val.shape[1]):
-                                        a3_v = int(top_i3_val[m2_i, k_idx].item())
-                                        if a3_v == inv_a2:
-                                            continue
-                                        o3, rew3, done3 = sim_3step_fn(a1_v, a2_v, a3_v, return_obs=True)
-                                        if done3:
-                                            solve_3step_act = a1_v
-                                            break
-                                        if o3 is not None:
-                                            o3_arr = np.asarray(o3, dtype=np.float32)
-                                            v_cnt3 = visit_map.get(hash(o3_arr.tobytes()), 0) if visit_map else 0
-                                            obs3_list.append(o3_arr)
-                                            m2_ref_list.append(m2_i)
-                                            p1_ref_list.append(p_idx_list[m2_i])
-                                            act3_list.append(a3_v)
-                                            rew3_list.append(float(rew3))
-                                            pen3_list.append(float(scar_pen * v_cnt3))
-                                            r2_ref_list.append(rew2_list[m2_i])
-                                            added_k3 += 1
-                                            if added_k3 >= 2:
-                                                break
-                                    if solve_3step_act is not None:
-                                        break
-
-                                if solve_3step_act is not None:
-                                    best_act = solve_3step_act
-                                elif len(obs3_list) > 0:
-                                    M3 = len(obs3_list)
-                                    st_obs3 = np.stack(obs3_list)
-                                    b_obs3 = torch.from_numpy(st_obs3).unsqueeze(1).to(self.device)
-                                    b_act3 = torch.tensor(act3_list, dtype=torch.long, device=self.device).view(M3, 1)
-                                    b_rew3 = (
-                                        torch.tensor(rew3_list, dtype=torch.float32, device=self.device)
-                                        - torch.tensor(r2_ref_list, dtype=torch.float32, device=self.device)
-                                    ).view(M3, 1, 1)
-                                    if use_tri_direct:
-                                        t_parent2 = torch.from_numpy(st_obs2[m2_ref_list]).to(self.device)
-                                        z_cands3 = self.agent.front_end.forward_tri_direct(
-                                            b_obs3, t_parent2, t_init, t_goal, b_act3, b_rew3
-                                        )
-                                    else:
-                                        z_cands3 = self.agent.front_end(
-                                            obs=b_obs3, delta_obs=torch.zeros_like(b_obs3), prev_action=b_act3, prev_reward=b_rew3
-                                        )
-                                    hx_cands3 = nhx_cands2[:, m2_ref_list, :] if nhx_cands2 is not None else None
-                                    h_cands3, _ = self.agent.trunk(z_cands3, hx=hx_cands3)
-                                    v_cands3 = self.agent.value_head(h_cands3).squeeze(-1).squeeze(-1)
-                                    q3_scores = (
-                                        torch.tensor(rew3_list, device=self.device)
-                                        + (self.effective_gamma ** 3) * v_cands3
-                                        - torch.tensor(pen3_list, device=self.device)
-                                    )
-                                    best_q3_per_m = torch.full((M,), -1e9, device=self.device)
-                                    for m3_i, p1_i in enumerate(p1_ref_list):
-                                        if q3_scores[m3_i] > best_q3_per_m[p1_i]:
-                                            best_q3_per_m[p1_i] = q3_scores[m3_i]
-                                    q_scores = torch.maximum(q_scores, 0.985 * best_q3_per_m)
-
-                            if solve_3step_act is None:
-                                best_act = valid_acts[int(torch.argmax(q_scores).item())]
-                    else:
-                        best_act = valid_acts[int(torch.argmax(q_scores).item())]
-                else:
-                    best_act = valid_acts[int(torch.argmax(q_scores).item())]
-            elif len(valid_acts) == 1:
-                best_act = valid_acts[0]
-            else:
-                return None
-
-            best_t = torch.tensor(best_act, device=self.device)
-            new_logp = dist_sample.log_prob(best_t[None, None])[e]
-            new_logp = torch.clamp(new_logp, min=-10.0, max=0.0)
-            return best_act, new_logp
-
-        elif self.action_chunk_size == 2 and hasattr(env_e, "core"):
-            logits_chunk = raw_logits.squeeze()  # [2, num_acts]
-            p0 = torch.softmax(logits_chunk[0], dim=-1)
-            top_p0, top_idx0 = torch.topk(p0, k=min(self.teacher_top_k, len(p0)))
-            conf0 = float(top_p0[0].item())
-            if conf0 >= self.teacher_confidence_threshold:
-                return None
-
-            # Step 1 lookahead
-            cand_acts0 = [int(idx.item()) for idx in top_idx0]
-            cand_obs0 = []
-            cand_rews0 = []
-            valid_acts0 = []
-            imm0 = None
-            for a in cand_acts0:
-                try:
-                    s_obs, s_rew, s_done, _ = env_e.simulate_step(a)
-                except Exception:
-                    continue
-                if s_done:
-                    imm0 = a
-                    break
-                cand_obs0.append(s_obs["obs"] if isinstance(s_obs, dict) else s_obs)
-                cand_rews0.append(float(s_rew))
-                valid_acts0.append(a)
-
-            if imm0 is not None:
-                a0_best = imm0
-            elif len(valid_acts0) > 1:
-                M = len(valid_acts0)
-                b_obs = torch.from_numpy(np.stack(cand_obs0).astype(np.float32)).unsqueeze(1).to(self.device)
-                b_delta = torch.zeros_like(b_obs)
-                b_act = torch.tensor(valid_acts0, dtype=torch.long, device=self.device).view(M, 1)
-                b_rew = torch.tensor(cand_rews0, dtype=torch.float32, device=self.device).view(M, 1, 1)
-                hx_e = current_hx[:, e : e + 1, :].repeat(1, M, 1) if current_hx is not None else None
-                z_cands = self.agent.front_end(obs=b_obs, delta_obs=b_delta, prev_action=b_act, prev_reward=b_rew)
-                h_cands, _ = self.agent.trunk(z_cands, hx=hx_e)
-                v_cands = self.agent.value_head(h_cands).squeeze(-1).squeeze(-1)
-                q0 = torch.tensor(cand_rews0, device=self.device) + 0.99 * v_cands
-                a0_best = valid_acts0[int(torch.argmax(q0).item())]
-            elif len(valid_acts0) == 1:
-                a0_best = valid_acts0[0]
-            else:
-                return None
-
-            # Step 2 lookahead (aplica a0 temporariamente no simulador do core)
-            m0_name = env_e.core.ATOMIC_MOVES[a0_best]
-            inv0_name = env_e.core.INVERSE_ATOMIC[m0_name]
-            env_e.core.apply_atomic(m0_name)
-
-            p1 = torch.softmax(logits_chunk[1], dim=-1)
-            top_p1, top_idx1 = torch.topk(p1, k=min(self.teacher_top_k + 2, len(p1)))
-            cand_acts1 = [int(idx.item()) for idx in top_idx1 if env_e.core.ATOMIC_MOVES[int(idx.item())] != inv0_name][:self.teacher_top_k]
-            if not cand_acts1:
-                cand_acts1 = [int(top_idx1[0].item())]
-
-            cand_obs1 = []
-            cand_rews1 = []
-            valid_acts1 = []
-            imm1 = None
-            for a in cand_acts1:
-                try:
-                    s_obs, s_rew, s_done, _ = env_e.simulate_step(a)
-                except Exception:
-                    continue
-                if s_done:
-                    imm1 = a
-                    break
-                cand_obs1.append(s_obs["obs"] if isinstance(s_obs, dict) else s_obs)
-                cand_rews1.append(float(s_rew))
-                valid_acts1.append(a)
-
-            # Desfaz a0 no simulador imediatamente
-            env_e.core.apply_atomic(inv0_name)
-
-            if imm1 is not None:
-                a1_best = imm1
-            elif len(valid_acts1) > 1:
-                M = len(valid_acts1)
-                b_obs = torch.from_numpy(np.stack(cand_obs1).astype(np.float32)).unsqueeze(1).to(self.device)
-                b_delta = torch.zeros_like(b_obs)
-                b_act = torch.tensor(valid_acts1, dtype=torch.long, device=self.device).view(M, 1)
-                b_rew = torch.tensor(cand_rews1, dtype=torch.float32, device=self.device).view(M, 1, 1)
-                hx_e = current_hx[:, e : e + 1, :].repeat(1, M, 1) if current_hx is not None else None
-                z_cands = self.agent.front_end(obs=b_obs, delta_obs=b_delta, prev_action=b_act, prev_reward=b_rew)
-                h_cands, _ = self.agent.trunk(z_cands, hx=hx_e)
-                v_cands = self.agent.value_head(h_cands).squeeze(-1).squeeze(-1)
-                q1 = torch.tensor(cand_rews1, device=self.device) + 0.99 * v_cands
-                a1_best = valid_acts1[int(torch.argmax(q1).item())]
-            elif len(valid_acts1) == 1:
-                a1_best = valid_acts1[0]
-            else:
-                a1_best = cand_acts1[0]
-
-            chunk_act = np.array([a0_best, a1_best], dtype=np.int64)
-            chunk_t = torch.tensor(chunk_act, device=self.device)
-            new_logp = dist_sample.log_prob(chunk_t[None, None])[e].sum(dim=-1)
-            new_logp = torch.clamp(new_logp, min=-8.0, max=0.0)
-            return chunk_act, new_logp
-
-        return None
-
-    def _apply_teacher_lookahead_batch(
-        self,
-        num_scouts: int,
-        raw_env_obj: Any,
-        dist_sample: Any,
-        current_hx: Optional[torch.Tensor],
-    ) -> Dict[int, Tuple[int, torch.Tensor]]:
-        """Versão 100% vetorizada em lote (Pass 1, Pass 2 e Pass 3 unificados) para os Batedores S1.
-        Substitui 24 x 3 = 72 micro-forwards neurais por apenas 3 forwards em lote por passo."""
-        results: Dict[int, Tuple[int, torch.Tensor]] = {}
-        if not self.agent.is_discrete or not hasattr(dist_sample, "logits") or self.action_chunk_size != 1:
-            return results
-
-        all_logits = dist_sample.logits[:num_scouts].squeeze(1)  # [K_scouts, n_acts]
-        all_probs = torch.softmax(all_logits, dim=-1)
-        n_acts = all_probs.shape[-1]
-
-        use_tri_direct = (
-            getattr(self.env, "tri_compass", False)
-            and hasattr(self.agent.front_end, "forward_tri_direct")
-            and getattr(self.env, "prev_obs", None) is not None
-        )
-        t_goal = (
-            torch.from_numpy(self.env.elite_goal_obs).view(1, -1).to(self.device)
-            if (use_tri_direct and getattr(self.env, "elite_goal_obs", None) is not None)
-            else None
-        )
-        scar_pen = 0.25
-
-        # --- PASS 1: Coleta candidatos de 1 passo de todos os Batedores ativos ---
-        p1_obs_list: List[np.ndarray] = []
-        p1_acts_list: List[int] = []
-        p1_rews_list: List[float] = []
-        p1_pens_list: List[float] = []
-        p1_env_ids: List[int] = []
-        scout_slices: Dict[int, Tuple[int, int, int, List[int], List[float], List[float]]] = {}
-        final_best_act: Dict[int, int] = {}
-
-        for e in range(num_scouts):
-            env_e = raw_env_obj.envs[e]
-            if not hasattr(env_e, "simulate_step"):
-                continue
-            d_e = int(getattr(env_e, "_episode_depth", getattr(env_e, "current_depth", 1)))
-            if d_e < self.teacher_min_depth:
-                continue
-
-            avoid_acts = set()
-            if n_acts == 12 and hasattr(self, "_vec_recent_actions") and e < len(self._vec_recent_actions):
-                r_hist = self._vec_recent_actions[e]
-                if len(r_hist) >= 1:
-                    last_a = int(r_hist[-1])
-                    avoid_acts.add((last_a + 1) if (last_a % 2 == 0) else (last_a - 1))
-                if len(r_hist) >= 3:
-                    if r_hist[-1] == r_hist[-3]:
-                        avoid_acts.add(int(r_hist[-2]))
-                    inv_a1 = (int(r_hist[-3]) + 1) if (int(r_hist[-3]) % 2 == 0) else (int(r_hist[-3]) - 1)
-                    inv_a2 = (int(r_hist[-2]) + 1) if (int(r_hist[-2]) % 2 == 0) else (int(r_hist[-2]) - 1)
-                    if int(r_hist[-1]) == inv_a1:
-                        avoid_acts.add(inv_a2)
-
-            valid_probs = all_probs[e].clone()
-            for av_a in avoid_acts:
-                if 0 <= av_a < n_acts:
-                    valid_probs[av_a] = 0.0
-            if float(valid_probs.max().item()) >= self.teacher_confidence_threshold:
-                continue
-
-            eff_top_k = max(self.teacher_top_k, 5 if d_e >= 8 else self.teacher_top_k)
-            _, top_indices = torch.topk(valid_probs, k=min(eff_top_k + 2, n_acts))
-            cand_acts = [int(idx.item()) for idx in top_indices if int(idx.item()) not in avoid_acts][:eff_top_k]
-            if not cand_acts:
-                cand_acts = [int(top_indices[0].item())]
-
-            visit_map = (
-                self._vec_visited_hashes[e]
-                if (hasattr(self, "_vec_visited_hashes") and e < len(self._vec_visited_hashes))
-                else {}
-            )
-            start_idx = len(p1_obs_list)
-            valid_acts_e: List[int] = []
-            cand_rews_e: List[float] = []
-            cand_pens_e: List[float] = []
-            immediate_solve = None
-
-            for a in cand_acts:
-                try:
-                    s_obs, s_rew, s_done, _ = env_e.simulate_step(a)
-                except Exception:
-                    continue
-                if s_done:
-                    immediate_solve = a
-                    break
-                o_arr = np.asarray(s_obs["obs"] if isinstance(s_obs, dict) else s_obs, dtype=np.float32)
-                v_cnt = visit_map.get(hash(o_arr.tobytes()), 0) if visit_map else 0
-                pen_val = float(scar_pen * v_cnt)
-                p1_obs_list.append(o_arr)
-                p1_acts_list.append(a)
-                p1_rews_list.append(float(s_rew))
-                p1_pens_list.append(pen_val)
-                p1_env_ids.append(e)
-                valid_acts_e.append(a)
-                cand_rews_e.append(float(s_rew))
-                cand_pens_e.append(pen_val)
-
-            if immediate_solve is not None:
-                # Remove partial entries added for this env
-                del p1_obs_list[start_idx:]
-                del p1_acts_list[start_idx:]
-                del p1_rews_list[start_idx:]
-                del p1_pens_list[start_idx:]
-                del p1_env_ids[start_idx:]
-                final_best_act[e] = immediate_solve
-            elif len(valid_acts_e) == 1:
-                del p1_obs_list[start_idx:]
-                del p1_acts_list[start_idx:]
-                del p1_rews_list[start_idx:]
-                del p1_pens_list[start_idx:]
-                del p1_env_ids[start_idx:]
-                final_best_act[e] = valid_acts_e[0]
-            elif len(valid_acts_e) > 1:
-                end_idx = len(p1_obs_list)
-                scout_slices[e] = (start_idx, end_idx, d_e, valid_acts_e, cand_rews_e, cand_pens_e)
-
-        if len(p1_obs_list) > 0:
-            N1 = len(p1_obs_list)
-            st_p1_obs = np.stack(p1_obs_list).astype(np.float32)
-            b_obs1 = torch.from_numpy(st_p1_obs).unsqueeze(1).to(self.device)
-            b_act1 = torch.tensor(p1_acts_list, dtype=torch.long, device=self.device).view(N1, 1)
-            b_rew1 = torch.tensor(p1_rews_list, dtype=torch.float32, device=self.device).view(N1, 1, 1)
-            env_ids1_np = np.asarray(p1_env_ids, dtype=np.int64)
-
-            if use_tri_direct:
-                t_prev1 = torch.from_numpy(self.env.prev_obs[env_ids1_np]).to(self.device)
-                t_init1 = (
-                    torch.from_numpy(self.env.init_obs[env_ids1_np]).to(self.device)
-                    if getattr(self.env, "init_obs", None) is not None
-                    else None
-                )
-                z_cands1 = self.agent.front_end.forward_tri_direct(b_obs1, t_prev1, t_init1, t_goal, b_act1, b_rew1)
-            else:
-                z_cands1 = self.agent.front_end(obs=b_obs1, delta_obs=torch.zeros_like(b_obs1), prev_action=b_act1, prev_reward=b_rew1)
-
-            hx1 = current_hx[:, env_ids1_np, :] if current_hx is not None else None
-            h_cands1, nhx_cands1 = self.agent.trunk(z_cands1, hx=hx1)
-            v_cands1 = self.agent.value_head(h_cands1).squeeze(-1).squeeze(-1)
-            q1_all = (
-                torch.tensor(p1_rews_list, device=self.device)
-                + self.effective_gamma * v_cands1
-                - torch.tensor(p1_pens_list, device=self.device)
-            )
-            next_logits1 = self.agent.policy_head.linear(h_cands1).squeeze(1)
-            _, next_top_idx1 = torch.topk(next_logits1, k=min(3, n_acts), dim=-1)
-
-            # --- PASS 2: Coleta ramos de 2 passos de todos os Batedores restantes ---
-            p2_obs_list: List[np.ndarray] = []
-            p2_parent_p1_idx: List[int] = []
-            p2_env_ids: List[int] = []
-            p2_local_m1: List[int] = []
-            p2_a1_list: List[int] = []
-            p2_a2_list: List[int] = []
-            p2_rew2_list: List[float] = []
-            p2_delta_rew2_list: List[float] = []
-            p2_pen2_list: List[float] = []
-            scout_p2_slices: Dict[int, Tuple[int, int, int, List[int], torch.Tensor]] = {}
-
-            for e, (s1, e1, d_e, valid_acts_e, cand_rews_e, cand_pens_e) in scout_slices.items():
-                env_e = raw_env_obj.envs[e]
-                sim_2step_fn = getattr(env_e, "simulate_2step", None)
-                q1_e = q1_all[s1:e1]
-                if sim_2step_fn is None:
-                    final_best_act[e] = valid_acts_e[int(torch.argmax(q1_e).item())]
-                    continue
-
-                M_e = e1 - s1
-                q1_order = torch.argsort(q1_e, descending=True)
-                best_m1 = int(q1_order[0].item())
-                second_m1 = int(q1_order[1].item()) if M_e > 1 else best_m1
-                best_q1_val = float(q1_e[best_m1].item())
-                q1_margin = float((q1_e[best_m1] - q1_e[second_m1]).item())
-
-                visit_map = (
-                    self._vec_visited_hashes[e]
-                    if (hasattr(self, "_vec_visited_hashes") and e < len(self._vec_visited_hashes))
-                    else {}
-                )
-                s2_start = len(p2_obs_list)
-                solve_2step_act = None
-                best_m1_r2 = -1e9
-                max_r2_e = -1e9
-
-                for idx_m in range(M_e):
-                    g_p1 = s1 + idx_m
-                    a1 = valid_acts_e[idx_m]
-                    inv_a1 = ((a1 + 1) if (a1 % 2 == 0) else (a1 - 1)) if n_acts == 12 else -1
-                    valid_a2s = [
-                        int(next_top_idx1[g_p1, k_i].item())
-                        for k_i in range(next_top_idx1.shape[1])
-                        if int(next_top_idx1[g_p1, k_i].item()) != inv_a1
-                    ]
-                    if not valid_a2s:
-                        valid_a2s = [int(next_top_idx1[g_p1, 0].item())]
-                    branch_k = 2 if (len(valid_a2s) >= 2 and (best_q1_val < 5.5 or idx_m == best_m1)) else 1
-                    for a2 in valid_a2s[:branch_k]:
-                        o2, rew2, done2 = sim_2step_fn(a1, a2)
-                        if done2:
-                            solve_2step_act = a1
-                            break
-                        r2_f = float(rew2)
-                        if r2_f > max_r2_e:
-                            max_r2_e = r2_f
-                        if idx_m == best_m1 and r2_f > best_m1_r2:
-                            best_m1_r2 = r2_f
-                        if o2 is not None:
-                            o2_arr = np.asarray(o2, dtype=np.float32)
-                            v_cnt2 = visit_map.get(hash(o2_arr.tobytes()), 0) if visit_map else 0
-                            p2_obs_list.append(o2_arr)
-                            p2_parent_p1_idx.append(g_p1)
-                            p2_env_ids.append(e)
-                            p2_local_m1.append(idx_m)
-                            p2_a1_list.append(a1)
-                            p2_a2_list.append(a2)
-                            p2_rew2_list.append(r2_f)
-                            p2_delta_rew2_list.append(r2_f - cand_rews_e[idx_m])
-                            p2_pen2_list.append(float(scar_pen * v_cnt2))
-                    if solve_2step_act is not None:
-                        break
-
-                if solve_2step_act is not None:
-                    del p2_obs_list[s2_start:]
-                    del p2_parent_p1_idx[s2_start:]
-                    del p2_env_ids[s2_start:]
-                    del p2_local_m1[s2_start:]
-                    del p2_a1_list[s2_start:]
-                    del p2_a2_list[s2_start:]
-                    del p2_rew2_list[s2_start:]
-                    del p2_delta_rew2_list[s2_start:]
-                    del p2_pen2_list[s2_start:]
-                    final_best_act[e] = solve_2step_act
-                elif cand_pens_e[best_m1] == 0.0 and len(p2_obs_list) > s2_start and best_q1_val >= 6.5 and q1_margin >= 0.25 and best_m1_r2 >= max_r2_e:
-                    del p2_obs_list[s2_start:]
-                    del p2_parent_p1_idx[s2_start:]
-                    del p2_env_ids[s2_start:]
-                    del p2_local_m1[s2_start:]
-                    del p2_a1_list[s2_start:]
-                    del p2_a2_list[s2_start:]
-                    del p2_rew2_list[s2_start:]
-                    del p2_delta_rew2_list[s2_start:]
-                    del p2_pen2_list[s2_start:]
-                    final_best_act[e] = valid_acts_e[best_m1]
-                elif len(p2_obs_list) > s2_start:
-                    scout_p2_slices[e] = (s2_start, len(p2_obs_list), d_e, valid_acts_e, q1_e.clone())
-                else:
-                    final_best_act[e] = valid_acts_e[int(torch.argmax(q1_e).item())]
-
-            if len(p2_obs_list) > 0:
-                N2 = len(p2_obs_list)
-                st_p2_obs = np.stack(p2_obs_list).astype(np.float32)
-                b_obs2 = torch.from_numpy(st_p2_obs).unsqueeze(1).to(self.device)
-                b_act2 = torch.tensor(p2_a2_list, dtype=torch.long, device=self.device).view(N2, 1)
-                b_rew2 = torch.tensor(p2_delta_rew2_list, dtype=torch.float32, device=self.device).view(N2, 1, 1)
-                p1_idx_np = np.asarray(p2_parent_p1_idx, dtype=np.int64)
-                env_ids2_np = np.asarray(p2_env_ids, dtype=np.int64)
-
-                if use_tri_direct:
-                    t_parent1 = torch.from_numpy(st_p1_obs[p1_idx_np]).to(self.device)
-                    t_init2 = (
-                        torch.from_numpy(self.env.init_obs[env_ids2_np]).to(self.device)
-                        if getattr(self.env, "init_obs", None) is not None
-                        else None
-                    )
-                    z_cands2 = self.agent.front_end.forward_tri_direct(b_obs2, t_parent1, t_init2, t_goal, b_act2, b_rew2)
-                else:
-                    z_cands2 = self.agent.front_end(obs=b_obs2, delta_obs=torch.zeros_like(b_obs2), prev_action=b_act2, prev_reward=b_rew2)
-
-                hx2 = nhx_cands1[:, p1_idx_np, :] if nhx_cands1 is not None else None
-                h_cands2, nhx_cands2 = self.agent.trunk(z_cands2, hx=hx2)
-                v_cands2 = self.agent.value_head(h_cands2).squeeze(-1).squeeze(-1)
-                q2_all = (
-                    torch.tensor(p2_rew2_list, device=self.device)
-                    + (self.effective_gamma ** 2) * v_cands2
-                    - torch.tensor(p2_pen2_list, device=self.device)
-                )
-                logits3_all = self.agent.policy_head.linear(h_cands2).squeeze(1)
-                _, top_i3_all = torch.topk(logits3_all, k=min(4, n_acts), dim=-1)
-
-                # --- PASS 3: Coleta ramos de 3 passos para todos os Batedores em D8+ ---
-                p3_obs_list: List[np.ndarray] = []
-                p3_parent_p2_idx: List[int] = []
-                p3_env_ids: List[int] = []
-                p3_local_m1: List[int] = []
-                p3_a3_list: List[int] = []
-                p3_rew3_list: List[float] = []
-                p3_delta_rew3_list: List[float] = []
-                p3_pen3_list: List[float] = []
-                scout_p3_slices: Dict[int, Tuple[int, int, List[int], torch.Tensor]] = {}
-
-                for e, (s2, e2, d_e, valid_acts_e, q_scores_e) in scout_p2_slices.items():
-                    env_e = raw_env_obj.envs[e]
-                    sim_3step_fn = getattr(env_e, "simulate_3step", None)
-                    v2_e = v_cands2[s2:e2]
-                    q2_e = q2_all[s2:e2]
-                    M_e = len(valid_acts_e)
-                    M2_e = e2 - s2
-
-                    solve_3step_act = None
-                    if sim_3step_fn is not None and float(v2_e.max().item()) > 1.2:
-                        for local_m2 in range(M2_e):
-                            g_p2 = s2 + local_m2
-                            if float(v_cands2[g_p2].item()) <= 1.2:
-                                continue
-                            a1_v, a2_v = p2_a1_list[g_p2], p2_a2_list[g_p2]
-                            inv_a2 = ((a2_v + 1) if (a2_v % 2 == 0) else (a2_v - 1)) if n_acts == 12 else -1
-                            for k_idx in range(top_i3_all.shape[1]):
-                                a3_v = int(top_i3_all[g_p2, k_idx].item())
-                                if a3_v == inv_a2:
-                                    continue
-                                _, _, done3 = sim_3step_fn(a1_v, a2_v, a3_v, return_obs=False)
-                                if done3:
-                                    solve_3step_act = a1_v
-                                    break
-                            if solve_3step_act is not None:
-                                break
-
-                    if solve_3step_act is not None:
-                        final_best_act[e] = solve_3step_act
-                        continue
-
-                    best_q2_per_m = torch.full((M_e,), -1e9, device=self.device)
-                    for local_m2 in range(M2_e):
-                        g_p2 = s2 + local_m2
-                        p_i = p2_local_m1[g_p2]
-                        if q2_e[local_m2] > best_q2_per_m[p_i]:
-                            best_q2_per_m[p_i] = q2_e[local_m2]
-                    q_scores_e = torch.maximum(q_scores_e, 0.99 * best_q2_per_m)
-
-                    if sim_3step_fn is not None and d_e >= 8 and M2_e >= 2 and float(v2_e.max().item()) < 5.0:
-                        visit_map = (
-                            self._vec_visited_hashes[e]
-                            if (hasattr(self, "_vec_visited_hashes") and e < len(self._vec_visited_hashes))
-                            else {}
-                        )
-                        s3_start = len(p3_obs_list)
-                        top_m2_order = torch.argsort(q2_e, descending=True)[: min(4, M2_e)]
-                        for t_m2 in top_m2_order:
-                            local_m2 = int(t_m2.item())
-                            g_p2 = s2 + local_m2
-                            a1_v, a2_v = p2_a1_list[g_p2], p2_a2_list[g_p2]
-                            inv_a2 = ((a2_v + 1) if (a2_v % 2 == 0) else (a2_v - 1)) if n_acts == 12 else -1
-                            added_k3 = 0
-                            for k_idx in range(top_i3_all.shape[1]):
-                                a3_v = int(top_i3_all[g_p2, k_idx].item())
-                                if a3_v == inv_a2:
-                                    continue
-                                o3, rew3, done3 = sim_3step_fn(a1_v, a2_v, a3_v, return_obs=True)
-                                if done3:
-                                    solve_3step_act = a1_v
-                                    break
-                                if o3 is not None:
-                                    o3_arr = np.asarray(o3, dtype=np.float32)
-                                    v_cnt3 = visit_map.get(hash(o3_arr.tobytes()), 0) if visit_map else 0
-                                    r3_f = float(rew3)
-                                    p3_obs_list.append(o3_arr)
-                                    p3_parent_p2_idx.append(g_p2)
-                                    p3_env_ids.append(e)
-                                    p3_local_m1.append(p2_local_m1[g_p2])
-                                    p3_a3_list.append(a3_v)
-                                    p3_rew3_list.append(r3_f)
-                                    p3_delta_rew3_list.append(r3_f - p2_rew2_list[g_p2])
-                                    p3_pen3_list.append(float(scar_pen * v_cnt3))
-                                    added_k3 += 1
-                                    if added_k3 >= 2:
-                                        break
-                            if solve_3step_act is not None:
-                                break
-
-                        if solve_3step_act is not None:
-                            del p3_obs_list[s3_start:]
-                            del p3_parent_p2_idx[s3_start:]
-                            del p3_env_ids[s3_start:]
-                            del p3_local_m1[s3_start:]
-                            del p3_a3_list[s3_start:]
-                            del p3_rew3_list[s3_start:]
-                            del p3_delta_rew3_list[s3_start:]
-                            del p3_pen3_list[s3_start:]
-                            final_best_act[e] = solve_3step_act
-                        elif len(p3_obs_list) > s3_start:
-                            scout_p3_slices[e] = (s3_start, len(p3_obs_list), valid_acts_e, q_scores_e)
-                        else:
-                            final_best_act[e] = valid_acts_e[int(torch.argmax(q_scores_e).item())]
-                    else:
-                        final_best_act[e] = valid_acts_e[int(torch.argmax(q_scores_e).item())]
-
-                if len(p3_obs_list) > 0:
-                    N3 = len(p3_obs_list)
-                    st_p3_obs = np.stack(p3_obs_list).astype(np.float32)
-                    b_obs3 = torch.from_numpy(st_p3_obs).unsqueeze(1).to(self.device)
-                    b_act3 = torch.tensor(p3_a3_list, dtype=torch.long, device=self.device).view(N3, 1)
-                    b_rew3 = torch.tensor(p3_delta_rew3_list, dtype=torch.float32, device=self.device).view(N3, 1, 1)
-                    p2_idx_np = np.asarray(p3_parent_p2_idx, dtype=np.int64)
-                    env_ids3_np = np.asarray(p3_env_ids, dtype=np.int64)
-
-                    if use_tri_direct:
-                        t_parent2 = torch.from_numpy(st_p2_obs[p2_idx_np]).to(self.device)
-                        t_init3 = (
-                            torch.from_numpy(self.env.init_obs[env_ids3_np]).to(self.device)
-                            if getattr(self.env, "init_obs", None) is not None
-                            else None
-                        )
-                        z_cands3 = self.agent.front_end.forward_tri_direct(b_obs3, t_parent2, t_init3, t_goal, b_act3, b_rew3)
-                    else:
-                        z_cands3 = self.agent.front_end(obs=b_obs3, delta_obs=torch.zeros_like(b_obs3), prev_action=b_act3, prev_reward=b_rew3)
-
-                    hx3 = nhx_cands2[:, p2_idx_np, :] if nhx_cands2 is not None else None
-                    h_cands3, _ = self.agent.trunk(z_cands3, hx=hx3)
-                    v_cands3 = self.agent.value_head(h_cands3).squeeze(-1).squeeze(-1)
-                    q3_all = (
-                        torch.tensor(p3_rew3_list, device=self.device)
-                        + (self.effective_gamma ** 3) * v_cands3
-                        - torch.tensor(p3_pen3_list, device=self.device)
-                    )
-
-                    for e, (s3, e3, valid_acts_e, q_scores_e) in scout_p3_slices.items():
-                        M_e = len(valid_acts_e)
-                        best_q3_per_m = torch.full((M_e,), -1e9, device=self.device)
-                        for g_p3 in range(s3, e3):
-                            p1_i = p3_local_m1[g_p3]
-                            if q3_all[g_p3] > best_q3_per_m[p1_i]:
-                                best_q3_per_m[p1_i] = q3_all[g_p3]
-                        q_scores_e = torch.maximum(q_scores_e, 0.985 * best_q3_per_m)
-                        final_best_act[e] = valid_acts_e[int(torch.argmax(q_scores_e).item())]
-
-        for e, best_act in final_best_act.items():
-            best_t = torch.tensor(best_act, device=self.device)
-            new_logp = dist_sample.log_prob(best_t[None, None])[e]
-            new_logp = torch.clamp(new_logp, min=-10.0, max=0.0)
-            results[e] = (best_act, new_logp)
-
-        return results
-
     def _collect_rollouts_vectorized(
         self,
         current_obs_dict: Dict[str, Any],
@@ -1604,8 +1272,15 @@ class RecurrentPPOTrainer:
 
         curr_ep_returns = np.zeros(E, dtype=np.float32)
         stored_env_infos: Optional[List[Any]] = [] if self.hindsight_replay else None
+        use_co_scouts = (
+            self.external_scout_envs > 0
+            and self.scout_env is not None
+            and self.scar_memory is not None
+        )
+        if use_co_scouts:
+            self._ensure_scout_initialized()
 
-        with torch.inference_mode():
+        with self._deferred_scars_scope(), torch.inference_mode():
 
             for step in range(S):
                 # 1. Salva hx inicial dos chunks nas fronteiras temporais
@@ -1615,9 +1290,32 @@ class RecurrentPPOTrainer:
                     for e in range(E):
                         recorded_chunk_hx[chunk_k][e] = hx_cpu[:, e : e + 1, :]
 
-                input_dict = self._prepare_vec_rollout_input(current_obs_dict)
-                t0 = time.perf_counter_ns()
-                dist, value, next_hx = self.agent.forward(input_dict, hx=current_hx, dones=None)
+                if use_co_scouts and self._scout_obs_dict is not None and self._scout_hx is not None:
+                    comb_in = self._prepare_comb_rollout_input(current_obs_dict, self._scout_obs_dict)
+                    comb_hx = torch.cat([current_hx, self._scout_hx], dim=1)
+                    t0 = time.perf_counter_ns()
+                    with self.scar_memory.batch_modulation_scope(self._comb_scar_scales, self._comb_scar_betas):
+                        dist_all, val_all, next_comb_hx = self.agent.forward(comb_in, hx=comb_hx, dones=None)
+                    value = val_all[:E]
+                    next_hx = next_comb_hx[:, :E, :]
+                    scout_val = val_all[E:]
+                    next_scout_hx = next_comb_hx[:, E:, :]
+                    if self.agent.is_discrete:
+                        dist = torch.distributions.Categorical(logits=dist_all.logits[:E])
+                        scout_logits_or_loc = dist_all.logits[E:]
+                        scout_scale_opt = None
+                    else:
+                        dist = torch.distributions.Normal(loc=dist_all.loc[:E], scale=dist_all.scale[:E])
+                        scout_logits_or_loc = dist_all.loc[E:]
+                        scout_scale_opt = dist_all.scale[E:]
+                else:
+                    input_dict = self._prepare_vec_rollout_input(current_obs_dict)
+                    t0 = time.perf_counter_ns()
+                    dist, value, next_hx = self.agent.forward(input_dict, hx=current_hx, dones=None)
+                    scout_logits_or_loc = None
+                    scout_scale_opt = None
+                    scout_val = None
+                    next_scout_hx = None
 
                 # Escala de exploração / homeostase dinâmica
                 if self.is_auto_exploration:
@@ -1704,44 +1402,6 @@ class RecurrentPPOTrainer:
                         log_prob = log_prob.sum(dim=-1)
                     env_action = action.squeeze(1).cpu().numpy()
 
-                    # -------------------------------------------------------------
-                    # Teacher-Assisted SIL Rollouts (Lookahead Proximal Assimétrico)
-                    # -------------------------------------------------------------
-                    if self.teacher_sil_envs > 0 and (self.sil_enabled or self.scar_mode != "none"):
-                        raw_env_obj = getattr(self.env, "unwrapped", self.env)
-                        if hasattr(raw_env_obj, "envs"):
-                            num_scouts = min(self.teacher_sil_envs, E)
-                            for e in range(num_scouts):
-                                if hasattr(self, "_vec_visited_hashes") and e < len(self._vec_visited_hashes):
-                                    cur_h = hash(np.asarray(current_obs_dict["obs"][e], dtype=np.float32).tobytes())
-                                    self._vec_visited_hashes[e][cur_h] = self._vec_visited_hashes[e].get(cur_h, 0) + 1
-                            if self.action_chunk_size == 1:
-                                batch_res = self._apply_teacher_lookahead_batch(
-                                    num_scouts=num_scouts,
-                                    raw_env_obj=raw_env_obj,
-                                    dist_sample=dist,
-                                    current_hx=next_hx,
-                                )
-                                for e, res in batch_res.items():
-                                    t_act, t_logp = res
-                                    env_action[e] = t_act
-                                    log_prob[e] = t_logp
-                                    env_scales[e] = -1.0
-                            else:
-                                for e in range(num_scouts):
-                                    env_e = raw_env_obj.envs[e]
-                                    res = self._apply_teacher_lookahead(
-                                        e=e,
-                                        env_e=env_e,
-                                        dist_sample=dist,
-                                        current_hx=next_hx,
-                                    )
-                                    if res is not None:
-                                        t_act, t_logp = res
-                                        env_action[e] = t_act
-                                        log_prob[e] = t_logp
-                                        env_scales[e] = -1.0
-
                     # Chunking adaptativo por incerteza: aborta a execução aberta caso a confiança caia
                     chunk_mask = None
                     if self.adaptive_chunk and self.action_chunk_size > 1:
@@ -1797,27 +1457,30 @@ class RecurrentPPOTrainer:
                     chunk_mask = None
 
                 lat_us = (time.perf_counter_ns() - t0) / 1000.0
+                eff_b_lat = (E + self.external_scout_envs) if use_co_scouts else E
+                per_env_lat_us = lat_us / max(1, eff_b_lat)
 
-                if self.tracker is not None:
-                    if step % 4 == 0 or step == S - 1:
-                        if self.agent.is_discrete:
-                            probs = dist.probs[0, 0]
-                            n_acts = probs.shape[-1]
-                            top_probs, _ = torch.topk(probs, k=min(2, n_acts), dim=-1)
-                            conf = float(top_probs[..., 0].mean().item())
-                            ent = float(-torch.sum(probs * torch.log(probs + 1e-8), dim=-1).mean().item())
-                            max_ent = float(np.log(n_acts)) if n_acts > 1 else 1.0
-                            unc = float(np.clip(ent / max_ent, 0.0, 1.0))
-                        else:
-                            std = dist.scale[0, 0].cpu().numpy()
-                            std = np.clip(std, a_min=1e-6, a_max=100.0)
-                            ent = float(0.5 * np.mean(np.sum(1.0 + np.log(2.0 * np.pi * (std ** 2)), axis=-1)))
-                            var = float(np.mean(std ** 2))
-                            unc = float(np.clip(2.0 / (1.0 + np.exp(-var / 0.5)) - 1.0, 0.0, 1.0))
-                            conf = float(np.clip(1.0 - unc, 0.0, 1.0))
+                if step % 8 == 0 or step == S - 1:
+                    if self.agent.is_discrete:
+                        probs_all = dist.probs[:, 0]
+                        n_acts = probs_all.shape[-1]
+                        conf = float(probs_all.max(dim=-1).values.mean().item())
+                        ent = float(-torch.sum(probs_all * torch.log(probs_all + 1e-8), dim=-1).mean().item())
+                        max_ent = float(np.log(n_acts)) if n_acts > 1 else 1.0
+                        unc = float(np.clip(ent / max_ent, 0.0, 1.0))
+                    else:
+                        std = dist.scale[:, 0].detach().cpu().numpy()
+                        std = np.clip(std, a_min=1e-6, a_max=100.0)
+                        ent = float(0.5 * np.mean(np.sum(1.0 + np.log(2.0 * np.pi * (std ** 2)), axis=-1)))
+                        var = float(np.mean(std ** 2))
+                        unc = float(np.clip(2.0 / (1.0 + np.exp(-var / 0.5)) - 1.0, 0.0, 1.0))
+                        conf = float(np.clip(1.0 - unc, 0.0, 1.0))
 
+                    self._rollout_confidences.append(conf)
+                    self._rollout_latencies_us.append(per_env_lat_us)
+                    if self.tracker is not None:
                         self.tracker.record_inference(
-                            latency_us=lat_us,
+                            latency_us=per_env_lat_us,
                             uncertainty=unc,
                             confidence=conf,
                             entropy=ent,
@@ -1895,8 +1558,6 @@ class RecurrentPPOTrainer:
                         self.episode_returns.append(float(curr_ep_returns[d_i]))
                         curr_ep_returns[d_i] = 0.0
                         self._vec_recent_actions[d_i].clear()
-                        if hasattr(self, "_vec_visited_hashes") and d_i < len(self._vec_visited_hashes):
-                            self._vec_visited_hashes[d_i].clear()
                         d_info = env_infos[d_i] if isinstance(env_infos, (list, tuple)) and d_i < len(env_infos) else {}
                         new_d = self._get_current_curriculum_depth()
                         if (isinstance(d_info, dict) and d_info.get("curriculum_promoted", False)) or new_d > self._rollout_tracked_depth:
@@ -1909,9 +1570,6 @@ class RecurrentPPOTrainer:
 
                         if len(traj_steps) > 0:
                             cur_d = int(d_info.get("scramble_depth", d_info.get("current_depth", self._get_current_curriculum_depth()))) if isinstance(d_info, dict) else self._get_current_curriculum_depth()
-                            if is_win and cur_d >= self.teacher_min_depth:
-                                ep_s = max(0, step - len(traj_steps) + 1)
-                                stored_scale[ep_s : step + 1, d_i] = -np.abs(stored_scale[ep_s : step + 1, d_i])
                             self._process_completed_trajectory(traj_steps, is_win, cur_d)
                         self._active_vec_trajectories[d_i].clear()
 
@@ -1922,6 +1580,20 @@ class RecurrentPPOTrainer:
 
                 current_obs_dict = next_obs_dict
                 current_hx = next_hx
+
+                if (
+                    use_co_scouts
+                    and scout_logits_or_loc is not None
+                    and scout_val is not None
+                    and next_scout_hx is not None
+                ):
+                    self._step_external_scouts_from_tensors(
+                        scout_logits_or_loc,
+                        scout_scale_opt,
+                        scout_val,
+                        next_scout_hx,
+                        curr_scale,
+                    )
 
                 if step_callback is not None:
                     step_callback()
@@ -2132,7 +1804,12 @@ class RecurrentPPOTrainer:
                 else:
                     # Platô ou declínio de retorno: incrementa contagem e aquece exploração para escapar de mínimos locais
                     self._stagnation_count += 1
-                    if self._stagnation_count >= 2:
+                    if self._stagnation_count >= 16 and self._adaptive_scale >= 0.90:
+                        # Ciclo respiratório homeostático universal: após janela de dispersão alta, resfria para consolidar
+                        self._adaptive_scale = max(self._min_adaptive_scale, 0.35)
+                        self._stagnation_count = 0
+                        self._reward_ema = float(mean_return)
+                    elif self._stagnation_count >= 2:
                         self._adaptive_scale = min(self._max_adaptive_scale, self._adaptive_scale + 0.04)
 
         # Dynamic Entropy Floor: Re-aquecimento térmico imediato de rollout em caso de inanição de entropia
@@ -2147,11 +1824,69 @@ class RecurrentPPOTrainer:
         elif self.is_auto_exploration:
             self.exploration_scale = float(self._adaptive_scale)
 
+    @contextmanager
+    def _deferred_scars_scope(self):
+        """Acumula cicatrizes elegíveis durante o rollout e descarrega de uma vez fora do inference_mode."""
+        self._defer_scar_recording = True
+        try:
+            yield
+        finally:
+            self._defer_scar_recording = False
+            self._flush_pending_scars()
+
+    def _record_or_defer_scar(
+        self,
+        traj_obs: np.ndarray,
+        traj_delta: Optional[np.ndarray],
+        traj_prev_act: np.ndarray,
+        traj_prev_rew: np.ndarray,
+        surprise: float,
+        from_scout: bool = False,
+    ) -> None:
+        if float(surprise) <= 1e-6:
+            return
+        if self._defer_scar_recording:
+            self._pending_scars.append(
+                (traj_obs, traj_delta, traj_prev_act, traj_prev_rew, float(surprise), bool(from_scout))
+            )
+        else:
+            recorded = self.agent.record_victory_scar(
+                traj_obs=traj_obs,
+                traj_delta=traj_delta,
+                traj_prev_act=traj_prev_act,
+                traj_prev_rew=traj_prev_rew,
+                surprise=float(surprise),
+            )
+            if recorded and from_scout:
+                self.scout_scars_count += 1
+
+    def _flush_pending_scars(self) -> None:
+        if not self._pending_scars:
+            return
+        pending = list(self._pending_scars)
+        self._pending_scars.clear()
+        for item in pending:
+            if len(item) == 6:
+                t_obs, t_delta, t_pact, t_prew, surp, is_scout = item
+            else:
+                t_obs, t_delta, t_pact, t_prew, surp = item  # type: ignore[misc]
+                is_scout = False
+            recorded = self.agent.record_victory_scar(
+                traj_obs=t_obs,
+                traj_delta=t_delta,
+                traj_prev_act=t_pact,
+                traj_prev_rew=t_prew,
+                surprise=surp,
+            )
+            if recorded and is_scout:
+                self.scout_scars_count += 1
+
     def _process_completed_trajectory(
         self,
         traj_steps: List[Dict[str, Any]],
         is_win: bool,
         cur_depth: int,
+        is_external_scout: bool = False,
     ) -> None:
         """Processa e armazena estritamente vitórias e fatias de sucesso no buffer SIL com Peak Slicing e Bellman Isolado.
 
@@ -2167,15 +1902,18 @@ class RecurrentPPOTrainer:
         """
         if (not self.sil_enabled and self.scar_mode == "none") or len(traj_steps) == 0:
             return
+        if is_external_scout and not is_win:
+            return
 
         traj_steps = list(traj_steps)
-        cur_d = max(1, int(cur_depth))
+        cur_d = max(0, int(cur_depth))
         T_traj = len(traj_steps)
 
-        raw_env_ref = getattr(self.env, "unwrapped", self.env)
-        frontier_d = int(getattr(raw_env_ref, "current_depth", getattr(self.env, "current_depth", cur_d)) or cur_d)
-        if cur_d >= frontier_d:
-            self._recent_frontier_wins.append(1.0 if is_win else 0.0)
+        if not is_external_scout:
+            raw_env_ref = getattr(self.env, "unwrapped", self.env)
+            frontier_d = int(getattr(raw_env_ref, "current_depth", getattr(self.env, "current_depth", cur_d)) or cur_d)
+            if cur_d >= frontier_d:
+                self._recent_frontier_wins.append(1.0 if is_win else 0.0)
 
         if is_win:
             # Vitória Completa: preserva o episódio inteiro com retorno terminal canônico
@@ -2199,17 +1937,31 @@ class RecurrentPPOTrainer:
             traj_logp = np.array([s.get("log_prob", 0.0) for s in traj_steps], dtype=np.float32)
 
             if self.scar_memory is not None:
-                traj_logps = [s.get("log_prob", 0.0) for s in traj_steps]
-                surprise = float(-sum(traj_logps) / max(1, len(traj_logps)))
-                self.agent.record_victory_scar(
-                    traj_obs=traj_obs,
-                    traj_delta=traj_delta,
-                    traj_prev_act=traj_prev_act,
-                    traj_prev_rew=traj_prev_rew,
-                    surprise=surprise,
+                # Critério Universal de TD-Surprise Positiva: R_0 - V(s_0) > 0
+                # Vitórias já dominadas (onde o Crítico já prevê V(s_0) >= R_0) não erodem W_scar
+                r0_actual = float(traj_returns[0]) if len(traj_returns) > 0 else 0.0
+                v0_est = float(traj_steps[0].get("value", 0.0))
+                td_surprise = r0_actual - v0_est
+                scale_r = max(1.0, abs(r0_actual))
+                is_novel_victory = (
+                    int(self.scar_memory.scars_count.item()) == 0
+                    or td_surprise > 0.02 * scale_r
                 )
+                if is_novel_victory:
+                    traj_logps = [s.get("log_prob", 0.0) for s in traj_steps]
+                    shannon_surp = min(2.5, float(-sum(traj_logps) / max(1, len(traj_logps))))
+                    val_surp = max(0.0, td_surprise / scale_r) * 2.5
+                    eff_surprise = max(0.15, 0.5 * shannon_surp + 0.5 * val_surp)
+                    self._record_or_defer_scar(
+                        traj_obs=traj_obs,
+                        traj_delta=traj_delta,
+                        traj_prev_act=traj_prev_act,
+                        traj_prev_rew=traj_prev_rew,
+                        surprise=eff_surprise,
+                        from_scout=is_external_scout,
+                    )
 
-            if self.scar_mode == "none":
+            if self.scar_mode == "none" and not is_external_scout:
                 self.sil_buffer.add(
                     FrontierTransition(
                         obs=traj_obs,
@@ -2269,8 +2021,8 @@ class RecurrentPPOTrainer:
                 # Peak Slicing de episódios incompletos/não-resolvidos NUNCA contamina o tensor de cicatrizes quando pure_scars=True.
                 if self.scar_memory is not None and not self.pure_scars:
                     peak_logps = [s.get("log_prob", 0.0) for s in peak_slice]
-                    surprise = float(-sum(peak_logps) / max(1, len(peak_logps)))
-                    self.agent.record_victory_scar(
+                    surprise = max(0.15, float(-sum(peak_logps) / max(1, len(peak_logps))))
+                    self._record_or_defer_scar(
                         traj_obs=peak_obs,
                         traj_delta=peak_delta,
                         traj_prev_act=peak_prev_act,
@@ -2316,7 +2068,7 @@ class RecurrentPPOTrainer:
         stored_step_infos: Optional[List[Any]] = [] if self.hindsight_replay else None
 
 
-        with torch.no_grad():
+        with self._deferred_scars_scope(), torch.no_grad():
             for _ in range(self.rollout_steps):
                 input_dict = self._prepare_rollout_input(current_obs_dict)
 
@@ -2333,19 +2085,20 @@ class RecurrentPPOTrainer:
                 if self.agent.is_discrete:
                     logits = dist.logits
                     num_acts = logits.shape[-1]
-                    if num_acts == 12:
+                    raw_env = getattr(self.env, "unwrapped", self.env)
+                    inv_map: Optional[Dict[int, int]] = getattr(raw_env, "inverse_action_map", None)
+                    if isinstance(inv_map, dict):
                         penalized_logits = logits.clone()
                         if len(self._recent_actions) >= 1:
-                            last_a = self._recent_actions[-1]
-                            inv_a = (last_a + 1) if (last_a % 2 == 0) else (last_a - 1)
-                            penalized_logits[..., inv_a] -= 4.0
+                            inv_a = inv_map.get(int(self._recent_actions[-1]))
+                            if inv_a is not None:
+                                penalized_logits[..., inv_a] -= 4.0
                         if len(self._recent_actions) >= 3:
                             if self._recent_actions[-1] == self._recent_actions[-3]:
                                 penalized_logits[..., self._recent_actions[-2]] -= 3.0
-                            a1, a2, a3 = self._recent_actions[-3], self._recent_actions[-2], self._recent_actions[-1]
-                            inv_a1 = (a1 + 1) if (a1 % 2 == 0) else (a1 - 1)
-                            inv_a2 = (a2 + 1) if (a2 % 2 == 0) else (a2 - 1)
-                            if a3 == inv_a1:
+                            inv_a1 = inv_map.get(int(self._recent_actions[-3]))
+                            inv_a2 = inv_map.get(int(self._recent_actions[-2]))
+                            if inv_a1 is not None and inv_a2 is not None and self._recent_actions[-1] == inv_a1:
                                 penalized_logits[..., inv_a2] -= 4.0
                         logits = penalized_logits
                     elif self.is_auto_exploration and self._stagnation_count >= 3 and len(self._recent_actions) >= 3:
@@ -2439,6 +2192,8 @@ class RecurrentPPOTrainer:
                 last_env_info = env_info
                 if stored_step_infos is not None:
                     stored_step_infos.append(env_info)
+                if self.external_scout_envs > 0:
+                    self._step_external_scouts_standalone(curr_scale)
 
                 if self.sil_enabled or self.scar_mode != "none":
                     delta_v = (
@@ -2829,10 +2584,8 @@ class RecurrentPPOTrainer:
                 )
                 values_sq = values.squeeze(-1)  # [B, T]
 
-                guided_mask = None
                 if self.agent.is_discrete:
                     if getattr(batch, "env_scales", None) is not None:
-                        guided_mask = batch.env_scales < 0.0
                         eff_scales = batch.env_scales.abs().clamp(min=0.02, max=1.00)
                         if self.action_chunk_size > 1:
                             eff_scales = eff_scales.unsqueeze(-1).unsqueeze(-1)
@@ -2879,29 +2632,12 @@ class RecurrentPPOTrainer:
                 ratio = torch.exp(log_ratio)
 
                 norm_adv = batch.advantages
-                if guided_mask is not None:
-                    actor_adv = torch.where(guided_mask, torch.clamp(norm_adv, min=0.0), norm_adv)
-                else:
-                    actor_adv = norm_adv
-
-                surr1 = ratio * actor_adv
+                surr1 = ratio * norm_adv
                 surr2 = (
-                    torch.clamp(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range) * actor_adv
+                    torch.clamp(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range) * norm_adv
                 )
                 surr = torch.min(surr1, surr2)
                 policy_loss = -torch.clamp(surr, min=-15.0, max=15.0).mean()
-
-                if guided_mask is not None and self.agent.is_discrete:
-                    pos_guided = guided_mask & (norm_adv > 0.0)
-                    if pos_guided.any():
-                        unscaled_logp = (
-                            dist.log_prob(batch.actions).sum(dim=-1)
-                            if self.action_chunk_size > 1
-                            else dist.log_prob(batch.actions)
-                        )
-                        guided_w = torch.clamp(norm_adv, min=0.0, max=3.0) * pos_guided.float()
-                        teacher_bc_loss = -(unscaled_logp * guided_w).sum() / max(1, guided_w.numel())
-                        policy_loss = policy_loss + 0.35 * teacher_bc_loss
 
                 val_loss = self.agent.value_head.loss(val_logits, batch.returns)
 
@@ -3149,34 +2885,66 @@ class RecurrentPPOTrainer:
                     self.tracker.metrics.best_mean_return = best_mean_return
 
             if verbose and iteration % 2 == 0:
+                ep_win_cap = int(self.episode_returns.maxlen or 20)
                 log_parts = [
-                    f"[Step {self.total_steps:6d}/{max_steps}] Mean Return (last 20 ep): {mean_return:.2f}"
+                    f"[Step {self.total_steps:6d}/{max_steps}] Mean Return (last {ep_win_cap} ep): {mean_return:.2f}"
                 ]
                 if self.tracker is not None and self.tracker.metrics.fps > 0:
                     log_parts.append(f"FPS: {self.tracker.metrics.fps:.1f}")
-                if self.tracker is not None and len(self.tracker.metrics.confidences) > 0:
-                    mean_conf = float(np.mean(self.tracker.metrics.confidences))
-                    log_parts.append(f"Confiança: {mean_conf*100:.1f}%")
 
                 calib = float(self._adaptive_scale if self.is_auto_exploration else self.exploration_scale)
                 if self.tracker is not None and len(self.tracker.metrics.calibrations) > 0:
                     calib = float(self.tracker.metrics.calibrations[-1])
                 log_parts.append(f"Calibração: {calib:.2f}")
 
-                if self.tracker is not None and len(self.tracker.metrics.step_latencies_us) > 0:
-                    lat_p50 = float(np.percentile(self.tracker.metrics.step_latencies_us, 50))
-                    if lat_p50 >= 1000.0:
-                        log_parts.append(f"Latência: {lat_p50/1000.0:.1f}ms")
-                    else:
-                        log_parts.append(f"Latência: {lat_p50:.0f}µs")
-
                 raw_env = getattr(self.env, "unwrapped", self.env)
                 if hasattr(raw_env, "current_depth"):
                     max_d = getattr(raw_env, "max_depth", 5)
                     log_parts.append(f"Profundidade: {raw_env.current_depth}/{max_d}")
+                    if getattr(raw_env, "curriculum", False) and hasattr(raw_env, "curriculum_success_rate"):
+                        f_deq = getattr(raw_env, "frontier_successes", None)
+                        c_win = int(getattr(raw_env, "curriculum_window", 64))
+                        c_sr = float(raw_env.curriculum_success_rate)
+                        c_wins = (
+                            int(round(sum(f_deq)))
+                            if (f_deq is not None and len(f_deq) > 0)
+                            else int(round(c_sr * c_win))
+                        )
+                        log_parts.append(f"Fronteira: {c_wins}/{c_win} ({c_sr*100:.1f}%)")
                 elif hasattr(raw_env, "current_level"):
                     max_l = getattr(raw_env, "max_level", 4)
                     log_parts.append(f"Nível: {raw_env.current_level}/{max_l}")
+
+                real_ent = -float(metrics.get("entropy_loss", 0.0))
+                if real_ent > 0.0:
+                    log_parts.append(f"Entropia: {real_ent:.3f}")
+
+                conf_samples = (
+                    self.tracker.metrics.confidences
+                    if (self.tracker is not None and len(self.tracker.metrics.confidences) > 0)
+                    else self._rollout_confidences
+                )
+                if len(conf_samples) > 0:
+                    mean_conf = float(np.mean(conf_samples))
+                    log_parts.append(f"Confiança: {mean_conf*100:.1f}%")
+
+                lat_samples = (
+                    self.tracker.metrics.step_latencies_us
+                    if (self.tracker is not None and len(self.tracker.metrics.step_latencies_us) > 0)
+                    else self._rollout_latencies_us
+                )
+                if len(lat_samples) > 0:
+                    lat_p50 = float(np.percentile(lat_samples, 50))
+                    if lat_p50 >= 1000.0:
+                        log_parts.append(f"Latência: {lat_p50/1000.0:.1f}ms")
+                    else:
+                        log_parts.append(f"Latência: {lat_p50:.1f}µs")
+
+                log_parts.append(f"CoefEnt: {self.entropy_coef:.4f}")
+                log_parts.append(f"PLoss: {float(metrics.get('policy_loss', 0.0)):.4f}")
+                log_parts.append(f"VLoss: {float(metrics.get('value_loss', 0.0)):.4f}")
+                if self.external_scout_envs > 0:
+                    log_parts.append(f"BatedoresExt(+{self.external_scout_envs}): {self.scout_scars_count} cicatrizes")
 
                 if self.sil_enabled and getattr(self, "sil_dpo_enabled", False):
                     dpo_l = self.tracker.metrics.sil_dpo_losses[-1] if (self.tracker and self.tracker.metrics.sil_dpo_losses) else 0.0
@@ -3235,6 +3003,7 @@ class RecurrentPPOTrainer:
                 else:
                     print(f"\n🏆 [Best State Dict Restored] Modelo restaurado no ápice de performance (Melhor Retorno: {best_mean_return:.2f})")
 
+        self.close_scout_env()
         self.best_mean_return = best_mean_return
         self.final_return = float(np.mean(self.episode_returns)) if len(self.episode_returns) > 0 else 0.0
         return self.final_return

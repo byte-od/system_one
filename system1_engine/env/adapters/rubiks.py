@@ -637,6 +637,7 @@ class RubiksCubeEnv(gym.Env):
         self._episode_depth = self.current_depth
         self.recent_successes: deque[float] = deque(maxlen=curriculum_window)
         self.frontier_successes: deque[float] = deque(maxlen=curriculum_window)
+        self.record_curriculum: bool = True
         self.curriculum_promotions: int = 0
         self._steps_at_depth: int = 0
         self.core = RubiksCubeCore()
@@ -948,7 +949,7 @@ class RubiksCubeEnv(gym.Env):
         )
         truncated = self._steps >= eff_max_steps
 
-        if (terminated or truncated) and self.curriculum:
+        if (terminated or truncated) and self.curriculum and getattr(self, "record_curriculum", True):
             self.recent_successes.append(1.0 if is_solved else 0.0)
             if getattr(self, "_episode_depth", self.current_depth) == self.current_depth:
                 self.frontier_successes.append(1.0 if is_solved else 0.0)
@@ -1062,6 +1063,7 @@ class RubiksCubeMacroEnv(gym.Env):
         self._episode_depth = self.current_depth
         self.recent_successes: deque[float] = deque(maxlen=curriculum_window)
         self.frontier_successes: deque[float] = deque(maxlen=curriculum_window)
+        self.record_curriculum: bool = True
         self.curriculum_promotions: int = 0
         self._steps_at_depth: int = 0
         self.core = RubiksCubeCore()
@@ -1302,7 +1304,7 @@ class RubiksCubeMacroEnv(gym.Env):
         )
         truncated = self._steps >= eff_max_steps
 
-        if (terminated or truncated) and self.curriculum:
+        if (terminated or truncated) and self.curriculum and getattr(self, "record_curriculum", True):
             self.recent_successes.append(1.0 if is_solved else 0.0)
             if getattr(self, "_episode_depth", self.current_depth) == self.current_depth:
                 self.frontier_successes.append(1.0 if is_solved else 0.0)
@@ -1417,6 +1419,8 @@ class VectorizedRubiksEnv(gym.Env):
         self.envs: List[RubiksCubeEnv] = [
             env_cls(render_mode=render_mode, **env_kwargs) for _ in range(self.num_envs)
         ]
+        self._base_curriculum_window: int = int(self.envs[0].curriculum_window)
+        self.num_scout_envs: int = 0
         if len(self.envs) > 1:
             shared_successes = self.envs[0].recent_successes
             shared_frontier = getattr(self.envs[0], "frontier_successes", None)
@@ -1537,6 +1541,27 @@ class VectorizedRubiksEnv(gym.Env):
         self.view_mode = str(mode).lower()
         for env in self.envs:
             env.set_view_mode(mode)
+
+    def set_scout_envs(self, num_scouts: int) -> None:
+        """Exclui os primeiros num_scouts ambientes (batedores S1) da grade e da janela curricular."""
+        n = max(0, min(int(num_scouts), len(self.envs)))
+        self.num_scout_envs = n
+        for idx, env in enumerate(self.envs):
+            env.record_curriculum = (idx >= n)
+
+        # Redimensiona a grade curricular para (num_envs - batedores) quando a janela representa a frota
+        base_win = int(getattr(self, "_base_curriculum_window", self.envs[0].curriculum_window))
+        if base_win == len(self.envs) and n < len(self.envs):
+            eff_window = max(1, len(self.envs) - n)
+        else:
+            eff_window = max(1, base_win)
+
+        shared_recent = deque(list(self.envs[0].recent_successes)[-eff_window:], maxlen=eff_window)
+        shared_frontier = deque(list(self.envs[0].frontier_successes)[-eff_window:], maxlen=eff_window)
+        for env in self.envs:
+            env.curriculum_window = eff_window
+            env.recent_successes = shared_recent
+            env.frontier_successes = shared_frontier
 
     def set_curriculum_depth(self, depth: int) -> int:
         """Define e sincroniza a profundidade curricular atual em todos os sub-ambientes."""

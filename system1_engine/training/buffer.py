@@ -1106,7 +1106,8 @@ class SuccessReplayBuffer:
     ) -> Dict[str, torch.Tensor]:
         """Empacota uma lista de trajetórias heterogêneas em lote pré-alocado no dispositivo."""
         k = len(sampled_trajs)
-        max_len = max(t.length for t in sampled_trajs)
+        max_bptt_len = 64
+        max_len = min(max_bptt_len, max(t.length for t in sampled_trajs))
 
         # Descompacta cada trajetória amostrada exatamente uma vez para eliminar descompressões redundantes
         obs_list = [t.obs for t in sampled_trajs]
@@ -1139,9 +1140,9 @@ class SuccessReplayBuffer:
         b_mask = np.zeros((k, max_len), dtype=np.float32)
 
         for i, t in enumerate(sampled_trajs):
-            L = t.length
-            obs_arr = obs_list[i]
-            delta_arr = delta_list[i]
+            L = min(t.length, max_len)
+            obs_arr = obs_list[i][:L]
+            delta_arr = delta_list[i][:L] if delta_list[i] is not None else None
             if self.is_visual and obs_arr.dtype == np.uint8:
                 b_obs[i, :L] = obs_arr.astype(np.float32) / 255.0
             else:
@@ -1149,10 +1150,10 @@ class SuccessReplayBuffer:
             if has_delta and delta_arr is not None:
                 d_dim = min(b_delta.shape[-1], delta_arr.shape[-1])
                 b_delta[i, :L, :d_dim] = delta_arr[:, :d_dim]
-            b_prev_act[i, :L] = t.prev_actions
-            b_prev_rew[i, :L, 0] = t.prev_rewards
-            b_act[i, :L] = t.actions
-            b_ret[i, :L] = t.returns
+            b_prev_act[i, :L] = t.prev_actions[:L]
+            b_prev_rew[i, :L, 0] = t.prev_rewards[:L]
+            b_act[i, :L] = t.actions[:L]
+            b_ret[i, :L] = t.returns[:L]
             if getattr(t, "log_probs", None) is not None:
                 b_logp[i, :min(L, len(t.log_probs))] = t.log_probs[:min(L, len(t.log_probs))]
             b_mask[i, :L] = 1.0
@@ -1242,7 +1243,10 @@ class SuccessReplayBuffer:
             is_fw = 1 if getattr(t, "is_full_win", True) else 0
             d = float(getattr(t, "depth", 1))
             length = max(1, int(getattr(t, "length", 1)))
-            eff = (d / length) if d > 0 else (1.0 / length)
+            # Universalidade S1: eficiência d/L aplica-se APENAS a vitórias terminais de objetivo (is_fw == 1).
+            # Em tarefas de sobrevivência/locomoção/controle contínuo (is_fw == 0, ex: CartPole, Hopper),
+            # menor length significaria morte precoce — logo ranqueamos estritamente pelo retorno de Bellman R_0!
+            eff = ((d / length) if d > 0 else (1.0 / length)) if is_fw == 1 else 0.0
             ret = float(t.returns[0]) if (t.returns is not None and len(t.returns) > 0) else 0.0
             return (is_fw, eff, ret)
 

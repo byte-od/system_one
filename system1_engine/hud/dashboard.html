@@ -644,7 +644,7 @@
           <span id="global-status-dot" class="status-dot bg-emerald-500 animate-pulse"></span>
           <span id="global-status-text" class="text-xs font-mono font-medium text-emerald-400">CONECTADO</span>
           <span class="text-gray-600">•</span>
-          <span id="header-pid-badge" class="text-xs font-mono text-gray-400">PID: 40903</span>
+          <span id="header-pid-badge" class="text-xs font-mono text-gray-400">PID: --</span>
         </div>
       </div>
     </div>
@@ -653,7 +653,7 @@
     <div class="flex flex-wrap items-center gap-2 font-mono text-xs">
       <div class="px-2.5 py-1 rounded bg-[#131b2a] border border-[#1e2c45] flex items-center gap-1.5">
         <span class="text-gray-400">FRONTEIRA:</span>
-        <span id="header-depth-badge" class="font-bold text-cyan-400">D10</span>
+        <span id="header-depth-badge" class="font-bold text-cyan-400">D--</span>
       </div>
       <div class="px-2.5 py-1 rounded bg-[#131b2a] border border-[#1e2c45] flex items-center gap-1.5">
         <span class="text-gray-400">FPS:</span>
@@ -735,7 +735,7 @@
           <span class="text-xs font-mono font-semibold text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
             <span>📈</span> Retorno Médio
           </span>
-          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800">20 ep</span>
+          <span id="kpi-return-window-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800">128 ep</span>
         </div>
         <div class="flex items-baseline justify-between">
           <div id="kpi-return" class="text-3xl font-mono font-black text-white">0.00</div>
@@ -753,12 +753,12 @@
 
     <!-- Card 2: Fronteira Curricular (Indigo Liquid) -->
     <div class="vessel-card theme-indigo p-4">
-      <div class="vessel-scale-ticks" title="Episódios Vencidos no Patamar Atual">
+      <div class="vessel-scale-ticks" title="Episódios Vencidos na Grade Curricular (Excluindo Batedores)">
         <span id="vessel-tick-max-2" class="vessel-tick vessel-tick-max" style="top: 15%" title="Pico Atingido no Patamar">
           <span class="vessel-tick-label">
             <span class="vessel-tick-tag">MAX</span>
             <span class="vessel-tick-arrow">▲</span>
-            <span id="vessel-val-max-2" class="vessel-tick-val">0/64</span>
+            <span id="vessel-val-max-2" class="vessel-tick-val">0/104</span>
           </span>
         </span>
         <span class="vessel-tick major" style="top: 30%"></span>
@@ -768,7 +768,7 @@
           <span class="vessel-tick-label">
             <span class="vessel-tick-tag">MIN</span>
             <span class="vessel-tick-arrow">▼</span>
-            <span id="vessel-val-min-2" class="vessel-tick-val">0/64</span>
+            <span id="vessel-val-min-2" class="vessel-tick-val">0/104</span>
           </span>
         </span>
       </div>
@@ -794,21 +794,21 @@
           <span class="text-xs font-mono font-semibold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
             <span>🎯</span> Fronteira Curricular
           </span>
-          <span id="kpi-depth-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-800">Nível D1 • Meta: 54/64</span>
+          <span id="kpi-depth-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-800">Nível D--</span>
         </div>
         <div class="flex items-baseline justify-between">
           <div>
-            <div id="kpi-depth" class="text-3xl font-mono font-black text-indigo-200">0/64</div>
-            <div class="text-[10px] font-mono text-indigo-400 font-semibold tracking-wider uppercase">Episódios Vencidos</div>
+            <div id="kpi-depth" class="text-3xl font-mono font-black text-indigo-200">0/104</div>
+            <div id="kpi-depth-subtitle" class="text-[10px] font-mono text-indigo-400 font-semibold tracking-wider uppercase">Episódios Vencidos</div>
           </div>
           <div class="text-right font-mono text-xs">
             <div class="text-gray-400 text-[10px]">PICO NO NÍVEL</div>
-            <div id="kpi-best-winrate" class="text-indigo-400 font-bold">0/64</div>
+            <div id="kpi-best-winrate" class="text-indigo-400 font-bold">0/104</div>
           </div>
         </div>
         <div class="text-xs text-gray-300 flex items-center justify-between border-t border-indigo-900/40 pt-2 font-mono">
-          <span>Patamar: <strong id="kpi-depth-level" class="text-indigo-300">D10</strong> (<span id="kpi-promotions">9</span> promos)</span>
-          <span id="kpi-curriculum-samples" class="text-indigo-300">Meta: 54/64 eps</span>
+          <span>Patamar: <strong id="kpi-depth-level" class="text-indigo-300">D--</strong> (<span id="kpi-promotions">0</span> promos)</span>
+          <span id="kpi-curriculum-samples" class="text-indigo-300">Meta: --</span>
         </div>
       </div>
     </div>
@@ -856,13 +856,13 @@
           <span class="text-xs font-mono font-semibold text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
             <span>🧬</span> Cicatrizes O(1)
           </span>
-          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-800">Híbrido v2</span>
+          <span id="kpi-scar-mode-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-800">Híbrido Puro</span>
         </div>
         <div class="flex items-baseline justify-between">
           <div id="kpi-scars" class="text-3xl font-mono font-black text-purple-200">0</div>
           <div class="text-right font-mono text-xs">
             <div class="text-gray-400 text-[10px]">MEMÓRIA RAM</div>
-            <div class="text-emerald-400 font-bold">4.25 KB</div>
+            <div id="kpi-scar-ram" class="text-emerald-400 font-bold">4.25 KB</div>
           </div>
         </div>
         <div class="text-xs text-gray-300 flex items-center justify-between border-t border-purple-900/40 pt-2 font-mono">
@@ -876,7 +876,7 @@
     <!-- Card 4: Exploração & Entropia (Amber Liquid) -->
     <div class="vessel-card theme-amber p-4">
       <div class="vessel-scale-ticks" title="Escala de Entropia">
-        <span id="vessel-tick-max-4" class="vessel-tick vessel-tick-max" style="top: 15%" title="Entropia Máxima Teórica: ln(12) = 2.485 nats">
+        <span id="vessel-tick-max-4" class="vessel-tick vessel-tick-max" style="top: 15%" title="Entropia Máxima Teórica: ln(|A|) nats">
           <span class="vessel-tick-label">
             <span class="vessel-tick-tag">MAX</span>
             <span class="vessel-tick-arrow">▲</span>
@@ -886,15 +886,15 @@
         <span class="vessel-tick major" style="top: 30%"></span>
         <span class="vessel-tick" style="top: 50%"></span>
         <span class="vessel-tick major" style="top: 70%"></span>
-        <span id="vessel-tick-min-4" class="vessel-tick vessel-tick-min" style="top: 76%" title="Piso Ativo de Colapso (0.300 nats)">
+        <span id="vessel-tick-min-4" class="vessel-tick vessel-tick-min" style="top: 79%" title="Piso Dinâmico Anti-Colapso (0.180 nats)">
           <span class="vessel-tick-label">
             <span class="vessel-tick-tag">PISO</span>
             <span class="vessel-tick-arrow">▼</span>
-            <span id="vessel-val-min-4" class="vessel-tick-val">0.30</span>
+            <span id="vessel-val-min-4" class="vessel-tick-val">0.18</span>
           </span>
         </span>
       </div>
-      <div class="vessel-liquid-fill" id="vessel-liquid-entropy" style="height: 45%;">
+      <div class="vessel-liquid-fill" id="vessel-liquid-entropy" style="height: 25%;">
         <div class="vessel-wave-wrapper">
           <svg class="vessel-wave-svg vessel-wave-back" viewBox="0 0 600 30" preserveAspectRatio="none">
             <path d="M 0 15 Q 75 25 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
@@ -919,10 +919,10 @@
           <span id="kpi-entropy-health" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">Saudável</span>
         </div>
         <div class="flex items-baseline justify-between">
-          <div id="kpi-entropy" class="text-3xl font-mono font-black text-amber-200">1.050</div>
+          <div id="kpi-entropy" class="text-3xl font-mono font-black text-amber-200">0.000</div>
           <div class="text-right font-mono text-xs">
             <div class="text-gray-400 text-[10px]">PISO COLAPSO</div>
-            <div class="text-rose-400 font-bold">0.300 nats</div>
+            <div id="kpi-entropy-floor" class="text-rose-400 font-bold">0.180 nats</div>
           </div>
         </div>
         <div class="text-xs text-gray-300 flex items-center justify-between border-t border-amber-900/40 pt-2 font-mono">
@@ -939,7 +939,7 @@
           <span class="vessel-tick-label">
             <span class="vessel-tick-tag">MAX</span>
             <span class="vessel-tick-arrow">▲</span>
-            <span id="vessel-val-max-5" class="vessel-tick-val">50k</span>
+            <span id="vessel-val-max-5" class="vessel-tick-val">2.5k</span>
           </span>
         </span>
         <span class="vessel-tick major" style="top: 30%"></span>
@@ -975,7 +975,7 @@
           <span id="kpi-steps-label" class="text-xs font-mono font-semibold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
             <span>⚡</span> Throughput
           </span>
-          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800">128 Envs</span>
+          <span id="kpi-envs-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800">128 Envs</span>
         </div>
         <div class="flex items-baseline justify-between">
           <div id="kpi-fps" class="text-3xl font-mono font-black text-cyan-300">0</div>
@@ -993,12 +993,12 @@
 
     <!-- Card 6: Calibração & Dispositivo (Sky Blue Liquid) -->
     <div class="vessel-card theme-sky p-4">
-      <div class="vessel-scale-ticks" title="Escala de Confiança">
-        <span id="vessel-tick-max-6" class="vessel-tick vessel-tick-max" style="top: 15%" title="Confiança Máxima">
+      <div class="vessel-scale-ticks" title="Escala de Confiança / Certeza">
+        <span id="vessel-tick-max-6" class="vessel-tick vessel-tick-max" style="top: 15%" title="Confiança / Certeza Atual">
           <span class="vessel-tick-label">
             <span class="vessel-tick-tag">MAX</span>
             <span class="vessel-tick-arrow">▲</span>
-            <span id="vessel-val-max-6" class="vessel-tick-val">100%</span>
+            <span id="vessel-val-max-6" class="vessel-tick-val">0%</span>
           </span>
         </span>
         <span class="vessel-tick major" style="top: 30%"></span>
@@ -1012,7 +1012,7 @@
           </span>
         </span>
       </div>
-      <div class="vessel-liquid-fill" id="vessel-liquid-calib" style="height: 80%;">
+      <div class="vessel-liquid-fill" id="vessel-liquid-calib" style="height: 20%;">
         <div class="vessel-wave-wrapper">
           <svg class="vessel-wave-svg vessel-wave-back" viewBox="0 0 600 30" preserveAspectRatio="none">
             <path d="M 0 15 Q 75 25 150 15 T 300 15 T 450 15 T 600 15 L 600 30 L 0 30 Z" />
@@ -1034,21 +1034,21 @@
           <span class="text-xs font-mono font-semibold text-sky-300 uppercase tracking-wider flex items-center gap-1.5">
             <span>🛡️</span> Calibração & Hardware
           </span>
-          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-800">MPS / CPU</span>
+          <span id="kpi-device-badge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-800">CPU / GPU</span>
         </div>
         <div class="flex items-baseline justify-between">
           <div>
-            <div id="kpi-calibration" class="text-3xl font-mono font-black text-white">0.28</div>
-            <div class="text-[10px] font-mono text-sky-400 font-semibold tracking-wider uppercase">Calibração Adaptativa</div>
+            <div id="kpi-calibration" class="text-3xl font-mono font-black text-white">1.00</div>
+            <div id="kpi-calibration-label" class="text-[10px] font-mono text-sky-400 font-semibold tracking-wider uppercase">Calibração Adaptativa</div>
           </div>
           <div class="text-right font-mono text-xs">
-            <div class="text-gray-400 text-[10px]">CONFIANÇA</div>
-            <div id="kpi-confidence" class="text-sky-300 font-bold">94.0%</div>
+            <div id="kpi-confidence-label" class="text-gray-400 text-[10px]">CONFIANÇA</div>
+            <div id="kpi-confidence" class="text-sky-300 font-bold">0.0%</div>
           </div>
         </div>
         <div class="text-xs text-gray-300 flex items-center justify-between border-t border-sky-900/40 pt-2 font-mono">
-          <span>Latência p50: <strong id="kpi-latency" class="text-sky-300">28.2 μs</strong></span>
-          <span id="kpi-hardware-mode" class="text-[10px] text-gray-400">128 Envs</span>
+          <span><span id="kpi-latency-prefix">Latência p50:</span> <strong id="kpi-latency" class="text-sky-300">--</strong></span>
+          <span id="kpi-hardware-mode" class="text-[10px] text-gray-400">--</span>
         </div>
       </div>
     </div>
@@ -1203,6 +1203,36 @@
           </div>
         </div>
 
+        <!-- Memória de Cicatriz de Gradiente (O(1)) -->
+        <div class="space-y-2 border-t border-[#1a2233] pt-3">
+          <label class="text-rose-400 font-semibold uppercase tracking-wider">Memória de Cicatriz (Gradient Scar)</label>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-2">
+              <label class="text-[10px] text-gray-400 uppercase">Modo</label>
+              <select id="train-scar-mode" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-[10px] text-center">
+                <option value="none">Nenhum</option>
+                <option value="fast_weights">Fast Weights (Mec. 1)</option>
+                <option value="dual_gradient">Dual Gradient (Mec. 2)</option>
+                <option value="hybrid">Híbrido</option>
+              </select>
+            </div>
+            <div class="space-y-2">
+              <label class="text-[10px] text-gray-400 uppercase">Decaimento</label>
+              <input type="number" id="train-scar-decay" value="0.995" step="0.001" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-[10px] text-center" />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-2">
+              <label class="text-[10px] text-gray-400 uppercase">Escala (lambda)</label>
+              <input type="number" id="train-scar-scale" value="0.15" step="0.01" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-[10px] text-center" />
+            </div>
+            <div class="space-y-2">
+              <label class="text-[10px] text-gray-400 uppercase">Ressonância (beta)</label>
+              <input type="number" id="train-scar-beta" value="0.20" step="0.01" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-[10px] text-center" />
+            </div>
+          </div>
+        </div>
+
         <div class="space-y-2">
           <label class="text-cyan-400 font-semibold uppercase tracking-wider">Salvar Checkpoint (.pt)</label>
           <input type="text" id="train-save" class="hud-input w-full bg-[#0a0d14] border border-[#1e2c45] text-xs" placeholder="ex: s1_rubikscube_v0_trained.pt" />
@@ -1212,6 +1242,7 @@
       <div class="flex justify-between gap-3 pt-3 border-t border-[#1a2233]">
         <button onclick="toggleTrainModal()" class="flex-1 py-2 rounded bg-slate-800 hover:bg-slate-700 text-gray-300 border border-slate-700 font-mono text-xs transition">Cancelar</button>
         <button onclick="startTrainFromModal()" id="btn-train-start" class="flex-1 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 font-mono text-xs font-bold shadow-lg transition">Iniciar Treino</button>
+          <button onclick="stopTraining()" id="btn-train-stop" style="display: none;" class="flex-1 py-2 rounded bg-rose-600 hover:bg-rose-500 text-white border border-rose-400 font-mono text-xs font-bold shadow-lg transition">Parar Treino</button>
       </div>
       <div id="train-status" class="text-[10px] text-emerald-300 font-mono h-4"></div>
     </div>
@@ -1318,34 +1349,44 @@
       ctx.fill();
     }
 
-    // Atualização de UI & Animação das Alturas dos Líquidos
-    function handleTelemetryUpdate(telemetry, runner) {
+    // Atualização de UI & Animação das Alturas dos Líquidos (100% Telemetria Técnica Real)
+    function handleTelemetryUpdate(telemetry, runner, hardware) {
       if (!telemetry) return;
       _lastDataTimestamp = Date.now();
 
-      const steps = telemetry.total_steps || 0;
-      const rawFps = telemetry.fps || 0;
-      const fps = Math.max(0, Math.min(3000, Number(rawFps) || 0));
+      const isMini = document.body.classList.contains('mini-mode');
+      const steps = Number(telemetry.total_steps) || 0;
+      const fps = Math.max(0, Number(telemetry.fps) || 0);
       const depth = telemetry.curriculum_depth || 1;
-      const meanRet = telemetry.mean_return_20 !== undefined ? telemetry.mean_return_20 : 0.0;
-      const bestRetRaw = telemetry.curriculum_depth_best_return !== undefined ? telemetry.curriculum_depth_best_return : meanRet;
-      const scars = telemetry.scars_count || 0;
-      const wNorm = telemetry.scar_w_norm || 0;
-      const zNorm = telemetry.scar_z_norm || 0;
-      const gNorm = telemetry.scar_g_norm || 0;
-      const calib = telemetry.calibration !== undefined ? telemetry.calibration : 1.0;
-      const entropy = telemetry.mean_entropy !== undefined ? telemetry.mean_entropy : 1.05;
-      const confidence = telemetry.mean_confidence !== undefined ? telemetry.mean_confidence : 0.94;
-      
+      const numEnvs = Number(telemetry.num_envs) || Number(telemetry.curriculum_samples) || 128;
+      const teacherEnvs = Number(telemetry.teacher_envs) || 0;
+      const externalScouts = Number(telemetry.external_scout_envs) || 0;
+      const returnWinEps = Number(telemetry.return_window_eps) || Math.max(20, numEnvs);
+      const meanRet = telemetry.mean_return_20 !== undefined ? Number(telemetry.mean_return_20) : 0.0;
+      const bestRetRaw = telemetry.curriculum_depth_best_return !== undefined && telemetry.curriculum_depth_best_return !== null
+        ? Number(telemetry.curriculum_depth_best_return)
+        : meanRet;
+      const scars = Number(telemetry.scars_count) || 0;
+      const wNorm = Number(telemetry.scar_w_norm) || 0;
+      const zNorm = Number(telemetry.scar_z_norm) || 0;
+      const gNorm = Number(telemetry.scar_g_norm) || 0;
+      const calib = telemetry.calibration !== undefined ? Number(telemetry.calibration) : 1.0;
+      const entropy = telemetry.mean_entropy !== undefined ? Number(telemetry.mean_entropy) : 0.0;
+      const maxEntropy = telemetry.max_entropy !== undefined ? Number(telemetry.max_entropy) : 2.485;
+      const entropyFloor = telemetry.entropy_floor !== undefined ? Number(telemetry.entropy_floor) : 0.18;
+      const confidence = telemetry.mean_confidence !== undefined ? Number(telemetry.mean_confidence) : 0.0;
+
       if (telemetry && telemetry.target_steps) {
-        _maxStepsTarget = telemetry.target_steps;
+        _maxStepsTarget = Number(telemetry.target_steps);
       } else if (runner && runner.config && runner.config.steps) {
-        _maxStepsTarget = runner.config.steps;
+        _maxStepsTarget = Number(runner.config.steps);
       }
 
       const elHeroTitle = document.getElementById('hero-progress-title');
       if (elHeroTitle) {
-        const millions = Math.round(_maxStepsTarget / 1000000);
+        const stepsLabel = _maxStepsTarget >= 1000000
+          ? `${Number.isInteger(_maxStepsTarget / 1000000) ? (_maxStepsTarget / 1000000) : (_maxStepsTarget / 1000000).toFixed(1)}M`
+          : `${Math.round(_maxStepsTarget / 1000)}K`;
         const cmdStr = (runner && runner.config && runner.config.cmd ? String(runner.config.cmd) : '').toLowerCase();
         const envStr = (telemetry && telemetry.env ? String(telemetry.env) : '').toLowerCase();
         const isWarmup = (telemetry && telemetry.training_regime === 'WARM-UP')
@@ -1354,10 +1395,11 @@
           || cmdStr.includes('base-ckpt')
           || envStr.includes('warm-up');
         const regimeLabel = isWarmup ? 'WARM-UP' : 'TABULA RASA';
-        elHeroTitle.innerText = `PROGRESSO DA MARATONA (${millions}M PASSOS ${regimeLabel})`;
+        const baseCkptStr = telemetry.base_checkpoint ? ` • BASE: ${telemetry.base_checkpoint}` : '';
+        elHeroTitle.innerText = `PROGRESSO DA MARATONA (${stepsLabel} PASSOS ${regimeLabel}${baseCkptStr})`;
       }
 
-      const pct = Math.min(100, (steps / _maxStepsTarget) * 100);
+      const pct = _maxStepsTarget > 0 ? Math.min(100, (steps / _maxStepsTarget) * 100) : 0.0;
 
       // Status Indicator
       const dot = document.getElementById('global-status-dot');
@@ -1370,14 +1412,21 @@
 
       // Header Badges
       const elDepth = document.getElementById('header-depth-badge');
-      if (elDepth) elDepth.innerText = `D${depth}`;
+      if (elDepth) elDepth.innerText = steps > 0 || (runner && runner.status === 'RUNNING') ? `D${depth}` : 'D--';
+
+      // Atualiza visibilidade do botão de parada
+      const isRunning = runner && runner.status === 'RUNNING';
+      const stopBtn = document.getElementById('btn-train-stop');
+      if (stopBtn) {
+        stopBtn.style.display = isRunning ? 'block' : 'none';
+      }
       const elFps = document.getElementById('header-fps-badge');
       if (elFps) elFps.innerText = Math.round(fps).toLocaleString();
       const elEta = document.getElementById('header-eta-badge');
       if (elEta) elEta.innerText = telemetry.eta || '--';
-      if (runner && runner.pid) {
-        const elPid = document.getElementById('header-pid-badge');
-        if (elPid) elPid.innerText = `PID: ${runner.pid}`;
+      const elPid = document.getElementById('header-pid-badge');
+      if (elPid) {
+        elPid.innerText = (runner && runner.pid) ? `PID: ${runner.pid}` : (isRunning ? 'PID: ATIVO' : 'PID: --');
       }
 
       // Hero Progress
@@ -1389,17 +1438,20 @@
       // =========================================================
       // Card 1: Retorno Médio & Recompensa
       // =========================================================
+      const elRetWinBadge = document.getElementById('kpi-return-window-badge');
+      if (elRetWinBadge) elRetWinBadge.innerText = `${returnWinEps} ep`;
+
       const elRet = document.getElementById('kpi-return');
       if (elRet) elRet.innerText = (meanRet >= 0 ? '+' : '') + meanRet.toFixed(2);
-      
+
       const elBestRet = document.getElementById('kpi-best-return');
-      const effBestRet = bestRetRaw !== null && bestRetRaw !== undefined ? bestRetRaw : Math.max(meanRet, _maxObservedReturn || 0.0);
-      _maxObservedReturn = Math.max(_maxObservedReturn || 0.0, effBestRet, meanRet);
+      const effBestRet = Math.max(meanRet, bestRetRaw, _maxObservedReturn || 0.0);
+      _maxObservedReturn = effBestRet;
       if (elBestRet) elBestRet.innerText = (effBestRet >= 0 ? '+' : '') + effBestRet.toFixed(2);
 
-      const curWinRate = telemetry.curriculum_success_rate !== undefined 
-        ? telemetry.curriculum_success_rate * 100.0 
-        : Math.min(100, Math.max(0, (meanRet / 10.0) * 100));
+      const curWinRate = telemetry.curriculum_success_rate !== undefined
+        ? Number(telemetry.curriculum_success_rate) * 100.0
+        : 0.0;
       const elWinRate = document.getElementById('kpi-win-rate');
       if (elWinRate) elWinRate.innerText = `${curWinRate.toFixed(1)}%`;
 
@@ -1424,20 +1476,35 @@
       if (tickMin1) tickMin1.style.top = '88%';
 
       // =========================================================
-      // Card 2: Fronteira Curricular (Episódios Vencidos / Total no Nível Atual)
+      // Card 2: Fronteira Curricular (Grade = numEnvs - Batedores)
       // =========================================================
-      const isMini = document.body.classList.contains('mini-mode');
-      const totalEps = telemetry.curriculum_samples || 64;
+      const rawSamples = Number(telemetry.curriculum_samples) || numEnvs || 128;
+      const totalEps = (teacherEnvs > 0 && numEnvs > teacherEnvs)
+        ? (numEnvs - teacherEnvs)
+        : rawSamples;
       const wins = telemetry.curriculum_wins !== undefined
-        ? telemetry.curriculum_wins
+        ? (rawSamples === totalEps
+            ? Number(telemetry.curriculum_wins)
+            : Math.round((Number(telemetry.curriculum_wins) / Math.max(1, rawSamples)) * totalEps))
         : Math.round((curWinRate / 100.0) * totalEps);
 
       const elKpiDepth = document.getElementById('kpi-depth');
       if (elKpiDepth) elKpiDepth.innerText = `${wins}/${totalEps}`;
-      
-      const targetPct = telemetry.target_success_rate !== undefined 
-        ? Math.round(telemetry.target_success_rate * 100) 
-        : (depth <= 4 ? 85 : (depth <= 6 ? 65 : (depth <= 10 ? 50 : 40)));
+
+      const elDepthSubtitle = document.getElementById('kpi-depth-subtitle');
+      if (elDepthSubtitle) {
+        if (!isMini && teacherEnvs > 0 && numEnvs > teacherEnvs) {
+          elDepthSubtitle.innerText = `Grade: ${totalEps} Envs (${numEnvs} - ${teacherEnvs} S1)`;
+        } else if (!isMini && externalScouts > 0) {
+          elDepthSubtitle.innerText = `Episódios Vencidos • +${externalScouts} Batedores Ext.`;
+        } else {
+          elDepthSubtitle.innerText = 'Episódios Vencidos';
+        }
+      }
+
+      const targetPct = telemetry.target_success_rate !== undefined
+        ? Math.round(Number(telemetry.target_success_rate) * 100)
+        : (depth <= 4 ? 85 : (depth <= 7 ? 70 : (depth <= 10 ? 50 : (depth <= 14 ? 40 : 35))));
       const targetWins = Math.round((targetPct / 100.0) * totalEps);
       const elDepthBadge = document.getElementById('kpi-depth-badge');
       if (elDepthBadge) elDepthBadge.innerText = isMini ? `D${depth}` : `Nível D${depth} • Meta: ${targetWins}/${totalEps}`;
@@ -1446,31 +1513,35 @@
       if (elDepthLevel) elDepthLevel.innerText = `D${depth}`;
 
       const elPromos = document.getElementById('kpi-promotions');
-      if (elPromos) elPromos.innerText = telemetry.curriculum_promotions !== undefined ? telemetry.curriculum_promotions : (depth - 1);
-      
+      if (elPromos) elPromos.innerText = telemetry.curriculum_promotions !== undefined ? telemetry.curriculum_promotions : Math.max(0, depth - 1);
+
       const elSamples = document.getElementById('kpi-curriculum-samples');
       if (elSamples) elSamples.innerText = `Meta: ${targetWins}/${totalEps} eps`;
 
-      // Pico Real Atingido no Patamar Atual (em episódios vencidos / total, monotônico por nível)
+      // Pico Real Atingido na Grade Curricular (em unidades de numEnvs - batedores)
       if (steps > 0 && _lastObservedSteps > 0 && steps < _lastObservedSteps * 0.5) {
         _maxObservedWinsByDepth = {};
-        _maxObservedReturn = 0.0;
+        _maxObservedReturn = meanRet;
       }
       if (steps > 0) {
         _lastObservedSteps = steps;
       }
-      let bestWinRate = telemetry.curriculum_depth_best_success_rate !== undefined && telemetry.curriculum_depth_best_success_rate !== null
-        ? telemetry.curriculum_depth_best_success_rate * 100.0
-        : curWinRate;
-      bestWinRate = Math.max(bestWinRate, curWinRate);
       const prevDepthBestWins = _maxObservedWinsByDepth[depth] || 0;
-      const bestWins = Math.max(wins, Math.round((bestWinRate / 100.0) * totalEps), prevDepthBestWins);
+      let reportedBestWins = wins;
+      if (telemetry.curriculum_depth_best_wins !== undefined && telemetry.curriculum_depth_best_wins !== null) {
+        reportedBestWins = rawSamples === totalEps
+          ? Number(telemetry.curriculum_depth_best_wins)
+          : Math.round((Number(telemetry.curriculum_depth_best_wins) / Math.max(1, rawSamples)) * totalEps);
+      } else if (telemetry.curriculum_depth_best_success_rate !== undefined && telemetry.curriculum_depth_best_success_rate !== null) {
+        reportedBestWins = Math.round(Number(telemetry.curriculum_depth_best_success_rate) * totalEps);
+      }
+      const bestWins = Math.min(totalEps, Math.max(wins, reportedBestWins, prevDepthBestWins));
       _maxObservedWinsByDepth[depth] = bestWins;
 
       const elBestWinRate = document.getElementById('kpi-best-winrate');
       if (elBestWinRate) elBestWinRate.innerText = `${bestWins}/${totalEps}`;
 
-      // Altura do Líquido Card 2 (reflete a proporção de episódios vencidos no patamar atual)
+      // Altura do Líquido Card 2
       const liqDepth = document.getElementById('vessel-liquid-depth');
       if (liqDepth) {
         const normCurWr = Math.min(1.0, Math.max(0.05, wins / Math.max(1, totalEps)));
@@ -1493,16 +1564,33 @@
       // =========================================================
       // Card 3: Cicatrizes O(1)
       // =========================================================
+      const elScarBadge = document.getElementById('kpi-scar-mode-badge');
+      if (elScarBadge) {
+        const fullScarBadge = telemetry.scar_badge || (telemetry.pure_scars ? 'Híbrido Puro' : 'Híbrido v2');
+        elScarBadge.innerText = isMini ? fullScarBadge.split('•')[0].trim() : fullScarBadge;
+      }
+      const elScarRam = document.getElementById('kpi-scar-ram');
+      if (elScarRam) {
+        if (telemetry.scar_mode === 'none' && telemetry.sil_memory_mb !== undefined) {
+          elScarRam.innerText = `${Number(telemetry.sil_memory_mb).toFixed(2)} MB`;
+        } else {
+          const ramKb = telemetry.scar_memory_kb !== undefined ? Number(telemetry.scar_memory_kb) : 4.25;
+          elScarRam.innerText = `${ramKb.toFixed(2)} KB`;
+        }
+      }
+
       const elScars = document.getElementById('kpi-scars');
       if (elScars) elScars.innerText = isMini ? formatCompactNumber(scars, 1) : scars.toLocaleString();
       const elW = document.getElementById('kpi-w-norm');
-      if (elW) elW.innerText = Number(wNorm).toFixed(2);
+      if (elW) elW.innerText = wNorm.toFixed(2);
       const elZ = document.getElementById('kpi-z-norm');
-      if (elZ) elZ.innerText = Number(zNorm).toFixed(2);
+      if (elZ) elZ.innerText = zNorm.toFixed(2);
       const elG = document.getElementById('kpi-g-norm');
-      if (elG) elG.innerText = Number(gNorm).toFixed(2);
+      if (elG) elG.innerText = gNorm.toFixed(2);
 
-      const refScarsMax = scars > 500000 ? 1000000 : 500000;
+      const refScarsMax = scars > 1000000
+        ? Math.ceil(scars / 500000) * 500000
+        : (scars > 500000 ? 1000000 : 500000);
       const liqScars = document.getElementById('vessel-liquid-scars');
       if (liqScars) {
         const normScars = Math.min(1.0, Math.max(0.05, scars / refScarsMax));
@@ -1511,7 +1599,14 @@
 
       // Marcadores da Ala Lateral Direita Card 3
       const valMax3 = document.getElementById('vessel-val-max-3');
-      if (valMax3) valMax3.innerText = refScarsMax >= 1000000 ? '1M' : '500k';
+      if (valMax3) {
+        if (refScarsMax >= 1000000) {
+          const mVal = refScarsMax / 1000000;
+          valMax3.innerText = `${Number.isInteger(mVal) ? mVal : mVal.toFixed(1)}M`;
+        } else {
+          valMax3.innerText = '500k';
+        }
+      }
       const valMin3 = document.getElementById('vessel-val-min-3');
       if (valMin3) valMin3.innerText = '0';
       const tickMax3 = document.getElementById('vessel-tick-max-3');
@@ -1523,69 +1618,95 @@
       // Card 4: Exploração & Entropia
       // =========================================================
       const elEntropy = document.getElementById('kpi-entropy');
-      if (elEntropy) elEntropy.innerText = isMini ? Number(entropy).toFixed(2) : Number(entropy).toFixed(3);
+      if (elEntropy) elEntropy.innerText = isMini ? entropy.toFixed(2) : entropy.toFixed(3);
+      const elEntFloor = document.getElementById('kpi-entropy-floor');
+      if (elEntFloor) elEntFloor.innerText = `${entropyFloor.toFixed(3)} nats`;
       const elEntCoef = document.getElementById('kpi-entropy-coef');
-      if (elEntCoef) elEntCoef.innerText = telemetry.effective_entropy_coef || '0.007';
+      if (elEntCoef) {
+        const coefVal = telemetry.effective_entropy_coef !== undefined ? Number(telemetry.effective_entropy_coef) : 0.007;
+        elEntCoef.innerText = coefVal.toFixed(coefVal < 0.01 ? 4 : 3).replace(/0$/, '');
+      }
       const healthBadge = document.getElementById('kpi-entropy-health');
       if (healthBadge) {
-        if (entropy >= 0.6) {
+        const floorActive = Boolean(telemetry.entropy_floor_active) || (entropy > 0 && entropy < entropyFloor);
+        if (floorActive) {
+          healthBadge.innerText = 'Piso Ativo';
+          healthBadge.className = 'text-[10px] font-mono px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 animate-pulse';
+        } else if (entropy > 0 && entropy < entropyFloor * 1.25) {
+          healthBadge.innerText = 'Alta Precisão';
+          healthBadge.className = 'text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800';
+        } else {
           healthBadge.innerText = 'Saudável';
           healthBadge.className = 'text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800';
-        } else {
-          healthBadge.innerText = 'Alerta Colapso';
-          healthBadge.className = 'text-[10px] font-mono px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 animate-pulse';
         }
       }
-      
-      // Altura do Líquido Card 4 (escala natural 0 a 2.485 nats)
+
+      // Altura do Líquido Card 4 (escala natural 0 a H_max nats)
       const liqEnt = document.getElementById('vessel-liquid-entropy');
       if (liqEnt) {
-        const normEnt = Math.min(1.0, Math.max(0.05, entropy / 2.485));
+        const normEnt = Math.min(1.0, Math.max(0.05, entropy / Math.max(0.5, maxEntropy)));
         liqEnt.style.height = `${15 + normEnt * 75}%`;
       }
 
       // Marcadores da Ala Lateral Direita Card 4
       const valMax4 = document.getElementById('vessel-val-max-4');
-      if (valMax4) valMax4.innerText = '2.48';
+      if (valMax4) valMax4.innerText = maxEntropy.toFixed(2);
       const valMin4 = document.getElementById('vessel-val-min-4');
-      if (valMin4) valMin4.innerText = '0.30';
+      if (valMin4) valMin4.innerText = entropyFloor.toFixed(2);
       const tickMax4 = document.getElementById('vessel-tick-max-4');
-      if (tickMax4) tickMax4.style.top = '12%';
+      if (tickMax4) {
+        tickMax4.style.top = '12%';
+        tickMax4.title = `Entropia Máxima Teórica: ${maxEntropy.toFixed(3)} nats`;
+      }
       const tickMin4 = document.getElementById('vessel-tick-min-4');
       if (tickMin4) {
-        const normFloor = 0.30 / 2.485;
+        const normFloor = Math.min(1.0, entropyFloor / Math.max(0.5, maxEntropy));
         tickMin4.style.top = `${100 - (15 + normFloor * 75)}%`;
+        tickMin4.title = `Piso Dinâmico Anti-Colapso (${entropyFloor.toFixed(3)} nats)`;
       }
 
       // =========================================================
       // Card 5: Throughput & Passos
       // =========================================================
-      const cleanFps = Math.max(0, Math.min(3000, Number(fps) || 0));
-      _maxObservedFps = Math.max(2000, Math.min(2500, Math.max(_maxObservedFps || 2000, cleanFps)));
-      if (_maxObservedFps > 3000) _maxObservedFps = 2000;
+      const elEnvsBadge = document.getElementById('kpi-envs-badge');
+      if (elEnvsBadge) {
+        if (externalScouts > 0) {
+          elEnvsBadge.innerText = isMini ? `${numEnvs}+${externalScouts}B` : `${numEnvs} Envs + ${externalScouts} Batedores`;
+        } else if (teacherEnvs > 0) {
+          elEnvsBadge.innerText = isMini ? `${numEnvs}E/${teacherEnvs}S` : `${numEnvs} Envs • ${teacherEnvs} S1`;
+        } else {
+          elEnvsBadge.innerText = `${numEnvs} ${numEnvs === 1 ? 'Env' : 'Envs'}`;
+        }
+      }
+
+      _maxObservedFps = Math.max(_maxObservedFps || 0, fps);
+      const fpsScaleCeiling = Math.max(2500, Math.ceil(_maxObservedFps / 1000) * 1000);
 
       const elFpsCard = document.getElementById('kpi-fps');
-      if (elFpsCard) elFpsCard.innerText = Math.round(cleanFps).toLocaleString();
+      if (elFpsCard) elFpsCard.innerText = Math.round(fps).toLocaleString();
       const elSteps = document.getElementById('kpi-steps');
       if (elSteps) elSteps.innerText = `${pct.toFixed(1)}%`;
       const elRawSteps = document.getElementById('kpi-raw-steps');
       if (elRawSteps) elRawSteps.innerText = isMini ? formatCompactNumber(steps, 2) : steps.toLocaleString();
-      
-      // Altura do Líquido Card 5: Throughput em tempo real (0 a 2500 FPS nos 128 ambientes)
+
+      // Altura do Líquido Card 5: Throughput real medido
       const liqSteps = document.getElementById('vessel-liquid-steps');
       if (liqSteps) {
-        const normFps = Math.min(1.0, Math.max(0.05, cleanFps / 2500.0));
+        const normFps = Math.min(1.0, Math.max(0.05, fps / fpsScaleCeiling));
         liqSteps.style.height = `${15 + normFps * 75}%`;
       }
 
       // Marcadores da Ala Lateral Direita Card 5 (Escala de Throughput)
       const valMax5 = document.getElementById('vessel-val-max-5');
-      if (valMax5) valMax5.innerText = '2.5k';
+      if (valMax5) {
+        const peakForLabel = _maxObservedFps > 0 ? _maxObservedFps : fpsScaleCeiling;
+        valMax5.innerText = peakForLabel >= 1000 ? `${(peakForLabel / 1000).toFixed(1)}k` : `${Math.round(peakForLabel)}`;
+      }
       const valMin5 = document.getElementById('vessel-val-min-5');
       if (valMin5) valMin5.innerText = '0';
       const tickMax5 = document.getElementById('vessel-tick-max-5');
       if (tickMax5) {
-        const normPeak = Math.min(1.0, Math.max(0.05, _maxObservedFps / 2500.0));
+        const normPeak = Math.min(1.0, Math.max(0.05, (_maxObservedFps || fps) / fpsScaleCeiling));
         tickMax5.style.top = `${100 - (15 + normPeak * 75)}%`;
       }
       const tickMin5 = document.getElementById('vessel-tick-min-5');
@@ -1594,13 +1715,58 @@
       // =========================================================
       // Card 6: Calibração & Hardware
       // =========================================================
+      const elDevBadge = document.getElementById('kpi-device-badge');
+      if (elDevBadge) {
+        const devLabel = telemetry.device_label || (hardware && hardware.device_name) || 'CPU / GPU';
+        elDevBadge.innerText = isMini ? devLabel.split('•')[0].trim() : devLabel;
+      }
+
       const elCalib = document.getElementById('kpi-calibration');
-      if (elCalib) elCalib.innerText = Number(calib).toFixed(2);
+      if (elCalib) elCalib.innerText = calib.toFixed(2);
+
+      const elCalibLabel = document.getElementById('kpi-calibration-label');
+      if (elCalibLabel) {
+        elCalibLabel.innerText = (numEnvs >= 4 && Math.abs(calib - 1.0) < 0.01)
+          ? 'Escala QD (0.02–1.00)'
+          : 'Calibração Adaptativa';
+      }
+
+      const elConfLabel = document.getElementById('kpi-confidence-label');
+      if (elConfLabel) {
+        if (telemetry.confidence_source === 'entropy_certainty') {
+          elConfLabel.innerText = isMini ? 'CERTEZA' : 'CERTEZA (1-H/Hmax)';
+        } else if (telemetry.confidence_source === 'max_prob') {
+          elConfLabel.innerText = isMini ? 'CONFIANÇA' : 'CONFIANÇA (MAX P)';
+        } else {
+          elConfLabel.innerText = 'CONFIANÇA';
+        }
+      }
+
       const elConf = document.getElementById('kpi-confidence');
       if (elConf) elConf.innerText = `${(confidence * 100).toFixed(1)}%`;
+
+      const elLatPrefix = document.getElementById('kpi-latency-prefix');
       const elLat = document.getElementById('kpi-latency');
-      if (elLat) elLat.innerText = `${telemetry.latency_p50_us || 28.2} μs`;
-      
+      const latP50 = Number(telemetry.latency_p50_us) || 0;
+      const stepCostUs = Number(telemetry.step_cost_us) || 0;
+      if (elLat && elLatPrefix) {
+        if (latP50 > 0) {
+          elLatPrefix.innerText = 'Latência p50:';
+          elLat.innerText = latP50 >= 1000 ? `${(latP50 / 1000).toFixed(2)} ms` : `${latP50.toFixed(1)} μs`;
+        } else if (stepCostUs > 0) {
+          elLatPrefix.innerText = 'Custo/Passo:';
+          elLat.innerText = stepCostUs >= 1000 ? `${(stepCostUs / 1000).toFixed(2)} ms` : `${Math.round(stepCostUs)} μs`;
+        } else {
+          elLatPrefix.innerText = 'Latência p50:';
+          elLat.innerText = '--';
+        }
+      }
+
+      const elHwMode = document.getElementById('kpi-hardware-mode');
+      if (elHwMode) {
+        elHwMode.innerText = telemetry.arch_label || (numEnvs > 1 ? `${numEnvs} Envs` : '--');
+      }
+
       // Altura do Líquido Card 6
       const liqCalib = document.getElementById('vessel-liquid-calib');
       if (liqCalib) {
@@ -1608,7 +1774,7 @@
         liqCalib.style.height = `${15 + normConf * 75}%`;
       }
 
-      // Marcadores da Ala Lateral Direita Card 6 (sincronizados com o menisco do líquido de confiança)
+      // Marcadores da Ala Lateral Direita Card 6
       const valMax6 = document.getElementById('vessel-val-max-6');
       if (valMax6) valMax6.innerText = `${(confidence * 100).toFixed(1)}%`;
       const valMin6 = document.getElementById('vessel-val-min-6');
@@ -1745,7 +1911,7 @@
         if (resp.ok) {
           const data = await resp.json();
           if (data.telemetry) {
-            handleTelemetryUpdate(data.telemetry, data.runner);
+            handleTelemetryUpdate(data.telemetry, data.runner, data.hardware);
           }
           const dot = document.getElementById('global-status-dot');
           if (dot) dot.className = 'status-dot bg-emerald-500 animate-pulse';
@@ -1855,6 +2021,10 @@
       const maxDepth = parseInt(document.getElementById('train-max-depth').value) || 4;
       const trunk = document.getElementById('train-trunk').value;
       const device = document.getElementById('train-device').value;
+      const scarMode = document.getElementById('train-scar-mode').value;
+      const scarDecay = parseFloat(document.getElementById('train-scar-decay').value) || 0.995;
+      const scarScale = parseFloat(document.getElementById('train-scar-scale').value) || 0.15;
+      const scarBeta = parseFloat(document.getElementById('train-scar-beta').value) || 0.20;
       const savePath = document.getElementById('train-save').value.trim();
 
       const statusEl = document.getElementById('train-status');
@@ -1864,6 +2034,9 @@
       let transferFrom = '';
       // Se um checkpoint foi selecionado e não há manual, ele serve como load (continuação de treino)
       // Para warm-up de tronco, o usuário pode usar o campo manual ou selecionar
+
+      const isRubiks = env.toLowerCase().includes('rubik');
+      const useScars = scarMode && scarMode !== 'none';
 
       const cfg = {
         mode: 'train',
@@ -1876,21 +2049,30 @@
         freeze_trunk: freezeTrunk,
         trunk: trunk,
         device: device,
+        scar_mode: scarMode,
+        scar_decay: scarDecay,
+        scar_scale: scarScale,
+        scar_beta: scarBeta,
+        pure_scars: true,
         curriculum: curriculum,
         min_depth: minDepth,
         max_depth: maxDepth,
         run_mode: mode, // atomic | macro
         scramble_depth: maxDepth,
         target_return: 475.0,
-        rollout_steps: 2048,
+        num_envs: isRubiks ? 128 : 64,
+        rollout_steps: isRubiks ? 4096 : 2048,
         chunk_length: 32,
         chunk_batch_size: 16,
-        entropy_coef: 0.01,
-        hindsight_replay: true,
-        sil: true,
+        entropy_coef: isRubiks ? 0.007 : 0.01,
+        hindsight_replay: !(isRubiks && useScars),
+        sil_enabled: !useScars,
+        teacher_sil_envs: 0,
+        external_scout_envs: isRubiks && useScars ? 24 : 0,
+        value_rerank: false,
         tri_compass: true,
         dynamic_frontier: true,
-        mixed_replay_rate: 0.15,
+        mixed_replay_rate: isRubiks ? 0.20 : 0.15,
       };
 
       statusEl.innerText = 'Enviando configuração ao servidor...';
@@ -1917,6 +2099,51 @@
       } catch (err) {
         statusEl.innerText = `❌ Erro de rede: ${err.message}`;
         statusEl.className = 'text-[10px] text-rose-400 font-mono h-4';
+      }
+    }
+
+    async function stopTraining() {
+      const btn = document.getElementById('btn-train-stop');
+      const startBtn = document.getElementById('btn-train-start');
+      if (!btn || !startBtn) return;
+
+      btn.disabled = true;
+      btn.innerText = 'PARANDO...';
+      btn.className = 'flex-1 py-2 rounded bg-amber-600 hover:bg-amber-500 text-white border border-amber-400 font-mono text-xs font-bold shadow-lg transition';
+      startBtn.disabled = true;
+      startBtn.innerText = 'CONECTANDO...';
+
+      try {
+        const resp = await fetch('/api/train/stop', {
+          method: 'POST',
+        });
+        const data = await resp.json();
+        if (data.success) {
+          statusEl.innerText = 'TREINO INTERROMPIDO: ' + data.message;
+          statusEl.className = 'text-[10px] text-amber-300 font-mono h-4';
+
+          btn.disabled = false;
+          btn.innerText = 'Parar Treino';
+          btn.className = 'flex-1 py-2 rounded bg-rose-600 hover:bg-rose-500 text-white border border-rose-400 font-mono text-xs font-bold shadow-lg transition';
+          startBtn.disabled = false;
+          startBtn.innerText = 'Iniciar Treino';
+        } else {
+          statusEl.innerText = 'FALHA: ' + data.message;
+          statusEl.className = 'text-[10px] text-rose-400 font-mono h-4';
+          btn.disabled = false;
+          btn.innerText = 'Parar Treino';
+          btn.className = 'flex-1 py-2 rounded bg-rose-600 hover:bg-rose-500 text-white border border-rose-400 font-mono text-xs font-bold shadow-lg transition';
+          startBtn.disabled = false;
+          startBtn.innerText = 'Iniciar Treino';
+        }
+      } catch (err) {
+        statusEl.innerText = 'ERRO DE REDE: ' + err.message;
+        statusEl.className = 'text-[10px] text-rose-400 font-mono h-4';
+        btn.disabled = false;
+        btn.innerText = 'Parar Treino';
+        btn.className = 'flex-1 py-2 rounded bg-rose-600 hover:bg-rose-500 text-white border border-rose-400 font-mono text-xs font-bold shadow-lg transition';
+        startBtn.disabled = false;
+        startBtn.innerText = 'Iniciar Treino';
       }
     }
 

@@ -55,6 +55,8 @@ class PhaseMetrics:
     curriculum_depth: Optional[int] = None
     curriculum_max_depth: Optional[int] = None
     curriculum_success_rate: Optional[float] = None
+    curriculum_samples: int = 0
+    curriculum_wins: int = 0
     curriculum_promotions: int = 0
     curriculum_depth_best_return: Optional[float] = None
     curriculum_depth_best_success_rate: Optional[float] = None
@@ -148,6 +150,8 @@ class LiveStatsTracker:
             if "curriculum_success_rate" in info:
                 rate = float(info["curriculum_success_rate"])
                 samples = int(info.get("curriculum_samples", 16))
+                m.curriculum_samples = samples
+                m.curriculum_wins = int(round(rate * samples))
                 if is_promoted and rate >= 0.8:
                     # Resíduo da vitória que disparou a promoção no nível anterior: inicializa em 0.0
                     m.curriculum_success_rate = 0.0
@@ -283,6 +287,8 @@ class LiveStatsTracker:
             "curriculum_depth": m.curriculum_depth,
             "curriculum_max_depth": m.curriculum_max_depth,
             "curriculum_success_rate": m.curriculum_success_rate,
+            "curriculum_samples": m.curriculum_samples,
+            "curriculum_wins": m.curriculum_wins,
             "curriculum_promotions": m.curriculum_promotions,
             "dynamic_frontier": bool(m.dynamic_frontier),
             "curriculum_p_frontier": float(m.curriculum_p_frontier),
