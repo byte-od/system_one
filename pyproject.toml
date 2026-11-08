@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scar-cache"
-version = "0.1.0"
-description = "Universal O(1) Gradient Scar Memory & Fast-Weights Cache for PyTorch Neural Networks and Reinforcement Learning"
+version = "0.2.0"
+description = "Universal O(1) Gradient Scar Memory, Multi-Slot Tensorization & Delta-Rule Associative Cache to replace KV Cache"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }

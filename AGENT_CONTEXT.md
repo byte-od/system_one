@@ -76,17 +76,31 @@ scar_cache/
 │       │   ├── reset_scars() -> resets all buffers to 0 for Tabula Rasa
 │       │   └── batch_modulation_scope(scale_vec, beta_vec) -> contextmanager
 │
+├── multi_slot.py:
+│   └── MultiSlotSCache (nn.Module) [34 KB L1 Resident]
+│       ├── Buffers:
+│       │   ├── W_scar: [num_slots, slot_dim, slot_dim] (Tensorized multi-slot memory)
+│       │   ├── g_target: [num_slots, slot_dim] (Independent compass per slot)
+│       │   ├── z_target: [num_slots, slot_dim] (Independent centroid per slot)
+│       │   ├── decay_rates: [num_slots] (Multi-scale geometric decay)
+│       │   └── slot_queries: [num_slots, slot_dim] (Competitive routing parameter)
+│       ├── Methods:
+│       │   ├── route_tokens(x) -> (routing_weights, projected_slots)
+│       │   ├── modulate(x, routing_weights) -> (x_guided, deltas, affinities)
+│       │   ├── write_key_value(keys, values, slot_index, learning_rate) [Delta Rule]
+│       │   ├── read_key(key, slot_index) -> retrieved_value
+│       │   └── record_gradient_scar(slots, grad_slots, surprise) [PCGrad per slot]
+│
 ├── modules.py:
-│   ├── ScarLinear(in_features, out_features, slot_dim=..., mode=...)
-│   │   └── Drop-in replacement for nn.Linear; integrates SCache on input activations
-│   │       ├── record_from_loss(loss, slots, surprise) -> autograd-driven scar recording
-│   │       └── forward(x) -> modulated linear output
-│   └── ScarGatedLayer(layer, slot_dim=..., mode=...)
-│       └── Universal wrapper for any arbitrary PyTorch nn.Module
+│   ├── ScarLinear: nn.Linear drop-in replacement with 2D SCache
+│   ├── SlotScarLinear: nn.Linear drop-in replacement with 3D MultiSlotSCache (34 KB)
+│   └── ScarGatedLayer: Universal wrapper for any PyTorch nn.Module
 │
 ├── projections.py:
-│   ├── project_conflicting_gradient(g_new, g_target) -> g_proj (PCGrad)
-│   └── hebbian_outer_product(norm_g, norm_z, num_slots) -> dW [slot_dim, slot_dim]
+│   ├── project_conflicting_gradient(g_new, g_target) -> g_proj (PCGrad 2D)
+│   ├── project_conflicting_gradients_per_slot(g_news, g_targets) -> g_projs (PCGrad 3D)
+│   ├── delta_rule_update(W, keys, values, lr) -> (dW, error) [Widrow-Hoff]
+│   └── hebbian_outer_product(norm_g, norm_z, num_slots) -> dW
 ```
 
 ---

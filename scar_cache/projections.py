@@ -10,6 +10,7 @@ Implementa:
 
 from __future__ import annotations
 
+from typing import Tuple
 import torch
 
 
@@ -38,6 +39,72 @@ def project_conflicting_gradient(
         proj = (dot / (norm_t_sq + eps)) * g_target
         return g_new - proj
     return g_new
+
+
+def project_conflicting_gradients_per_slot(
+    g_news: torch.Tensor,
+    g_targets: torch.Tensor,
+    eps: float = 1e-6,
+) -> torch.Tensor:
+    """Aplica PCGrad vetorizado de forma independente para cada slot K [K, D].
+
+    Cada slot opera em sua própria jurisdição: o conflito no Slot 0 não afeta
+    nem restringe o Slot 1.
+    """
+    assert g_news.shape == g_targets.shape, f"Dimensões incompatíveis: {g_news.shape} vs {g_targets.shape}"
+    # dots: [K], norm_sq: [K]
+    dots = torch.sum(g_news * g_targets, dim=-1, keepdim=True)
+    norm_sq = torch.sum(g_targets * g_targets, dim=-1, keepdim=True)
+
+    # Identifica onde há conflito (< 0) e onde a norma alvo é válida
+    conflict_mask = (dots < 0.0) & (norm_sq > eps)
+
+    # Projeção vetorizada no hiperplano ortogonal
+    proj = (dots / (norm_sq + eps)) * g_targets
+    return torch.where(conflict_mask, g_news - proj, g_news)
+
+
+def delta_rule_update(
+    current_W: torch.Tensor,
+    keys: torch.Tensor,
+    values: torch.Tensor,
+    learning_rate: float = 1.0,
+    eps: float = 1e-6,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Calcula a atualização da Regra Delta (Widrow-Hoff) para sobrescrita exata sem fantasmas.
+
+    Matemática:
+        y_pred = W · k
+        error = v - y_pred
+        ΔW = β · (error ⊗ k^T) / (||k||^2 + eps)
+
+    Args:
+        current_W: Tensor de memória [K, D, D] ou [D, D].
+        keys: Chaves de consulta normalizadas [K, D] ou [D].
+        values: Valores alvo esperados [K, D] ou [D].
+        learning_rate: Taxa de aprendizado da regra delta (1.0 = sobrescrita imediata).
+
+    Returns:
+        (delta_W, error): O tensor de ajuste de peso e o vetor de erro residual.
+    """
+    if current_W.dim() == 2:
+        # Modo 2D simples [D, D]
+        pred = torch.matmul(current_W, keys)
+        error = values - pred
+        k_norm_sq = torch.sum(keys * keys) + eps
+        dW = (learning_rate / k_norm_sq) * torch.outer(error, keys)
+        return dW, error
+    elif current_W.dim() == 3:
+        # Modo Multi-Slot Tensorial [K, D, D]
+        # pred: [K, D] = bmm([K, D, D], [K, D, 1])
+        pred = torch.bmm(current_W, keys.unsqueeze(-1)).squeeze(-1)
+        error = values - pred
+        k_norm_sq = torch.sum(keys * keys, dim=-1, keepdim=True).unsqueeze(-1) + eps
+        # outer product por slot: [K, D, 1] x [K, 1, D] -> [K, D, D]
+        dW = (learning_rate / k_norm_sq) * torch.bmm(error.unsqueeze(-1), keys.unsqueeze(1))
+        return dW, error
+    else:
+        raise ValueError(f"Dimensão de W inválida: {current_W.shape}")
 
 
 def hebbian_outer_product(

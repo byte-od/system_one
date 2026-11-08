@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from scar_cache.core import SCache
+from scar_cache.multi_slot import MultiSlotSCache
 
 
 class ScarLinear(nn.Module):
@@ -231,3 +232,115 @@ class ScarGatedLayer(nn.Module):
             return super().__getattr__(name)
         except AttributeError:
             return getattr(self.layer, name)
+
+
+class SlotScarLinear(nn.Module):
+    """Camada Linear com Multi-Slot SCache (34 KB no L1) para substituição de KV Cache.
+
+    Integra os 5 pilares:
+    - 8 matrizes associativas 32x32 em tensor [8, 32, 32]
+    - Roteamento competitivo por slot
+    - Regra Delta de sobrescrita exata sem fantasmas
+    - Decaimento multi-escala temporal
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        slot_dim: Optional[int] = None,
+        num_slots: int = 8,
+        scale: float = 0.20,
+        multi_scale_decay: bool = True,
+        use_delta_rule: bool = True,
+        device: Any = None,
+        dtype: Any = None,
+    ) -> None:
+        super().__init__()
+        self.in_features = int(in_features)
+        self.out_features = int(out_features)
+        self.slot_dim = int(slot_dim or in_features)
+        self.num_slots = int(num_slots)
+
+        self.weight = nn.Parameter(
+            torch.empty((out_features, in_features), device=device, dtype=dtype)
+        )
+        if bias:
+            self.bias = nn.Parameter(torch.empty(out_features, device=device, dtype=dtype))
+        else:
+            self.register_parameter("bias", None)
+
+        self.reset_parameters()
+
+        self.needs_projection = self.slot_dim != self.in_features
+        if self.needs_projection:
+            self.proj_in = nn.Linear(self.in_features, self.slot_dim, bias=False, device=device, dtype=dtype)
+            self.proj_out = nn.Linear(self.slot_dim, self.in_features, bias=False, device=device, dtype=dtype)
+        else:
+            self.proj_in = None
+            self.proj_out = None
+
+        self.cache = MultiSlotSCache(
+            slot_dim=self.slot_dim,
+            num_slots=self.num_slots,
+            scale=scale,
+            multi_scale_decay=multi_scale_decay,
+            use_delta_rule=use_delta_rule,
+        )
+
+    def reset_parameters(self) -> None:
+        nn.init.kaiming_uniform_(self.weight, a=5**0.5)
+        if self.bias is not None:
+            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / (fan_in**0.5) if fan_in > 0 else 0
+            nn.init.uniform_(self.bias, -bound, bound)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        return_affinities: bool = False,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        if self.needs_projection:
+            z = self.proj_in(x)
+            z_guided, _, affinities = self.cache.modulate(z)
+            x_guided = x + self.proj_out(z_guided - z)
+        else:
+            x_guided, _, affinities = self.cache.modulate(x)
+
+        out = F.linear(x_guided, self.weight, self.bias)
+        if return_affinities:
+            return out, affinities
+        return out
+
+    def write_key_value(
+        self,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        slot_index: Optional[int] = None,
+        learning_rate: float = 1.0,
+    ) -> torch.Tensor:
+        if self.needs_projection:
+            with torch.no_grad():
+                key = self.proj_in(key)
+                value = self.proj_in(value)
+        return self.cache.write_key_value(key, value, slot_index=slot_index, learning_rate=learning_rate)
+
+    def read_key(
+        self,
+        key: torch.Tensor,
+        slot_index: Optional[int] = None,
+    ) -> torch.Tensor:
+        if self.needs_projection:
+            with torch.no_grad():
+                key = self.proj_in(key)
+                recovered = self.cache.read_key(key, slot_index=slot_index)
+                return self.proj_out(recovered)
+        return self.cache.read_key(key, slot_index=slot_index)
+
+    def reset_scars(self) -> None:
+        self.cache.reset_scars()
+
+    @property
+    def memory_bytes(self) -> int:
+        return self.cache.memory_bytes
