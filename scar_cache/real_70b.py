@@ -94,15 +94,21 @@ class MoSResidualLinear(nn.Module):
             else:
                 self.B.copy_(B_weight)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # 1. Projeção base universal
+    def forward(self, x: torch.Tensor, use_fused: bool = True) -> torch.Tensor:
+        if use_fused:
+            from scar_cache.triton_mos_gemm import fused_mos_linear
+            return fused_mos_linear(
+                x=x,
+                W_base=self.base_weight,
+                A=self.A,
+                B=self.B,
+                bias=self.base_bias,
+                scaling=self.scaling,
+            )
+
+        # Caminho de referência desacoplado
         base_out = F.linear(x, self.base_weight, self.base_bias)
-
-        # 2. Correção residual do Scar Expert de baixo rank
-        # (x @ A.T) -> [batch, seq, rank]
-        # (res @ B.T) -> [batch, seq, out_features]
         scar_out = F.linear(F.linear(x, self.A), self.B) * self.scaling
-
         return base_out + scar_out
 
 
