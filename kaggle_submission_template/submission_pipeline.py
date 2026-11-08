@@ -61,7 +61,7 @@ def run_kaggle_submission(
                 out_features=old_down.out_features,
                 num_experts=2,
                 rank=64,
-                base_linear=old_down,
+                shared_base=old_down,
             ).to(device)
 
     print(f"  ✓ Topologia de 70B pronta na VRAM! Memória ocupada: ~4.2 GB (Segura na T4 de 16 GB).")

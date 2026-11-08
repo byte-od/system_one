@@ -1,0 +1,17 @@
+{
+  "id": "thetod/mixture-of-scars-name-that-llm",
+  "title": "Mixture of Scars 70B MoS + SCache - Name That LLM",
+  "code_file": "name_that_llm_submission.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [
+    "name-that-llm"
+  ],
+  "kernel_sources": [],
+  "model_sources": []
+}
