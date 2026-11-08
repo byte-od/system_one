@@ -1,0 +1,36 @@
+[{"stream_name":"stderr","time":11.67304291,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":11.673106909,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":11.673114418,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":11.673119123,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stderr","time":12.415266295,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":12.415298592,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":12.415303845,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":12.415308079,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stdout","time":31.733735234,"data":"PyTorch: 2.11.0+cu130 | Execution Device: cuda:0\n"}
+,{"stream_name":"stdout","time":31.933858013,"data":"✓ Test dataset carregado: 3 linhas (/kaggle/input/competitions/name-that-llm/test.csv)\n"}
+,{"stream_name":"stdout","time":32.102267767,"data":"✓ Train oficial carregado: 2699 amostras (/kaggle/input/competitions/name-that-llm/train.csv)\n"}
+,{"stream_name":"stdout","time":32.237108383,"data":"✓ Dados extras incorporados: 5070 amostras (/kaggle/input/prvsiyans-extended-name-that-llm-dataset/passages_clean.csv)\n"}
+,{"stream_name":"stdout","time":32.237141141,"data":"✓ Base total de calibração: 7769 amostras.\n"}
+,{"stream_name":"stdout","time":32.250404292,"data":"Famílias MoS (6): ['claude', 'gemini', 'glm', 'gpt', 'kimi', 'qwen']\n"}
+,{"stream_name":"stdout","time":32.473714465,"data":"Extraindo N-grams e representações estilométricas...\n"}
+,{"stream_name":"stdout","time":45.979427827,"data":"✓ Matriz de features montada em 13.70s: Treino=(7769, 45028) | Teste=(3, 45028)\n"}
+,{"stream_name":"stdout","time":46.179607163,"data":"Treinando classificador global 18 classes...\n"}
+,{"stream_name":"stdout","time":140.895277662,"data":"Treinando Tier 1 MoS Family Router...\n"}
+,{"stream_name":"stdout","time":188.774589476,"data":"Treinando Tier 2 MoS Scar Specialists...\n"}
+,{"stream_name":"stdout","time":267.741788346,"data":"Treinando modelo Centered com Tri-Compass Delta Origin...\n"}
+,{"stream_name":"stdout","time":422.54853793,"data":"Reconstruindo cliques de teste via Topic Cosine Clustering...\n"}
+,{"stream_name":"stdout","time":423.010927664,"data":"Executando Hungarian Assignment sobre 3 clusters de prompts...\n"}
+,{"stream_name":"stdout","time":423.245065715,"data":"🎉 SUBMISSÃO CONCLUÍDA COM SUCESSO: /kaggle/working/submission.parquet (3 predições).\n"}
+,{"stream_name":"stdout","time":423.245089504,"data":"             id                   model\n"}
+,{"stream_name":"stdout","time":423.245094847,"data":"0  00353fb1c541            gpt-5.6-luna\n"}
+,{"stream_name":"stdout","time":423.245098992,"data":"1  005f5a9a6139             gpt-5.6-sol\n"}
+,{"stream_name":"stdout","time":423.245103373,"data":"2  0062a53d5487  gemini-3.1-pro-preview\n"}
+,{"stream_name":"stderr","time":428.87779139,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":428.877842145,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":429.116496562,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":429.116538022,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":430.121227996,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to notebook\n"}
+,{"stream_name":"stderr","time":430.199860197,"data":"[NbConvertApp] Writing 44177 bytes to __notebook__.ipynb\n"}
+,{"stream_name":"stderr","time":432.915116905,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to html\n"}
+,{"stream_name":"stderr","time":433.527634018,"data":"[NbConvertApp] Writing 362706 bytes to __results__.html\n"}
+]

@@ -30,8 +30,8 @@ def factorize_svd(diff: torch.Tensor, rank: int = 64) -> Tuple[torch.Tensor, tor
     diff_f = diff.float()
     U, S, V = torch.pca_lowrank(diff_f, q=rank, center=False)
     sqrt_S = torch.sqrt(S)
-    A = (V * sqrt_S).to(orig_dtype)          # [in_features, rank]
-    B = ((U * sqrt_S).T).to(orig_dtype)      # [rank, out_features]
+    A = (V * sqrt_S).to(orig_dtype).contiguous()          # [in_features, rank]
+    B = ((U * sqrt_S).T).to(orig_dtype).contiguous()      # [rank, out_features]
     return A, B
 
 

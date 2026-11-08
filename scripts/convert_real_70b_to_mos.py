@@ -34,8 +34,8 @@ def factorize_residual_svd(diff: torch.Tensor, rank: int = 64) -> Tuple[torch.Te
     # Para que (x @ A) @ B seja equivalente a x @ diff.T:
     # diff.T approx V @ diag(S) @ U.T = (V * sqrt(S)) @ (U * sqrt(S)).T
     sqrt_S = torch.sqrt(S)
-    A = (V * sqrt_S).to(orig_dtype)  # [in_features, rank]
-    B = ((U * sqrt_S).T).to(orig_dtype)  # [rank, out_features]
+    A = (V * sqrt_S).to(orig_dtype).contiguous()  # [in_features, rank]
+    B = ((U * sqrt_S).T).to(orig_dtype).contiguous()  # [rank, out_features]
     return A, B
 
 

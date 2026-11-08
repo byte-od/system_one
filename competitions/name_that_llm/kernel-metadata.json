@@ -8,16 +8,12 @@
   "enable_gpu": true,
   "enable_tpu": false,
   "enable_internet": false,
-  "keywords": [
-    "gpu"
-  ],
   "dataset_sources": [
     "prvsiyan/prvsiyans-extended-name-that-llm-dataset"
   ],
-  "kernel_sources": [],
   "competition_sources": [
     "name-that-llm"
   ],
-  "model_sources": [],
-  "machine_shape": "NvidiaTeslaT4"
+  "kernel_sources": [],
+  "model_sources": []
 }
