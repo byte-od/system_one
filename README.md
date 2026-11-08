@@ -175,6 +175,10 @@ The repository includes 11 standalone, self-contained examples in `examples/`:
 | [`09_high_stress_1gb_benchmark.py`](examples/09_high_stress_1gb_benchmark.py) | **High-Stress Benchmark (45,000 tokens: 1 GB vs 5.27 MB)** |
 | [`10_mixture_of_scars_demo.py`](examples/10_mixture_of_scars_demo.py) | **Mixture of Scars (MoS) 32-layer benchmark (78.8x reduction)** |
 | [`11_full_system_benchmark.py`](examples/11_full_system_benchmark.py) | **Full 2x2 Matrix Benchmark (MoS Weights + SCache Context)** |
+| [`12_qwen3b_stress_benchmark.py`](examples/12_qwen3b_stress_benchmark.py) | **Qwen 2.5 - 3B Apple M2 Benchmark (MoS 3.7 GB reduction & 98.2% KV saving)** |
+| [`13_70gb_extreme_mos_benchmark.py`](examples/13_70gb_extreme_mos_benchmark.py) | **70B Scale Architecture Benchmark (20.5x reduction: 79.2 GB -> 3.87 GB)** |
+| [`14_full_battery_test_suite.py`](examples/14_full_battery_test_suite.py) | Pre-publication battery (Reasoning, Code Ingestion, Web Search) |
+| [`15_run_70b_full_battery.py`](examples/15_run_70b_full_battery.py) | **Full 80-layer 70B Scale Execution on Apple M2 (5.87 GB RAM vs 112 GB)** |
 
 ---
 
