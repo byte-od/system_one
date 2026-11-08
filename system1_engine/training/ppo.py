@@ -274,6 +274,7 @@ class RecurrentPPOTrainer:
         scar_scale: float = 0.15,
         scar_beta: float = 0.20,
         pure_scars: bool = True,
+        scar_3d: bool = False,
         external_scout_envs: int = 0,
     ) -> None:
         self.agent = agent.to(device)
@@ -440,8 +441,9 @@ class RecurrentPPOTrainer:
         self.sterility_memory = None
         self.sterility_memory_enabled = False
 
-        # Memória de Cicatriz de Gradiente (Gradient Scar Fast-Weights / Dual-Gradient / Hybrid O(1))
+        # Memória de Cicatriz de Gradiente (Gradient Scar Fast-Weights / Dual-Gradient / Hybrid O(1) / Scar 3D)
         self.scar_mode = str(scar_mode).lower()
+        self.scar_3d = bool(scar_3d or self.scar_mode in ("hybrid_3d", "fast_weights_3d", "scar_3d"))
         if self.scar_mode != "none":
             from system1_engine.core.scar_memory import GradientScarMemory
             slot_dim = getattr(agent.front_end.state_encoder, "slot_dim", 32) if hasattr(agent.front_end, "state_encoder") else 32
@@ -454,6 +456,17 @@ class RecurrentPPOTrainer:
                 self.scar_memory.decay = float(scar_decay)
                 self.scar_memory.scale = float(scar_scale)
                 self.scar_memory.resonance_beta = float(scar_beta)
+                if self.scar_3d and not self.scar_memory.is_3d:
+                    # Upgrade to 3D
+                    self.scar_memory = GradientScarMemory(
+                        slot_dim=slot_dim,
+                        num_slots=num_slots,
+                        mode=self.scar_mode,
+                        decay=scar_decay,
+                        scale=scar_scale,
+                        resonance_beta=scar_beta,
+                        is_3d=True,
+                    ).to(self.device)
                 self.agent.set_scar_memory(self.scar_memory)
             else:
                 self.scar_memory = GradientScarMemory(
@@ -463,6 +476,7 @@ class RecurrentPPOTrainer:
                     decay=scar_decay,
                     scale=scar_scale,
                     resonance_beta=scar_beta,
+                    is_3d=self.scar_3d,
                 ).to(self.device)
                 self.agent.set_scar_memory(self.scar_memory)
         else:

@@ -179,6 +179,13 @@ class UniversalS1Agent(nn.Module):
 
     def load_state_dict(self, state_dict: Any, strict: bool = True, assign: bool = False) -> Any:
         """Auto-detecta e instancia GradientScarMemory se presente no state_dict antes do carregamento."""
+        is_3d_state = False
+        if isinstance(state_dict, dict):
+            for k, v in state_dict.items():
+                if k.endswith("W_scar") and hasattr(v, "dim") and v.dim() == 3:
+                    is_3d_state = True
+                    break
+
         if (
             self.scar_memory is None
             and isinstance(state_dict, dict)
@@ -191,9 +198,24 @@ class UniversalS1Agent(nn.Module):
             sm = GradientScarMemory(
                 slot_dim=slot_dim,
                 num_slots=num_slots,
-                mode="hybrid",
+                mode="hybrid_3d" if is_3d_state else "hybrid",
                 scale=0.15,
                 resonance_beta=0.20,
+                is_3d=is_3d_state,
+            ).to(self.device)
+            self.set_scar_memory(sm)
+        elif self.scar_memory is not None and isinstance(state_dict, dict) and is_3d_state != getattr(self.scar_memory, "is_3d", False):
+            from system1_engine.core.scar_memory import GradientScarMemory
+            enc = getattr(self.front_end, "state_encoder", None)
+            slot_dim = getattr(enc, "slot_dim", 32) if enc is not None else 32
+            num_slots = getattr(enc, "num_slots", 8) if enc is not None else 8
+            sm = GradientScarMemory(
+                slot_dim=slot_dim,
+                num_slots=num_slots,
+                mode="hybrid_3d" if is_3d_state else "hybrid",
+                scale=self.scar_memory.scale,
+                resonance_beta=self.scar_memory.resonance_beta,
+                is_3d=is_3d_state,
             ).to(self.device)
             self.set_scar_memory(sm)
         if self.scar_memory is not None and isinstance(state_dict, dict):
