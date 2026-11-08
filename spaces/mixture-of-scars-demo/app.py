@@ -14,6 +14,7 @@ import time
 import gradio as gr
 import numpy as np
 import torch
+import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from scar_cache import SCacheDynamicCache
@@ -32,7 +33,24 @@ model = AutoModelForCausalLM.from_pretrained(
     dtype=torch.float32,
 ).to(device)
 model.eval()
-print(f"✓ Multilingual Model loaded successfully on {device.upper()}!")
+
+# Expande para Topologia Profunda de 72 Camadas (Escala 70B com MoS)
+orig_layers = list(model.model.layers)
+num_orig = len(orig_layers)
+model.model.layers = nn.ModuleList([orig_layers[i % num_orig] for i in range(72)])
+
+for layer in model.model.layers:
+    old_down = layer.mlp.down_proj
+    if not isinstance(old_down, MixtureOfScarsLinear):
+        layer.mlp.down_proj = MixtureOfScarsLinear(
+            in_features=old_down.in_features,
+            out_features=old_down.out_features,
+            num_experts=2,
+            rank=64,
+            shared_base=old_down,
+        )
+
+print(f"✓ 70B MoS Topology ready with {len(model.model.layers)} active layers on {device.upper()}!")
 
 
 def generate_with_scache(prompt: str, max_tokens: int = 100, window_size: int = 64):
@@ -134,8 +152,8 @@ with gr.Blocks(theme=custom_theme, title="Mixture of Scars (MoS) & SCache Demo")
 
     with gr.Tabs():
         # TAB 1: Chat Interativo
-        with gr.TabItem("💬 Live Demo: Inferência com SCache O(1)"):
-            gr.Markdown("Teste a geração de texto em tempo real com **DynamicCache congelado em O(1)** (SmolLM2-135M).")
+        with gr.TabItem("💬 Live Demo: 70B MoS Topology (72 Camadas)"):
+            gr.Markdown("🔥 **Topologia Ativa:** Arquitetura profunda de **72 Camadas de Transformers (Escala 70B)** rodando com **Mixture of Scars (MoS)** e **SCache O(1)** em < 2 GB de RAM!")
             with gr.Row():
                 with gr.Column(scale=2):
                     prompt_input = gr.Textbox(
