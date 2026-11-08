@@ -108,6 +108,22 @@ def run_kaggle_qwen72b_mos_conversion(
     for k, s in weight_map.items():
         shard_to_keys.setdefault(s, []).append(k)
 
+    # Identifica dinamicamente o último shard de cada grupo para descarga atômica
+    last_shard_for_group: Dict[int, str] = {}
+    for g in range(10):
+        shards_in_g = set()
+        for k, s in weight_map.items():
+            if "model.layers." in k:
+                try:
+                    l = int(k.split("model.layers.")[1].split(".")[0])
+                    if g * group_size <= l < (g + 1) * group_size:
+                        shards_in_g.add(s)
+                except Exception:
+                    pass
+        if shards_in_g:
+            last_shard_for_group[g] = sorted(list(shards_in_g))[-1]
+    print(f"  ✓ Mapeamento de conclusão por grupo: {last_shard_for_group}")
+
     # Dicionários de rastreamento
     base_tensors: Dict[Tuple[int, str], torch.Tensor] = {}
     final_weight_map: Dict[str, str] = {}
@@ -222,6 +238,22 @@ def run_kaggle_qwen72b_mos_conversion(
             print(f"  🗑️ Shard {shard_name} removido. Disco livre: {free_bytes / (1024**3):.1f} GB.")
         except Exception:
             pass
+
+        # Descarga atômica: se este shard foi o último do grupo g, salva o grupo completo e libera RAM
+        for g, last_shard in last_shard_for_group.items():
+            if shard_name == last_shard and len(group_buffers[g]) > 0:
+                shard_fname = f"mos_group_{g}.safetensors"
+                shard_fpath = os.path.join(output_dir, shard_fname)
+                save_file(group_buffers[g], shard_fpath)
+                sz_mb = os.path.getsize(shard_fpath) / (1024 * 1024)
+                print(f"  💾 Grupo MoS {g} 100% COMPLETO e salvo: {shard_fname} ({sz_mb:.1f} MB | {len(group_buffers[g])} tensores).")
+                for tensor_k in group_buffers[g].keys():
+                    final_weight_map[tensor_k] = shard_fname
+                group_buffers[g].clear()
+                # Libera imediatamente a base FP16 de 1.45 GB da RAM
+                for p in projections:
+                    base_tensors.pop((g, p), None)
+                gc.collect()
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
