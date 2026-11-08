@@ -9,6 +9,7 @@ from scar_cache.attention import SlotScarAttention
 from scar_cache.core import GradientScarMemory, SCache
 from scar_cache.hf_cache import SCacheDynamicCache, SCacheDynamicLayer
 from scar_cache.modules import ScarGatedLayer, ScarLinear, SlotScarLinear
+from scar_cache.mos import MixtureOfScarsLinear, ScarExpert
 from scar_cache.multi_slot import MultiSlotSCache
 from scar_cache.projections import (
     delta_rule_update,
@@ -29,6 +30,8 @@ __all__ = [
     "ScarLinear",
     "ScarGatedLayer",
     "SlotScarLinear",
+    "ScarExpert",
+    "MixtureOfScarsLinear",
     "project_conflicting_gradient",
     "project_conflicting_gradients_per_slot",
     "delta_rule_update",
