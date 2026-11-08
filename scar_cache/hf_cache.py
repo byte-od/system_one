@@ -40,7 +40,7 @@ class SCacheDynamicLayer(DynamicLayer):
         if not self.is_initialized:
             self.lazy_initialization(key_states, value_states)
             head_dim = key_states.shape[-1]
-            self.scache = MultiSlotSCache(slot_dim=head_dim, num_slots=self.num_slots)
+            self.scache = MultiSlotSCache(slot_dim=head_dim, num_slots=self.num_slots).to(key_states.device)
 
         # Concatena os novos tokens recebidos neste passo
         self.keys = torch.cat([self.keys, key_states], dim=-2)
@@ -75,6 +75,22 @@ class SCacheDynamicLayer(DynamicLayer):
             else:
                 self.keys = self.keys[..., -self.window_size :, :]
                 self.values = self.values[..., -self.window_size :, :]
+
+        # Se houver slots associativos ativos e tokens absorvidos, projeta tokens de memória virtual
+        if self.num_slots > 0 and self.total_tokens_absorbed > 0 and self.scache is not None:
+            B, H = self.keys.shape[0], self.keys.shape[1]
+            k_slots = self.scache.slot_queries.unsqueeze(0).unsqueeze(0).expand(B, H, -1, -1).to(self.keys.dtype)
+            v_slots = torch.matmul(self.scache.W_scar, self.scache.slot_queries.unsqueeze(-1)).squeeze(-1)
+            v_slots = v_slots.unsqueeze(0).unsqueeze(0).expand(B, H, -1, -1).to(self.values.dtype)
+
+            if self.num_sink_tokens > 0:
+                sink_k = self.keys[..., : self.num_sink_tokens, :]
+                sink_v = self.values[..., : self.num_sink_tokens, :]
+                slide_k = self.keys[..., self.num_sink_tokens :, :]
+                slide_v = self.values[..., self.num_sink_tokens :, :]
+                return torch.cat([sink_k, k_slots, slide_k], dim=-2), torch.cat([sink_v, v_slots, slide_v], dim=-2)
+            else:
+                return torch.cat([k_slots, self.keys], dim=-2), torch.cat([v_slots, self.values], dim=-2)
 
         return self.keys, self.values
 
