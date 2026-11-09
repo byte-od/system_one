@@ -1,0 +1,19 @@
+{
+  "id": "thetod/titan2-command-r-plus-104b-l32-trainer",
+  "title": "Titan 2 - Command R+ 104B Layer 32 Trainer",
+  "code_file": "extract_and_train_titan2.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "kernel_sources": [],
+  "competition_sources": [
+    "name-that-llm"
+  ],
+  "dataset_sources": [],
+  "model_sources": [
+    "cohereforai/c4ai-command-r-plus/Transformers/c4ai-command-r-plus-4bit"
+  ]
+}
