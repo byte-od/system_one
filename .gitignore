@@ -61,8 +61,12 @@ venv.bak/
 *.pt
 *.pth
 *.onnx
+*.npy
+competitions/**/head_artifacts/
+competitions/**/data/
 models/**/*.safetensors
 models/**/*.safetensors.part
 
 # macOS
 .DS_Store
+competitions/**/test_run/
