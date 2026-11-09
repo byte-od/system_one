@@ -113,7 +113,8 @@ def create_notebook():
                 "metadata": {},
                 "outputs": [],
                 "source": [
-                    "import os, zipfile\n",
+                    "import os, zipfile, shutil\n",
+                    "from pathlib import Path\n",
                     "\n",
                     "os.makedirs('/content/data', exist_ok=True)\n",
                     "os.makedirs('/content/qwen25_72b_mos', exist_ok=True)\n",
@@ -133,6 +134,15 @@ def create_notebook():
                     "print('\\n📥 Baixando Checkpoint MoS 72B do kernel thetod/qwen-72b-to-mixture-of-scars-mos-converter...')\n",
                     "!kaggle kernels output thetod/qwen-72b-to-mixture-of-scars-mos-converter -p /content/qwen25_72b_mos\n",
                     "\n",
+                    "# Desaninha arquivos caso o Kaggle crie subdiretório\n",
+                    "sub_dir = Path('/content/qwen25_72b_mos/qwen25_72b_mos')\n",
+                    "if sub_dir.exists():\n",
+                    "    for f in sub_dir.iterdir():\n",
+                    "        dest = Path('/content/qwen25_72b_mos') / f.name\n",
+                    "        if not dest.exists():\n",
+                    "            shutil.move(str(f), str(dest))\n",
+                    "    print('✓ Estrutura de diretórios desaninhada com sucesso!')\n",
+                    "\n",
                     "# Fallback: baixa arquivos auxiliares do tokenizer se necessário\n",
                     "if not os.path.exists('/content/qwen25_72b_mos/tokenizer.json'):\n",
                     "    print('📥 Baixando tokenizer oficial Qwen 2.5 72B...')\n",
@@ -143,8 +153,8 @@ def create_notebook():
                     "        except Exception:\n",
                     "            pass\n",
                     "\n",
-                    "files = os.listdir('/content/qwen25_72b_mos')\n",
-                    "print(f'✓ {len(files)} arquivos de checkpoint prontos em /content/qwen25_72b_mos!')\n"
+                    "files = [f for f in os.listdir('/content/qwen25_72b_mos') if f.endswith('.safetensors')]\n",
+                    "print(f'✓ {len(files)} shards safetensors MoS prontos em /content/qwen25_72b_mos: {files}')\n"
                 ]
             },
             {
@@ -274,7 +284,6 @@ def create_notebook():
                     "        q = q.view(bsz, seq_len, 64, 128).transpose(1, 2)\n",
                     "        k = k.view(bsz, seq_len, 8, 128).transpose(1, 2)\n",
                     "        v = v.view(bsz, seq_len, 8, 128).transpose(1, 2)\n",
-                    "\n",
                     "        q, k = apply_rotary_pos_emb(q, k, cos, sin)\n",
                     "        k_rep = k.repeat_interleave(8, dim=1)\n",
                     "        v_rep = v.repeat_interleave(8, dim=1)\n",
@@ -394,8 +403,9 @@ def create_notebook():
                     "\n",
                     "emb_file = model_dir / 'mos_embeddings_and_head.safetensors'\n",
                     "with safe_open(str(emb_file), framework='pt', device='cpu') as f:\n",
-                    "    emb_p = f.get_tensor('model.embed_tokens.weight')\n",
-                    "    emb_s = f.get_tensor('model.embed_tokens.weight.scales')\n",
+                    "    tk = 'model.embed_tokens.weight' if 'model.embed_tokens.weight' in f.keys() else 'embed_tokens.weight'\n",
+                    "    emb_p = f.get_tensor(tk)\n",
+                    "    emb_s = f.get_tensor(f'{tk}.scales')\n",
                     "\n",
                     "bpt = 8192 // 128\n",
                     "boff = torch.arange(bpt, dtype=torch.long)\n",
@@ -479,12 +489,16 @@ def create_notebook():
                     "    P_cal = u[:, None] * K * v[None, :]\n",
                     "    return P_cal / P_cal.sum(axis=1, keepdims=True)\n",
                     "\n",
+                    "# Bússola 1 Padronizada: Estilometria Normalizada\n",
+                    "scaler_style_global = StandardScaler()\n",
+                    "style_normed = scaler_style_global.fit_transform(style_raw)\n",
+                    "\n",
                     "# Bússola 2: Delta-Origin Prompt Centering\n",
                     "print('[Bússola 2/3] Calculando Prompt-Centering Delta Origin...')\n",
                     "Zc = center_groups_delta_origin(features_70b_l40, prompts)\n",
-                    "Sc = center_groups_delta_origin(style_raw, prompts)\n",
+                    "Sc = center_groups_delta_origin(style_normed, prompts)\n",
                     "\n",
-                    "X_plain_raw = np.hstack([features_70b_l40, style_raw])\n",
+                    "X_plain_raw = np.hstack([features_70b_l40, style_normed])\n",
                     "X_centered_raw = np.hstack([Zc, Sc])\n",
                     "print(f'✓ Matriz Tri-Compass Fundida: {X_plain_raw.shape[1]} dimensões.')\n",
                     "\n",
@@ -545,7 +559,7 @@ def create_notebook():
                 "cell_type": "markdown",
                 "metadata": {},
                 "source": [
-                    "## 💾 7. Refit no Dataset 100% Oficial & Compilação dos Pesos"
+                    "## 💾 7. Refit no Dataset 100% Oficial & Compilação dos Pesos Dual-Head"
                 ]
             },
             {
@@ -554,27 +568,41 @@ def create_notebook():
                 "metadata": {},
                 "outputs": [],
                 "source": [
-                    "print('[Ajuste Final] Treinando cabeça em 100% dos dados para inferência de submissão...')\n",
-                    "final_scaler = StandardScaler()\n",
-                    "X_full_sc = final_scaler.fit_transform(X_plain_raw)\n",
+                    "print('[Ajuste Final] Treinando cabeças Plain e Centered em 100% dos dados...')\n",
+                    "scaler_plain_final = StandardScaler()\n",
+                    "X_plain_sc = scaler_plain_final.fit_transform(X_plain_raw)\n",
+                    "clf_plain_final = LogisticRegression(C=0.1, max_iter=500, random_state=42)\n",
+                    "clf_plain_final.fit(X_plain_sc, labels)\n",
                     "\n",
-                    "final_clf = LogisticRegression(C=0.1, max_iter=500, random_state=42)\n",
-                    "final_clf.fit(X_full_sc, labels)\n",
-                    "train_acc = accuracy_score(labels, final_clf.predict(X_full_sc))\n",
-                    "print(f'✓ Acurácia de Treino Final: {train_acc*100:.2f}%')\n",
+                    "scaler_centered_final = StandardScaler()\n",
+                    "X_centered_sc = scaler_centered_final.fit_transform(X_centered_raw)\n",
+                    "clf_centered_final = LogisticRegression(C=0.1, max_iter=500, random_state=42)\n",
+                    "clf_centered_final.fit(X_centered_sc, labels)\n",
+                    "\n",
+                    "train_acc = accuracy_score(labels, clf_plain_final.predict(X_plain_sc))\n",
+                    "print(f'✓ Acurácia de Treino Final (Plain): {train_acc*100:.2f}%')\n",
                     "\n",
                     "head_dir = Path('/content/head_artifacts_70b_l40')\n",
                     "head_dir.mkdir(parents=True, exist_ok=True)\n",
                     "\n",
+                    "# Dicionário de tensores 100% compatível com a arquitetura de submissão do Kaggle\n",
                     "head_weights = {\n",
-                    "    'scaler.mean': torch.from_numpy(final_scaler.mean_.astype(np.float32)),\n",
-                    "    'scaler.scale': torch.from_numpy(final_scaler.scale_.astype(np.float32)),\n",
-                    "    'head.weight': torch.from_numpy(final_clf.coef_.astype(np.float32)),\n",
-                    "    'head.bias': torch.from_numpy(final_clf.intercept_.astype(np.float32)),\n",
+                    "    'style_scaler.mean': torch.from_numpy(scaler_style_global.mean_.astype(np.float32)),\n",
+                    "    'style_scaler.scale': torch.from_numpy(scaler_style_global.scale_.astype(np.float32)),\n",
+                    "    'scaler_plain.mean': torch.from_numpy(scaler_plain_final.mean_.astype(np.float32)),\n",
+                    "    'scaler_plain.scale': torch.from_numpy(scaler_plain_final.scale_.astype(np.float32)),\n",
+                    "    'plain.weight': torch.from_numpy(clf_plain_final.coef_.astype(np.float32)),\n",
+                    "    'plain.bias': torch.from_numpy(clf_plain_final.intercept_.astype(np.float32)),\n",
+                    "    'scaler_centered.mean': torch.from_numpy(scaler_centered_final.mean_.astype(np.float32)),\n",
+                    "    'scaler_centered.scale': torch.from_numpy(scaler_centered_final.scale_.astype(np.float32)),\n",
+                    "    'centered.weight': torch.from_numpy(clf_centered_final.coef_.astype(np.float32)),\n",
+                    "    'centered.bias': torch.from_numpy(clf_centered_final.intercept_.astype(np.float32)),\n",
                     "}\n",
-                    "head_path = head_dir / 'head_tricompass_70b_l40.safetensors'\n",
-                    "save_file(head_weights, str(head_path))\n",
-                    "print(f'✓ Safetensors salvo: {head_path} ({head_path.stat().st_size / 1024:.1f} KB)')\n",
+                    "\n",
+                    "# Salva sob ambos os nomes para compatibilidade transparente total\n",
+                    "save_file(head_weights, str(head_dir / 'head_tricompass_70b_l40.safetensors'))\n",
+                    "save_file(head_weights, str(head_dir / 'head_tricompass_70b.safetensors'))\n",
+                    "print(f'✓ Safetensors salvos: head_tricompass_70b_l40.safetensors e head_tricompass_70b.safetensors')\n",
                     "\n",
                     "meta = {\n",
                     "    'architecture': 'Titan1_Qwen72B_MoS_Layer40',\n",
@@ -593,10 +621,11 @@ def create_notebook():
                     "}\n",
                     "with open(head_dir / 'meta.json', 'w') as f:\n",
                     "    json.dump(meta, f, indent=2)\n",
-                    "print(f'✓ Metadata salvo: {head_dir / \"meta.json\"}')\n",
+                    "with open(head_dir / 'meta_tricompass_70b.json', 'w') as f:\n",
+                    "    json.dump(meta, f, indent=2)\n",
+                    "print(f'✓ Metadatas salvos em {head_dir}')\n",
                     "\n",
                     "# Copia a matriz de features para a pasta de artefatos\n",
-                    "import shutil\n",
                     "shutil.copy('/content/features_70b_l40_train_full.npy', str(head_dir / 'features_70b_l40_train_full.npy'))\n",
                     "print('✓ Todos os artefatos compilados em /content/head_artifacts_70b_l40/')\n"
                 ]
@@ -630,9 +659,11 @@ def create_notebook():
                     "}\n",
                     "with open('/content/head_artifacts_70b_l40/dataset-metadata.json', 'w') as f:\n",
                     "    json.dump(dataset_metadata, f, indent=2)\n",
+                    "with open('/content/head_artifacts_70b_l40/datasets-metadata.json', 'w') as f:\n",
+                    "    json.dump(dataset_metadata, f, indent=2)\n",
                     "\n",
-                    "print('\\n📤 Enviando versão atualizada para o Kaggle Dataset...')\n",
-                    "!kaggle datasets version -p /content/head_artifacts_70b_l40 -m \"Titan 1: Qwen 72B MoS Layer 40 Golden Slice\"\n",
+                    "print('\\n📤 Enviando versão atualizada para o Kaggle Dataset thetod/name-that-llm-70b-mos-tricompass-head...')\n",
+                    "!kaggle datasets version -p /content/head_artifacts_70b_l40 -m \"Titan 1: Qwen 72B MoS Layer 40 Golden Slice\" -r zip\n",
                     "\n",
                     "# 3. Dispara download automático para sua máquina\n",
                     "print('\\n💾 Iniciando download do ZIP para seu computador...')\n",
@@ -664,11 +695,13 @@ if __name__ == "__main__":
     notebook = create_notebook()
     
     path1 = Path("/Users/juliocesarreisfilho/Projects/scar-cache/notebooks/colab_titan1_qwen72b_l40.ipynb")
+    path1.parent.mkdir(parents=True, exist_ok=True)
     with open(path1, "w") as f:
         json.dump(notebook, f, indent=2)
     print(f"✓ Notebook salvo em: {path1}")
 
     path2 = Path("/Users/juliocesarreisfilho/Projects/scar-cache/competitions/name_that_llm/titans/titan1_qwen72b_l40/colab_titan1_qwen72b_l40.ipynb")
+    path2.parent.mkdir(parents=True, exist_ok=True)
     with open(path2, "w") as f:
         json.dump(notebook, f, indent=2)
     print(f"✓ Notebook salvo em: {path2}")
