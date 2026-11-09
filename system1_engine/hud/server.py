@@ -391,6 +391,9 @@ class HUDServer:
         ploss_pattern = re.compile(r"PLoss:\s+([-\d.]+)")
         vloss_pattern = re.compile(r"VLoss:\s+([-\d.]+)")
         fps_step_pattern = re.compile(r"\bFPS:\s+([\d.]+)")
+        marathon_3d_pattern = re.compile(
+            r"\[\d{2}:\d{2}:\d{2}\]\s+Passos:\s+([\d,]+)\s+\|\s+Curr[íi]culo:\s+D(\d+)\s+\|\s+FPS:\s+([\d.]+)\s+\|\s+Retorno:\s+([-\d.]+)\s+\|\s+Cicatrizes(?:\s+3D)?:\s+([\d,]+)\s+\|\s+\|\|W(?:_3D)?\|\|:\s+([\d.]+)\s+\|\s+\|\|z\|\|:\s+([\d.]+)\s+\|\s+\|\|g\|\|:\s+([\d.]+)\s+\|\s+Tempo até as \d+h:\s+([^\s|]+)\s+restantes"
+        )
         marathon_pattern = re.compile(
             r"🏃 \[Maratona\s+([\d,]+)/([\d,]+)\s+\(([\d.]+)%\)\]\s+Depth:\s+D(\d+)\s+\|\s+Scars:\s+([\d,]+)\s+\|\s+FPS:\s+([\d.]+)\s+\|\s+ETA:\s+([^\s|]+)\s+\|\s+\|\|W\|\|:\s+([\d.]+)\s+\|\s+\|\|z\|\|:\s+([\d.]+)\s+\|\s+\|\|g\|\|:\s+([\d.]+)"
         )
@@ -506,24 +509,41 @@ class HUDServer:
                                     current_depth_best_return = max(current_depth_best_return, float(m_step.group(4)))
 
                         if not found_new_marathon:
-                            m_mar = marathon_pattern.search(line)
-                            if m_mar:
-                                mar_steps = int(m_mar.group(1).replace(",", ""))
-                                mar_total_steps = int(m_mar.group(2).replace(",", ""))
-                                self._ext_target_total = mar_total_steps
+                            m_mar3d = marathon_3d_pattern.search(line)
+                            if m_mar3d:
+                                mar_steps = int(m_mar3d.group(1).replace(",", ""))
                                 if current_steps is None:
                                     current_steps = mar_steps
                                 marathon_base_steps = mar_steps
                                 if not found_new_step:
-                                    current_depth = int(m_mar.group(4))
-                                current_scars = int(m_mar.group(5).replace(",", ""))
-                                if mar_steps > 0:
-                                    marathon_measured_fps = float(m_mar.group(6))
-                                current_eta = m_mar.group(7)
-                                current_w_norm = float(m_mar.group(8))
-                                current_z_norm = float(m_mar.group(9))
-                                current_g_norm = float(m_mar.group(10))
+                                    current_depth = int(m_mar3d.group(2))
+                                marathon_measured_fps = float(m_mar3d.group(3))
+                                current_return = float(m_mar3d.group(4))
+                                current_scars = int(m_mar3d.group(5).replace(",", ""))
+                                current_w_norm = float(m_mar3d.group(6))
+                                current_z_norm = float(m_mar3d.group(7))
+                                current_g_norm = float(m_mar3d.group(8))
+                                current_eta = m_mar3d.group(9)
                                 found_new_marathon = True
+                            else:
+                                m_mar = marathon_pattern.search(line)
+                                if m_mar:
+                                    mar_steps = int(m_mar.group(1).replace(",", ""))
+                                    mar_total_steps = int(m_mar.group(2).replace(",", ""))
+                                    self._ext_target_total = mar_total_steps
+                                    if current_steps is None:
+                                        current_steps = mar_steps
+                                    marathon_base_steps = mar_steps
+                                    if not found_new_step:
+                                        current_depth = int(m_mar.group(4))
+                                    current_scars = int(m_mar.group(5).replace(",", ""))
+                                    if mar_steps > 0:
+                                        marathon_measured_fps = float(m_mar.group(6))
+                                    current_eta = m_mar.group(7)
+                                    current_w_norm = float(m_mar.group(8))
+                                    current_z_norm = float(m_mar.group(9))
+                                    current_g_norm = float(m_mar.group(10))
+                                    found_new_marathon = True
 
                     # Promoções reais observadas
                     promotions_in_buffer = sum(1 for l in lines if promo_pattern.search(l))

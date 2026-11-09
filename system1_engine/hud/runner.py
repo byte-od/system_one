@@ -30,13 +30,16 @@ class HUDProcessRunner:
 
     def is_running(self) -> bool:
         with self._lock:
-            if self.process is not None and self.process.poll() is None:
-                return True
+            if self.process is not None:
+                if self.process.poll() is None:
+                    return True
+                self.process = None
             if self.external_pid is not None:
                 try:
                     os.kill(self.external_pid, 0)
                     return True
                 except OSError:
+                    self.external_pid = None
                     return False
             return False
 

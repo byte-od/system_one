@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "updated_at": 1794121965.311491,
-  "updated_at_str": "08/11/2026 04:12:45",
+  "updated_at": 1794146592.408336,
+  "updated_at_str": "08/11/2026 11:03:12",
   "models": {
     "acrobot": {
       "key": "acrobot",
@@ -149,11 +149,11 @@
       "discrete": true,
       "description": "Hierarchical RL com algoritmos CFOP (Sune, Sexy Move, T-Perm, Insert Edge).",
       "file": "s1_rubiks_macro.onnx",
-      "size_mb": 3.18,
-      "size_bytes": 3329533,
-      "mtime": 1793454679.928206,
-      "mtime_str": "31/10/2026 10:51:19",
-      "checkpoint_source": "s1_rubikscubemacro_v0_trained.pt",
+      "size_mb": 7.62,
+      "size_bytes": 7986643,
+      "mtime": 1794146592.2134376,
+      "mtime_str": "08/11/2026 11:03:12",
+      "checkpoint_source": "s1_rubiks_tabula_rasa_scar_3d_11h.pt",
       "checkpoint_version": "v1",
       "action_chunk_size": 1
     }
