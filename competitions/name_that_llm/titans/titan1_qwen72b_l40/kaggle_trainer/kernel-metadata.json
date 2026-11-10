@@ -1,6 +1,6 @@
 {
-  "id": "thetod/titan1-qwen72b-l40-mos-trainer",
-  "title": "Titan 1 - Qwen 72B MoS Layer 40 Trainer",
+  "id": "thetod/titan-1-qwen-72b-mos-layer-40-trainer",
+  "title": "Titan 1 Qwen 72B MoS Layer 40 Trainer",
   "code_file": "train_titan1_qwen72b_l40.py",
   "language": "python",
   "kernel_type": "script",
