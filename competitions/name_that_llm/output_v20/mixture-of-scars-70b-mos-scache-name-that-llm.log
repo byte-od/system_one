@@ -1,0 +1,114 @@
+[{"stream_name":"stderr","time":6.783528407,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":6.783583452,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":6.783590261,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":6.783594075,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stderr","time":7.343712496,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":7.34373989,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":7.343744493,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":7.343748144,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stdout","time":15.814277527,"data":"train (2699, 4) test (3, 2) gpus 2\n"}
+,{"stream_name":"stdout","time":22.28978529,"data":"svc: weight 1.0, done after 8s\n"}
+,{"stream_name":"stdout","time":38.657021815,"data":"topic clusters: 3 passages alone, 0 in clusters of 2 to 18\n"}
+,{"stream_name":"stderr","time":74.80277705,"data":"[transformers] \u001b[1mQwen3Model LOAD REPORT\u001b[0m from: /kaggle/input/models/qwen-lm/qwen-3/transformers/14b-base/1\n"}
+,{"stream_name":"stderr","time":74.802821452,"data":"Key                                                    | Status     |  | \n"}
+,{"stream_name":"stderr","time":74.802826758,"data":"-------------------------------------------------------+------------+--+-\n"}
+,{"stream_name":"stderr","time":74.80283117,"data":"model.layers.{27...39}.post_attention_layernorm.weight | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802835484,"data":"model.layers.{27...39}.self_attn.q_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802841317,"data":"model.layers.{27...39}.mlp.down_proj.weight            | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802849271,"data":"model.layers.{27...39}.mlp.gate_proj.weight            | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.80286811,"data":"model.layers.{27...39}.mlp.up_proj.weight              | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802873202,"data":"model.layers.{27...39}.self_attn.q_norm.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802878242,"data":"model.layers.{27...39}.self_attn.o_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802883379,"data":"model.layers.{27...39}.self_attn.v_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.80288818,"data":"model.layers.{27...39}.self_attn.k_norm.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.80289239,"data":"model.layers.{27...39}.input_layernorm.weight          | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802896631,"data":"model.layers.{27...39}.self_attn.k_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802900762,"data":"lm_head.weight                                         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802905034,"data":"\n"}
+,{"stream_name":"stderr","time":74.80290898,"data":"Notes:\n"}
+,{"stream_name":"stderr","time":74.802913097,"data":"- UNEXPECTED:\tcan be ignored when loading from different task/architecture; not ok if you expect identical arch.\n"}
+,{"stream_name":"stderr","time":74.802917665,"data":"\n"}
+,{"stream_name":"stderr","time":74.802933227,"data":"[transformers] \u001b[1mQwen3Model LOAD REPORT\u001b[0m from: /kaggle/input/models/qwen-lm/qwen-3/transformers/14b-base/1\n"}
+,{"stream_name":"stderr","time":74.802937167,"data":"Key                                                    | Status     |  | \n"}
+,{"stream_name":"stderr","time":74.80294222,"data":"-------------------------------------------------------+------------+--+-\n"}
+,{"stream_name":"stderr","time":74.802950025,"data":"model.layers.{27...39}.post_attention_layernorm.weight | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802964694,"data":"model.layers.{27...39}.self_attn.q_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802968484,"data":"model.layers.{27...39}.mlp.down_proj.weight            | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802972537,"data":"model.layers.{27...39}.mlp.gate_proj.weight            | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802976292,"data":"model.layers.{27...39}.mlp.up_proj.weight              | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802980271,"data":"model.layers.{27...39}.self_attn.q_norm.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802984365,"data":"model.layers.{27...39}.self_attn.o_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802989757,"data":"model.layers.{27...39}.self_attn.v_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802993141,"data":"model.layers.{27...39}.self_attn.k_norm.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802996405,"data":"model.layers.{27...39}.input_layernorm.weight          | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.802999664,"data":"model.layers.{27...39}.self_attn.k_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.803003016,"data":"lm_head.weight                                         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":74.803006279,"data":"\n"}
+,{"stream_name":"stderr","time":74.8030094,"data":"Notes:\n"}
+,{"stream_name":"stderr","time":74.803012554,"data":"- UNEXPECTED:\tcan be ignored when loading from different task/architecture; not ok if you expect identical arch.\n"}
+,{"stream_name":"stdout","time":74.887935932,"data":"trunk of 27 layers, 18.1 GiB of weights\n"}
+,{"stream_name":"stdout","time":81.014558892,"data":"end token 151643, this tokenizer's is 151645\n"}
+,{"stream_name":"stdout","time":83.568938229,"data":"lora_qwen3_14b: weight 0.4, done after 69s\n"}
+,{"stream_name":"stderr","time":118.626299588,"data":"[transformers] \u001b[1mQwen2Model LOAD REPORT\u001b[0m from: /kaggle/input/models/qwen-lm/qwen2.5/transformers/14b/1\n"}
+,{"stream_name":"stderr","time":118.626358239,"data":"Key                                                    | Status     |  | \n"}
+,{"stream_name":"stderr","time":118.626366945,"data":"-------------------------------------------------------+------------+--+-\n"}
+,{"stream_name":"stderr","time":118.626372443,"data":"model.layers.{32...47}.mlp.up_proj.weight              | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626378218,"data":"model.layers.{32...47}.self_attn.k_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626384126,"data":"model.layers.{32...47}.post_attention_layernorm.weight | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626389415,"data":"model.layers.{32...47}.self_attn.o_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626394407,"data":"model.layers.{32...47}.self_attn.v_proj.bias           | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626399953,"data":"model.layers.{32...47}.self_attn.k_proj.bias           | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.62642686,"data":"model.layers.{32...47}.self_attn.v_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.62643,"data":"model.layers.{32...47}.input_layernorm.weight          | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.6264327,"data":"model.layers.{32...47}.mlp.gate_proj.weight            | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626435359,"data":"model.layers.{32...47}.self_attn.q_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626438086,"data":"model.layers.{32...47}.mlp.down_proj.weight            | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626440722,"data":"model.layers.{32...47}.self_attn.q_proj.bias           | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626443367,"data":"lm_head.weight                                         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.62644688,"data":"\n"}
+,{"stream_name":"stderr","time":118.626467068,"data":"Notes:\n"}
+,{"stream_name":"stderr","time":118.626471385,"data":"- UNEXPECTED:\tcan be ignored when loading from different task/architecture; not ok if you expect identical arch.\n"}
+,{"stream_name":"stderr","time":118.626476656,"data":"\n"}
+,{"stream_name":"stderr","time":118.626480866,"data":"[transformers] \u001b[1mQwen2Model LOAD REPORT\u001b[0m from: /kaggle/input/models/qwen-lm/qwen2.5/transformers/14b/1\n"}
+,{"stream_name":"stderr","time":118.626486109,"data":"Key                                                    | Status     |  | \n"}
+,{"stream_name":"stderr","time":118.626490713,"data":"-------------------------------------------------------+------------+--+-\n"}
+,{"stream_name":"stderr","time":118.62649484,"data":"model.layers.{32...47}.mlp.up_proj.weight              | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626498923,"data":"model.layers.{32...47}.self_attn.k_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626502793,"data":"model.layers.{32...47}.post_attention_layernorm.weight | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626506637,"data":"model.layers.{32...47}.self_attn.o_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626510603,"data":"model.layers.{32...47}.self_attn.v_proj.bias           | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626514523,"data":"model.layers.{32...47}.self_attn.k_proj.bias           | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626526413,"data":"model.layers.{32...47}.self_attn.v_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626531207,"data":"model.layers.{32...47}.input_layernorm.weight          | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626533945,"data":"model.layers.{32...47}.mlp.gate_proj.weight            | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626536563,"data":"model.layers.{32...47}.self_attn.q_proj.weight         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626539204,"data":"model.layers.{32...47}.mlp.down_proj.weight            | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626541813,"data":"model.layers.{32...47}.self_attn.q_proj.bias           | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626544501,"data":"lm_head.weight                                         | UNEXPECTED |  | \n"}
+,{"stream_name":"stderr","time":118.626547139,"data":"\n"}
+,{"stream_name":"stderr","time":118.626549621,"data":"Notes:\n"}
+,{"stream_name":"stderr","time":118.626552604,"data":"- UNEXPECTED:\tcan be ignored when loading from different task/architecture; not ok if you expect identical arch.\n"}
+,{"stream_name":"stdout","time":118.722763314,"data":"trunk of 32 layers, 17.9 GiB of weights\n"}
+,{"stream_name":"stdout","time":133.036322796,"data":"end token 151643, this tokenizer's is 151643\n"}
+,{"stream_name":"stdout","time":134.242623716,"data":"lora_qwen25_14b: weight 0.2, done after 120s\n"}
+,{"stream_name":"stdout","time":139.480900414,"data":"deberta: weight 0.25, done after 125s\n"}
+,{"stream_name":"stdout","time":140.267409398,"data":"Loading Titan 1 70B MoS Tri-Compass Head from /kaggle/input/name-that-llm-70b-mos-tricompass-head/head_tricompass_70b_l40.safetensors...\n"}
+,{"stream_name":"stdout","time":140.72695025,"data":"Extracting 70B MoS representations across 10 groups on GPU...\n"}
+,{"stream_name":"stdout","time":143.114003625,"data":"Executing MoS forward pass over 5 groups (Titan 1 Golden-Slice)...\n"}
+,{"stream_name":"stdout","time":291.987279172,"data":"70B MoS features extracted successfully!\n"}
+,{"stream_name":"stdout","time":291.988473757,"data":"titan1_70b_mos_tricompass: weight 0.35, done after 278s\n"}
+,{"stream_name":"stdout","time":291.989528184,"data":"70B MoS Tri-Compass inference vote recorded!\n"}
+,{"stream_name":"stdout","time":292.146050048,"data":"model\n"}
+,{"stream_name":"stdout","time":292.146074113,"data":"claude-opus-4-8     1\n"}
+,{"stream_name":"stdout","time":292.146079328,"data":"gpt-5.6-terra       1\n"}
+,{"stream_name":"stdout","time":292.146083405,"data":"gemini-3.7-flash    1\n"}
+,{"stream_name":"stdout","time":292.146087237,"data":"done in 278s\n"}
+,{"stream_name":"stderr","time":298.356778463,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":298.356809317,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":298.5222895,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":298.522315096,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":299.343800365,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to notebook\n"}
+,{"stream_name":"stderr","time":299.428372727,"data":"[NbConvertApp] Writing 78778 bytes to __notebook__.ipynb\n"}
+,{"stream_name":"stderr","time":302.050643792,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to html\n"}
+,{"stream_name":"stderr","time":302.69688913,"data":"[NbConvertApp] Writing 475183 bytes to __results__.html\n"}
+]

@@ -1,0 +1,54 @@
+{
+  "titan_id": "titan3_mistral_large_123b_l44",
+  "model_id": "unsloth/mistral-large-instruct-2407-bnb-4bit",
+  "total_parameters": "123B Dense",
+  "golden_slice_layers": 44,
+  "hidden_dimension": 12288,
+  "tricompass_dimension": 12316,
+  "classes": [
+    "gpt-5.5",
+    "gpt-5.6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-6-astra",
+    "gemini-3.1-pro-preview",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+    "gemini-3.8-flash",
+    "claude-opus-4-6",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-fable-5",
+    "qwen3.8-max",
+    "glm-5.3",
+    "glm-5.3-flash",
+    "kimi-k3"
+  ],
+  "fold_raw_accuracies": [
+    0.4100185528756957,
+    0.40185185185185185,
+    0.37592592592592594,
+    0.37777777777777777,
+    0.38333333333333336
+  ],
+  "fold_sinkhorn_accuracies": [
+    0.40816326530612246,
+    0.40925925925925927,
+    0.40555555555555556,
+    0.4,
+    0.3851851851851852
+  ],
+  "fold_loglosses": [
+    1.659734165744244,
+    1.7129971967880993,
+    1.7215743249012727,
+    1.8332838484492235,
+    1.8035330970533443
+  ],
+  "mean_raw_accuracy": 0.3897814883529169,
+  "mean_sinkhorn_accuracy": 0.40163265306122453,
+  "overall_oof_sinkhorn_accuracy": 0.3953316042978881,
+  "overall_oof_logloss": 1.7935626622999845,
+  "timestamp": 1794276580.5693126
+}
