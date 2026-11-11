@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use Mixture of Scars (MoS) or SCache O(1) in your research, please cite this work."
+title: "Mixture of Scars (MoS) and SCache O(1): Breaking the Dual Memory Wall of Modern Transformers via Activation-Aware Low-Rank Scar Experts and Widrow-Hoff Associative Memory"
+authors:
+  - family-names: "Reis Filho"
+    given-names: "Julio Cesar"
+    affiliation: "Byte-OD Research"
+doi: "10.5281/zenodo.24143839"
+url: "https://doi.org/10.5281/zenodo.24143839"
+repository-code: "https://github.com/byte-od/mixture-of-scars"
+version: "1.0.0"
+date-released: "2026-11-11"
+license: "CC-BY-4.0"
+keywords:
+  - "Large Language Models"
+  - "KV Cache Compression"
+  - "Fast Weights"
+  - "Widrow-Hoff Delta Rule"
+  - "Low-Rank Quantization"
+  - "Mixture of Scars"
+  - "SCache"
