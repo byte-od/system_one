@@ -66,7 +66,6 @@ def _lines(code: str) -> list[str]:
 
 def build_dual_titan_hybrid_notebook(sync_default: bool = True):
     forensic_src = (THIS_DIR / "forensic_scouts_120d.py").read_text()
-    # Strip `from __future__ import annotations` so it can be concatenated mid-cell cleanly
     forensic_src = "\n".join(ln for ln in forensic_src.splitlines() if "from __future__" not in ln)
     mos_src = "\n".join(
         ln for ln in (THIS_DIR / "mos_streaming_engine.py").read_text().splitlines() if "from __future__" not in ln
@@ -86,21 +85,21 @@ def build_dual_titan_hybrid_notebook(sync_default: bool = True):
         "cell_type": "markdown",
         "metadata": {},
         "source": _lines(
-            """# 👑 System One Apex V33: Dual-Titan MoS (Yi-34B L30 + Mistral Large 123B L44) + Bayesian SCache O(1)
-## Name That LLM — Pure Proprietary System One Architecture (Zero 3rd-Party LoRAs, Zero VRAM Leak)
+            """# 👑 System One Apex V34: Dual-Titan MoS (Yi-34B L30 + Mistral Large 123B L44) + Dual-Scale Bessel Twin + Woodbury Bayesian SCache O(1)
+## Name That LLM — Pure Proprietary System One Architecture (Zero 3rd-Party LoRAs, Zero VRAM Leak, Multi-Regime Calibrated)
 ---
 ### Architectural Stack:
 1. **Statistical & Structural Anchors** (*explicitly declared per `AGENTS.md` / `SKILL.md`*):
    - `svc_open_pool`: Checksum-pinned 4-view Open-Pool `LinearSVC` anchor.
-   - `svc_host_exact` & `svc_proxy_clean`: Live-fitted Unicode-Typography + Lexical-Distortion `LinearSVC` anchors correcting OpenRouter-vs-Host register shifts (`gemini` em-dashes, `kimi-k3` curly apostrophes).
+   - `svc_host_exact` & `svc_proxy_clean_8view`: Live-fitted Unicode-Typography + Lexical-Distortion `LinearSVC` anchors with multiplicity-gated Bessel prompt centering.
    - `deberta_v3_large`: Bidirectional syntactic encoder anchor.
 2. **Compass 1 — 120D Host-Aware Forensic Frontier Scouts (`extract_forensic_compass1_120d`)**:
    - Exact Unicode typography ratios, Markdown geometry, sentence burstiness, UK/US spelling & Ghost-Jump discourse transitions.
-3. **Compass 2 — Size-Capped Recursive Topic Clustering (`thresh = 0.89`, `max_size = 18`, `ARI = 0.977`)**:
-   - Zero dropped `>18` prompt merges + pure Delta-Origin centering ($X - \mu_{\text{prompt}}$).
+3. **Compass 2 — Size-Capped Recursive Topic Clustering + Dual-Scale Bessel Centering (`m ∈ {1..18}`)**:
+   - Exact Bessel degrees-of-freedom scaling $\\sqrt{m / (m - 1)}$ + normalized multiplicity gate (`gate(1)=0.0`, `gate(18)=1.0`) + specialized `centered_arena` (`m ∈ {2,3,4}`) vs `centered` (`m=18`) heads.
 4. **Compass 3 — Zero-Leak Multi-GPU FP16 `Mixture of Scars (MoS)` Layer-Streaming Engine**:
-   - **Titan 2 (`Yi-34B` Golden-Slice L30, `7,288D` Co-Trained `SCache`)** & **Titan 3 (`Mistral Large 2 123B` Golden-Slice L44, `12,408D` Co-Trained `SCache`)** (`< 4.2 GiB` peak VRAM on T4, `0.9999996` cosine fidelity; auto-detects **Titan 4 `Qwen3-Embedding-8B` 8-Depth MoS Scar Experts** when attached).
-5. **Intuition & Collective Memory (`UniversalS1ReflexiveMLP` + `SCache O(1)` Bayesian Cavity Shared-Prompt Head + Cavity-EM + `ReflexDecision` S1 $\to$ S2 Clan Verifiers + Damped Soft Sinkhorn)**."""
+   - **Titan 2 (`Yi-34B` Golden-Slice L30, `7,288D` Co-Trained `SCache`)** & **Titan 3 (`Mistral Large 2 123B` Golden-Slice L44, `12,408D` Co-Trained `SCache`)** (`< 4.2 GiB` peak VRAM on T4; auto-detects **Titan 4 `Qwen3-Embedding` 8-Depth MoS Scar Experts** when attached).
+5. **Intuition & Collective Memory (`UniversalS1ReflexiveMLP` 625D + `SCache O(1)` Exact Pair/Triple Woodbury & Cavity Bayesian Head + Cavity-EM + `ReflexDecision` S1 $\\to$ S2 Clan Verifiers + Size-Scaled Soft Sinkhorn)**."""
         ),
     }
 
@@ -143,16 +142,28 @@ def softmax(x):
 
 def vote(name, P, w, rows=slice(None)):
     LOGIT[rows] += w * np.log(np.clip(P, 1e-9, 1.0))
-    print(f"{name}: weight {w:.4f}, done after {time.time() - T0:.1f}s", flush=True)
+    w_mean = float(np.mean(w))
+    print(f"{name}: mean_weight {w_mean:.4f}, done after {time.time() - T0:.1f}s", flush=True)
 
-def group_center(X, groups, mask=None):
+def bessel_group_center(X, groups, mask=None):
     Xc = np.zeros_like(X, dtype=np.float32)
-    ugs = np.unique(groups[mask]) if (mask is not None and mask.any()) else np.unique(groups)
+    ugs = np.unique(groups) if mask is None else np.unique(groups[mask])
     for g in ugs:
         m = (groups == g)
-        if m.sum() > 1:
-            Xc[m] = X[m] - X[m].mean(axis=0, keepdims=True)
+        cnt = int(m.sum())
+        if cnt > 1:
+            bessel = float(np.sqrt(cnt / float(cnt - 1)))
+            Xc[m] = (X[m] - X[m].mean(axis=0, keepdims=True)) * bessel
     return Xc
+
+def compute_normalized_twin_gate(sizes, kappa=2.5):
+    s = np.asarray(sizes, dtype=np.float64)
+    gate = np.zeros_like(s, dtype=np.float64)
+    active = s >= 2
+    dm = s[active] - 1.0
+    kp = max(float(kappa), 1e-4)
+    gate[active] = np.minimum(1.0, ((17.0 + kp) / 17.0) * (dm / (dm + kp)))
+    return gate
 
 class TestTimeSCache:
     \"\"\"O(1) Associative Scar-Cache resonance over constant 32x32 scar covariance slots.\"\"\"
@@ -168,13 +179,15 @@ class TestTimeSCache:
             self.proj = Q.astype(np.float32)
         Z = X @ self.proj
         X_out = X.copy()
-        ugs = np.unique(groups[twin_mask]) if (twin_mask is not None and twin_mask.any()) else []
+        ugs = np.unique(groups) if twin_mask is None else np.unique(groups[twin_mask])
         for g in ugs:
             m = (groups == g)
-            if m.sum() > 1:
+            cnt = int(m.sum())
+            if cnt > 1:
+                gate_m = min(1.0, (19.0 / 17.0) * (cnt - 1.0) / (cnt - 1.0 + 2.0))
                 dz = Z[m] - Z[m].mean(axis=0, keepdims=True)
-                W_scar = (dz.T @ dz) / float(m.sum())
-                X_out[m] += self.resonance_scale * ((dz @ W_scar.T) @ self.proj.T)
+                W_scar = (dz.T @ dz) / float(cnt)
+                X_out[m] += (self.resonance_scale * gate_m) * ((dz @ W_scar.T) @ self.proj.T)
         return X_out
 """
         + "\n"
@@ -186,6 +199,7 @@ apex_meta = json.loads(Path(find("meta_milestone1_system_one_apex.json")).read_t
 assert apex_meta["labels"] == LABELS
 apex_st = load_file(find("head_milestone1_system_one_apex.safetensors"))
 LW = apex_meta["learned_weights"]
+TEMPS = apex_meta.get("temperatures", {})
 
 W_SVC = float(LW["c2_svc"])
 W_HOST_SVC = float(LW["host_svc"])
@@ -198,6 +212,10 @@ W_T3_PLAIN = float(LW["t3_plain"])
 W_T3_TWIN = float(LW["t3_twin"])
 W_S1_MLP = float(LW["s1_mlp"])
 W_SCACHE_BAYES = float(LW["scache_bayes"])
+
+T_SVC = float(TEMPS.get("svc", 0.85))
+T_TITAN = float(TEMPS.get("titan", 4.2))
+TWIN_KAPPA = float(apex_meta.get("best_twin_kappa", 2.5))
 CAVITY_GAMMA = float(apex_meta["best_cavity_gamma"])
 S2_BETA = float(apex_meta["best_s2_beta"])
 SINKHORN_MIX = float(apex_meta["best_sinkhorn_target_mix"])
@@ -209,7 +227,7 @@ test = pd.read_csv(find("test.csv"))
 test["text"] = test["text"].fillna("").astype(str)
 y = train["model"].map(L2I).values
 LOGIT = np.zeros((len(test), K), dtype=np.float64)
-print(f"train={train.shape} | test={test.shape} | gpus={torch.cuda.device_count()} | OOF={apex_meta['oof_v33_apex_bal_acc']*100:.2f}%", flush=True)
+print(f"train={train.shape} | test={test.shape} | gpus={torch.cuda.device_count()} | OOF_m18={apex_meta['oof_v33_apex_bal_acc']*100:.2f}%", flush=True)
 """
     )
 
@@ -251,6 +269,9 @@ else:
 
 size = np.bincount(groups)[groups]
 twin_rows = (size >= TWIN["min_size"]) & (size <= TWIN["max_size"])
+eff_sizes = np.where(twin_rows, size, 1)
+twin_gate = compute_normalized_twin_gate(eff_sizes, kappa=TWIN_KAPPA)[:, None]
+alpha_large = np.clip((eff_sizes.astype(np.float64) - 2.0) / 5.0, 0.0, 1.0)[:, None]
 print("topic clusters (size-capped <=18):", (size == 1).sum(), "alone,", twin_rows.sum(), "in clusters of 2..18", flush=True)
 """
     c3 = {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": _lines(c3_code)}
@@ -334,14 +355,15 @@ def build_c2_views_fresh(texts, vecs=None):
 
 tr_texts_list = train["text"].tolist()
 te_texts_list = test["text"].tolist()
+b_norm = np.sqrt(17.0 / 18.0)
 
-# 1. Host-Exact Anchor (100% pure Kaggle host register)
+# 1. Host-Exact Anchor (100% pure Kaggle host register + Bessel Multiplicity Gate)
 X_he_tr, vecs_he = build_host_exact_views(tr_texts_list, vecs=None)
 X_he_te, _ = build_host_exact_views(te_texts_list, vecs=vecs_he)
 svc_he = LinearSVC(C=0.25, max_iter=2000, random_state=42).fit(X_he_tr, y)
 m_he = svc_he.decision_function(X_he_te).astype(np.float32)
-m_he_comb = m_he + 0.45 * group_center(m_he, groups, twin_rows)
-vote("svc_host_exact", softmax(m_he_comb / 0.85), W_HOST_SVC)
+m_he_comb = m_he + 0.45 * twin_gate * (bessel_group_center(m_he, groups, twin_rows) * b_norm)
+vote("svc_host_exact", softmax(m_he_comb / T_SVC), W_HOST_SVC)
 del X_he_tr, X_he_te, vecs_he, svc_he
 
 # 2. Clean Proxy-Matched 8-View Anchor (`passages.csv` funnel-verified + `train.csv` host upweighted)
@@ -369,15 +391,20 @@ if pa_hits and W_PROXY_SVC > 0:
         hstack([X_px1_tr, X_px2_tr * 0.7], format="csr"), px_y, sample_weight=px_w
     )
     m_px = svc_px.decision_function(hstack([X_px1_te, X_px2_te * 0.7], format="csr")).astype(np.float32)
-    m_px_comb = m_px + 0.55 * group_center(m_px, groups, twin_rows)
-    vote("svc_proxy_clean_8view", softmax(m_px_comb / 0.85), W_PROXY_SVC)
+    m_px_comb = m_px + 0.55 * twin_gate * (bessel_group_center(m_px, groups, twin_rows) * b_norm)
+    vote("svc_proxy_clean_8view", softmax(m_px_comb / T_SVC), W_PROXY_SVC)
     del pa, px_texts, X_px1_tr, X_px1_te, X_px2_tr, X_px2_te, vp1, vp2, svc_px
 
-# 3. Compass-1 120D Forensic Frontier Scouts (Pre-Saved LR + Live Host HGB)
+# 3. Compass-1 120D Forensic Frontier Scouts (Multi-Regime Augmented HGB + Pre-Saved LR)
 F_120_train = extract_forensic_compass1_120d(tr_texts_list)
 F_120_test = extract_forensic_compass1_120d(te_texts_list)
-f120_tr_dual = np.hstack([F_120_train, group_center(F_120_train, train["prompt_id"].astype(str).values)])
-f120_te_dual = np.hstack([F_120_test, group_center(F_120_test, groups, twin_rows)])
+f120_tr_dual = np.hstack([F_120_train, bessel_group_center(F_120_train, train["prompt_id"].astype(str).values)])
+f120_tr_solo = np.hstack([F_120_train, np.zeros_like(F_120_train)])
+f120_tr_aug = np.vstack([f120_tr_dual, f120_tr_dual, f120_tr_solo])
+y_f120_aug = np.concatenate([y, y, y])
+
+gate_f25 = compute_normalized_twin_gate(eff_sizes, kappa=2.5).astype(np.float32)[:, None]
+f120_te_dual = np.hstack([F_120_test, bessel_group_center(F_120_test, groups, twin_rows) * gate_f25])
 
 f120_te_norm = np.clip(
     (f120_te_dual - apex_st["f120_dual.mean"].float().numpy()) / apex_st["f120_dual.scale"].float().numpy(),
@@ -386,10 +413,10 @@ f120_te_norm = np.clip(
 logits_f120_lr = f120_te_norm @ apex_st["f120_lr.weight"].float().numpy().T + apex_st["f120_lr.bias"].float().numpy()
 hgb_f120 = HistGradientBoostingClassifier(
     max_iter=150, learning_rate=0.05, max_leaf_nodes=15, l2_regularization=5.0, random_state=42
-).fit(f120_tr_dual, y)
+).fit(f120_tr_aug, y_f120_aug)
 probs_f120 = 0.45 * softmax(logits_f120_lr / 2.5) + 0.55 * hgb_f120.predict_proba(f120_te_dual)
 vote("compass1_forensic_120d", probs_f120, W_FORENSIC120)
-del F_120_train, f120_tr_dual, hgb_f120
+del F_120_train, f120_tr_dual, f120_tr_solo, f120_tr_aug, hgb_f120
 gc.collect()
 """
     c4 = {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": _lines(c4_code)}
@@ -431,14 +458,31 @@ if torch.cuda.is_available():
     c5 = {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": _lines(c5_code)}
 
     c6_code = """# ==============================================================================
-# Dual-Titan Zero-Leak MoS Layer-Streaming: Yi-34B (L30) + Mistral Large 2 (123B L44)
-# (+ Auto-Plug-In for Titan 4 Qwen3-Embedding-8B 8-Depth MoS Scar Experts)
+# Dual-Titan Zero-Leak MoS Layer-Streaming + Dual-Scale Bessel Twin Readout
+# (+ Auto-Plug-In for Titan 4 Qwen3-Embedding 8-Depth MoS Scar Experts)
 # ==============================================================================
 mos_devices = [f"cuda:{i}" for i in range(torch.cuda.device_count())] if torch.cuda.is_available() else ["cpu"]
 f120_scaled_half = np.clip(
     (F_120_test - apex_st["f120_scaler.mean"].float().numpy()) / apex_st["f120_scaler.scale"].float().numpy(),
     -6.0, 6.0,
 ).astype(np.float32) * 0.5
+
+def apply_dual_scale_titan_readout(Z_titan, t_pfx, name_pfx, w_plain, w_twin):
+    X_sc = TestTimeSCache(32, 0.15).apply_scache_resonance(np.hstack([Z_titan, f120_scaled_half]), groups, twin_rows)
+    X_p = (X_sc - apex_st[f"{t_pfx}.scaler_plain.mean"].float().numpy()) / apex_st[f"{t_pfx}.scaler_plain.scale"].float().numpy()
+    logits_p = (X_p @ apex_st[f"{t_pfx}.plain.weight"].float().numpy().T + apex_st[f"{t_pfx}.plain.bias"].float().numpy()) / T_TITAN
+    vote(f"{name_pfx}_plain", softmax(logits_p), w_plain)
+
+    if twin_rows.any():
+        X_bc = bessel_group_center(X_sc, groups, twin_rows)
+        X_c18 = (X_bc - apex_st[f"{t_pfx}.scaler_centered.mean"].float().numpy()) / apex_st[f"{t_pfx}.scaler_centered.scale"].float().numpy()
+        lg_c18 = (X_c18 @ apex_st[f"{t_pfx}.centered.weight"].float().numpy().T + apex_st[f"{t_pfx}.centered.bias"].float().numpy()) / T_TITAN
+
+        X_ca = (X_bc - apex_st[f"{t_pfx}.scaler_centered_arena.mean"].float().numpy()) / apex_st[f"{t_pfx}.scaler_centered_arena.scale"].float().numpy()
+        lg_ca = (X_ca @ apex_st[f"{t_pfx}.centered_arena.weight"].float().numpy().T + apex_st[f"{t_pfx}.centered_arena.bias"].float().numpy()) / T_TITAN
+
+        P_twin = (1.0 - alpha_large) * softmax(lg_ca) + alpha_large * softmax(lg_c18)
+        vote(f"{name_pfx}_dual_scale_twin", P_twin[twin_rows], w_twin * twin_gate[twin_rows], rows=twin_rows)
 
 # 1. Titan 2: Yi-34B Golden-Slice L30 (30 Layers, 7,168D + 120D = 7,288D)
 yi_backbone_dir = os.path.dirname(find("model-00001-of-00002.safetensors"))
@@ -452,17 +496,7 @@ Z_yi = extract_mos_nf4_streaming(
     micro_bsz=8, max_tokens_per_dev=60000,
 )
 assert np.isfinite(Z_yi).all(), "Non-finite features in Z_yi"
-
-X_sc_yi = TestTimeSCache(32, 0.15).apply_scache_resonance(np.hstack([Z_yi, f120_scaled_half]), groups, twin_rows)
-X_p_yi = (X_sc_yi - apex_st["t2.scaler_plain.mean"].float().numpy()) / apex_st["t2.scaler_plain.scale"].float().numpy()
-logits_p_yi = (X_p_yi @ apex_st["t2.plain.weight"].float().numpy().T + apex_st["t2.plain.bias"].float().numpy()) / 5.0
-vote("titan2_yi34b_120d_plain", softmax(logits_p_yi), W_T2_PLAIN)
-
-if twin_rows.any():
-    X_c_yi = (group_center(X_sc_yi, groups, twin_rows) - apex_st["t2.scaler_centered.mean"].float().numpy()) / apex_st["t2.scaler_centered.scale"].float().numpy()
-    logits_c_yi = (X_c_yi[twin_rows] @ apex_st["t2.centered.weight"].float().numpy().T + apex_st["t2.centered.bias"].float().numpy()) / 5.0
-    vote("titan2_yi34b_120d_twin", softmax(logits_c_yi), W_T2_TWIN, rows=twin_rows)
-del X_sc_yi, X_p_yi
+apply_dual_scale_titan_readout(Z_yi, "t2", "titan2_yi34b_120d", W_T2_PLAIN, W_T2_TWIN)
 gc.collect()
 if torch.cuda.is_available():
     torch.cuda.empty_cache()
@@ -479,27 +513,20 @@ Z_mistral = extract_mos_nf4_streaming(
     micro_bsz=8, max_tokens_per_dev=60000,
 )
 assert np.isfinite(Z_mistral).all(), "Non-finite features in Z_mistral"
-
-X_sc_m = TestTimeSCache(32, 0.15).apply_scache_resonance(np.hstack([Z_mistral, f120_scaled_half]), groups, twin_rows)
-X_p_m = (X_sc_m - apex_st["t3.scaler_plain.mean"].float().numpy()) / apex_st["t3.scaler_plain.scale"].float().numpy()
-logits_p_m = (X_p_m @ apex_st["t3.plain.weight"].float().numpy().T + apex_st["t3.plain.bias"].float().numpy()) / 5.0
-vote("titan3_mistral123b_120d_plain", softmax(logits_p_m), W_T3_PLAIN)
-
-if twin_rows.any():
-    X_c_m = (group_center(X_sc_m, groups, twin_rows) - apex_st["t3.scaler_centered.mean"].float().numpy()) / apex_st["t3.scaler_centered.scale"].float().numpy()
-    logits_c_m = (X_c_m[twin_rows] @ apex_st["t3.centered.weight"].float().numpy().T + apex_st["t3.centered.bias"].float().numpy()) / 5.0
-    vote("titan3_mistral123b_120d_twin", softmax(logits_c_m), W_T3_TWIN, rows=twin_rows)
-del X_sc_m, X_p_m
+apply_dual_scale_titan_readout(Z_mistral, "t3", "titan3_mistral123b_120d", W_T3_PLAIN, W_T3_TWIN)
 gc.collect()
 if torch.cuda.is_available():
     torch.cuda.empty_cache()
 
-# 3. Optional Auto-Detected Titan 4: Qwen3-Embedding-8B 8-Depth 5-Fold MoS Scar Experts (Milestone 2)
+# 3. Optional Auto-Detected Titan 4: Qwen3-Embedding 8-Depth 5-Fold MoS Scar Experts (Milestone 2)
 t4_scars = sorted(glob.glob(f"{INPUT_DIR}/**/titan4_qwen3_emb_8b_fold*_scars.safetensors", recursive=True))
 t4_metas = sorted(glob.glob(f"{INPUT_DIR}/**/meta_titan4_qwen3_emb_8b.json", recursive=True))
 if t4_scars and t4_metas:
     t4_meta = json.loads(Path(t4_metas[0]).read_text())
-    t4_bb_hits = [p for p in glob.glob(f"{INPUT_DIR}/**/model.safetensors.index.json", recursive=True) if "qwen3emb" in p.lower() or "titan4" in p.lower()]
+    t4_bb_hits = [
+        p for p in sorted(glob.glob(f"{INPUT_DIR}/**/config.json", recursive=True))
+        if any(k in p.lower() for k in ("qwen-3-embedding", "qwen3-embedding", "qwen3emb", "qwen3_emb", "titan4"))
+    ]
     if t4_bb_hits:
         t4_bb_dir = os.path.dirname(t4_bb_hits[0])
         tok_t4 = AutoTokenizer.from_pretrained(t4_bb_dir, use_fast=True)
@@ -521,16 +548,26 @@ if t4_scars and t4_metas:
                 s_k = F.linear(z_doc, st_f["head.scache_key.weight"].float())
                 z_sc = z_doc.clone()
                 z_ct = torch.zeros_like(z_doc)
-                for g_id in np.unique(groups[twin_rows]) if twin_rows.any() else []:
+                t_gate = torch.zeros((len(test), 1), dtype=torch.float32)
+                for g_id in (np.unique(groups[twin_rows]) if twin_rows.any() else []):
                     m_g = torch.from_numpy(groups == g_id)
-                    if int(m_g.sum()) > 1:
-                        dz = s_k[m_g] - s_k[m_g].mean(0, keepdim=True)
-                        w_s = (dz.T @ dz) / float(m_g.sum())
-                        z_sc[m_g] = z_doc[m_g] + float(st_f["head.scache_scale"].item()) * ((dz @ w_s.T) @ st_f["head.scache_key.weight"].float())
-                        z_ct[m_g] = z_sc[m_g] - z_sc[m_g].mean(0, keepdim=True)
+                    cnt = int(m_g.sum().item())
+                    if cnt > 1:
+                        bessel = math.sqrt(cnt / float(cnt - 1))
+                        gm = (cnt - 1.0) / (cnt - 1.0 + 3.0)
+                        dz = (s_k[m_g] - s_k[m_g].mean(0, keepdim=True)) * bessel
+                        w_s = (dz.T @ dz) / float(cnt)
+                        z_sc[m_g] = z_doc[m_g] + (float(st_f["head.scache_scale"].item()) * gm) * ((dz @ w_s.T) @ st_f["head.scache_key.weight"].float())
+                        t_gate[m_g, 0] = 0.55 * gm
+                for g_id in (np.unique(groups[twin_rows]) if twin_rows.any() else []):
+                    m_g = torch.from_numpy(groups == g_id)
+                    cnt = int(m_g.sum().item())
+                    if cnt > 1:
+                        bessel = math.sqrt(cnt / float(cnt - 1))
+                        z_ct[m_g] = (z_sc[m_g] - z_sc[m_g].mean(0, keepdim=True)) * bessel
                 lp = F.linear(F.layer_norm(z_sc, (z_sc.shape[-1],), st_f["head.plain_norm.weight"].float(), st_f["head.plain_norm.bias"].float()), st_f["head.plain_head.weight"].float(), st_f["head.plain_head.bias"].float())
                 lc = F.linear(F.layer_norm(z_ct, (z_ct.shape[-1],), st_f["head.twin_norm.weight"].float(), st_f["head.twin_norm.bias"].float()), st_f["head.twin_head.weight"].float(), st_f["head.twin_head.bias"].float())
-                t4_probs_acc += (0.45 * F.softmax(lp, dim=-1) + 0.55 * F.softmax(lc, dim=-1)).numpy() / len(t4_scars)
+                t4_probs_acc += ((1.0 - t_gate) * F.softmax(lp, dim=-1) + t_gate * F.softmax(lc, dim=-1)).numpy() / len(t4_scars)
             del st_f, Z_w
         vote("titan4_qwen3emb_8depth_mos_scars", t4_probs_acc, 1.80)
 """
@@ -538,7 +575,7 @@ if t4_scars and t4_metas:
 
     c7_code = """# ==============================================================================
 # System One Collective Inference:
-# UniversalS1ReflexiveMLP + SCache O(1) Bayesian Shared-Prompt + Cavity-EM + S2 Verifiers
+# UniversalS1ReflexiveMLP (625D) + SCache O(1) Woodbury/Cavity Bayesian Head + Cavity-EM + S2
 # ==============================================================================
 from scipy.special import logsumexp
 
@@ -551,18 +588,22 @@ Z_pca = ((X_cat_scb - apex_st["scb.pca.mean"].float().numpy()) @ apex_st["scb.pc
 del Z_yi, Z_mistral, a_t2, b_t3, c_f, X_cat_scb
 gc.collect()
 
-# 2. UniversalS1ReflexiveMLP 3-Seed Ensemble (624D -> 320D Residual LayerNorm SiLU -> 18)
-X_s1 = np.hstack([Z_pca, group_center(Z_pca, groups, twin_rows), f120_te_dual]).astype(np.float32)
-X_s1_scaled = np.clip(
-    (X_s1 - apex_st["s1.scaler.mean"].float().numpy()) / apex_st["s1.scaler.scale"].float().numpy(),
-    -6.0, 6.0,
-).astype(np.float32)
+# 2. UniversalS1ReflexiveMLP 3-Seed Multi-Regime Ensemble (625D -> 320D Residual LayerNorm SiLU -> 18)
+X_s1 = np.hstack([
+    Z_pca,
+    bessel_group_center(Z_pca, groups, twin_rows) * gate_f25,
+    F_120_test,
+    bessel_group_center(F_120_test, groups, twin_rows) * gate_f25,
+    gate_f25,
+]).astype(np.float32)
 
 with torch.no_grad():
-    xt_s1 = torch.from_numpy(X_s1_scaled)
     p_s1_acc = np.zeros((len(test), K), dtype=np.float64)
     for s_idx in range(3):
         pfx = f"s1.mlp{s_idx}."
+        sc_m = apex_st[pfx + "scaler.mean"].float().numpy()
+        sc_s = apex_st[pfx + "scaler.scale"].float().numpy()
+        xt_s1 = torch.from_numpy(np.clip((X_s1 - sc_m) / sc_s, -6.0, 6.0).astype(np.float32))
         h = F.layer_norm(xt_s1, (xt_s1.shape[-1],), apex_st[pfx + "front_ln.weight"].float(), apex_st[pfx + "front_ln.bias"].float())
         h = F.linear(h, apex_st[pfx + "fc_in.weight"].float(), apex_st[pfx + "fc_in.bias"].float())
         h = F.silu(F.layer_norm(h, (h.shape[-1],), apex_st[pfx + "ln1.weight"].float(), apex_st[pfx + "ln1.bias"].float()))
@@ -573,46 +614,94 @@ with torch.no_grad():
         p_s1_acc += F.softmax(lg / 1.5, dim=-1).numpy() / 3.0
 vote("universal_s1_reflex_mlp", p_s1_acc, W_S1_MLP)
 
-# 3. SCache O(1) Bayesian Cavity Shared-Prompt Generative Head (< 200 KB fixed state!)
+# 3. SCache O(1) Exact Pair/Triple Woodbury + Cavity Bayesian Shared-Prompt Head (< 200 KB state!)
 Z_d64 = Z_pca.astype(np.float64)
 mu_c = apex_st["scb.mu_c"].float().numpy().astype(np.float64)
 cov_eps = apex_st["scb.cov_eps"].float().numpy().astype(np.float64)
 cov_prompt = apex_st["scb.cov_prompt"].float().numpy().astype(np.float64)
 prec_eps = apex_st["scb.prec_eps"].float().numpy().astype(np.float64)
 prec_prompt = apex_st["scb.prec_prompt"].float().numpy().astype(np.float64)
-d_scb = Z_d64.shape[1]
+scb_temp = 2.2
+same_pen = float(np.log(0.15))
 
-wiener_ops = {}
-def _get_scb_ops(m_other):
+prec0 = np.linalg.inv(cov_prompt + cov_eps)
+diff0 = Z_d64[:, None, :] - mu_c[None, :, :]
+ll0 = -0.5 * np.einsum("nkd,de,nke->nk", diff0, prec0, diff0) / scb_temp
+u_all = -0.5 * np.einsum("nkd,de,nke->nk", diff0, prec_eps, diff0) / scb_temp
+
+prior_cur = softmax(LOGIT)
+prior_log = np.log(np.clip(prior_cur, 1e-9, 1.0))
+prior_log = prior_log - logsumexp(prior_log, axis=1, keepdims=True)
+
+woodbury_L, wiener_ops = {}, {}
+def _get_woodbury_L(m):
+    if m not in woodbury_L:
+        post_cov = np.linalg.inv(prec_prompt + float(m) * prec_eps)
+        ev, eu = np.linalg.eigh(prec_eps @ post_cov @ prec_eps)
+        woodbury_L[m] = eu * np.sqrt(np.maximum(ev, 0.0) / scb_temp)
+    return woodbury_L[m]
+
+def _get_wiener(m_other):
     if m_other not in wiener_ops:
-        if m_other <= 0:
-            wiener_ops[m_other] = (np.zeros((d_scb, d_scb)), np.linalg.inv(cov_prompt + cov_eps))
-        else:
-            post_cov = np.linalg.inv(prec_prompt + float(m_other) * prec_eps)
-            wiener_ops[m_other] = (post_cov @ prec_eps, np.linalg.inv(cov_eps + post_cov))
+        post_cov = np.linalg.inv(prec_prompt + float(m_other) * prec_eps)
+        wiener_ops[m_other] = (post_cov @ prec_eps, np.linalg.inv(cov_eps + post_cov))
     return wiener_ops[m_other]
 
-_, prec0 = _get_scb_ops(0)
-diff0 = Z_d64[:, None, :] - mu_c[None, :, :]
-ll0 = -0.5 * np.einsum("nkd,de,nke->nk", diff0, prec0, diff0) / 2.2
-prior_cur = softmax(LOGIT)
-Q_scb = 0.65 * prior_cur + 0.35 * softmax(ll0)
 ll_scb = ll0.copy()
-for _ in range(3):
-    res_scb = Z_d64 - (Q_scb @ mu_c)
-    for g in np.unique(groups):
-        idx = np.where(groups == g)[0]
-        if len(idx) <= 1:
-            ll_scb[idx] = ll0[idx]
-        else:
-            W_eta, prec_m = _get_scb_ops(len(idx) - 1)
+large_groups = []
+for g in np.unique(groups):
+    idx = np.where(groups == g)[0]
+    m = len(idx)
+    if m <= 1 or not twin_rows[idx[0]]:
+        ll_scb[idx] = ll0[idx]
+    elif m == 2:
+        i0, i1 = idx[0], idx[1]
+        L2 = _get_woodbury_L(2)
+        v0, v1 = diff0[i0] @ L2, diff0[i1] @ L2
+        s0 = u_all[i0] + 0.5 * np.sum(v0 * v0, axis=1)
+        s1 = u_all[i1] + 0.5 * np.sum(v1 * v1, axis=1)
+        coup = v0 @ v1.T
+        J0 = s0[:, None] + (s1 + 0.75 * prior_log[i1])[None, :] + coup
+        np.fill_diagonal(J0, np.diag(J0) + same_pen)
+        J1 = (s0 + 0.75 * prior_log[i0])[:, None] + s1[None, :] + coup
+        np.fill_diagonal(J1, np.diag(J1) + same_pen)
+        ll_scb[i0] = logsumexp(J0, axis=1)
+        ll_scb[i1] = logsumexp(J1, axis=0)
+    elif m == 3:
+        i0, i1, i2 = idx[0], idx[1], idx[2]
+        L3 = _get_woodbury_L(3)
+        v0 = diff0[i0] @ L3
+        v1 = diff0[i1] @ L3
+        v2 = diff0[i2] @ L3
+        s0 = u_all[i0] + 0.5 * np.sum(v0 * v0, axis=1)
+        s1 = u_all[i1] + 0.5 * np.sum(v1 * v1, axis=1)
+        s2 = u_all[i2] + 0.5 * np.sum(v2 * v2, axis=1)
+        c01, c02, c12 = v0 @ v1.T, v0 @ v2.T, v1 @ v2.T
+        ep = np.eye(K, dtype=np.float64) * same_pen
+        b3 = c01[:, :, None] + c02[:, None, :] + c12[None, :, :] + ep[:, :, None] + ep[:, None, :] + ep[None, :, :]
+        t0 = b3 + s0[:, None, None] + (s1 + 0.75 * prior_log[i1])[None, :, None] + (s2 + 0.75 * prior_log[i2])[None, None, :]
+        t1 = b3 + (s0 + 0.75 * prior_log[i0])[:, None, None] + s1[None, :, None] + (s2 + 0.75 * prior_log[i2])[None, None, :]
+        t2 = b3 + (s0 + 0.75 * prior_log[i0])[:, None, None] + (s1 + 0.75 * prior_log[i1])[None, :, None] + s2[None, None, :]
+        ll_scb[i0] = logsumexp(t0, axis=(1, 2))
+        ll_scb[i1] = logsumexp(t1, axis=(0, 2))
+        ll_scb[i2] = logsumexp(t2, axis=(0, 1))
+    else:
+        large_groups.append(idx)
+
+if large_groups:
+    Q_scb = 0.65 * prior_cur + 0.35 * softmax(ll0)
+    for _ in range(3):
+        res_scb = Z_d64 - (Q_scb @ mu_c)
+        for idx in large_groups:
+            W_eta, prec_m = _get_wiener(len(idx) - 1)
             cav_sum = res_scb[idx].sum(axis=0, keepdims=True) - res_scb[idx]
             z_clean = Z_d64[idx] - (cav_sum @ W_eta.T)
             df_g = z_clean[:, None, :] - mu_c[None, :, :]
-            ll_scb[idx] = -0.5 * np.einsum("mkd,de,mke->mk", df_g, prec_m, df_g) / 2.2
-    Q_scb = 0.50 * prior_cur + 0.50 * softmax(ll_scb)
+            ll_scb[idx] = -0.5 * np.einsum("mkd,de,mke->mk", df_g, prec_m, df_g) / scb_temp
+        Q_scb = 0.50 * prior_cur + 0.50 * softmax(ll_scb)
 
-vote("scache_o1_bayesian_shared_prompt", softmax(ll_scb), W_SCACHE_BAYES)
+ll_scb = ll_scb - logsumexp(ll_scb, axis=1, keepdims=True)
+vote("scache_o1_woodbury_bayesian_shared_prompt", softmax(ll_scb), W_SCACHE_BAYES)
 
 # 4. Similarity-Weighted Cavity-EM Sibling Repulsion
 assert np.isfinite(LOGIT).all(), "Nonfinite ensemble logits"
@@ -665,15 +754,16 @@ if S2_BETA > 1e-6:
                 P[np.ix_(sub_u, members)] = cm_a * fused_c
         P = P / P.sum(axis=1, keepdims=True)
 
-# 6. Damped Soft Sinkhorn Marginal Calibration
-def sinkhorn_damped(P_in, target_mix=0.50, iters=300):
-    if target_mix <= 1e-6 or len(P_in) < K:
+# 6. Size-Scaled Damped Soft Sinkhorn Marginal Calibration
+def sinkhorn_damped(P_in, target_mix=0.55, iters=300):
+    if target_mix <= 1e-6 or len(P_in) < 50:
         return P_in / P_in.sum(1, keepdims=True)
     P_s = np.clip(P_in, 1e-12, 1.0)
     P_s = P_s / P_s.sum(1, keepdims=True)
+    eff_mix = target_mix * min(1.0, len(P_s) / 360.0)
     emp = P_s.sum(0)
     unif = np.full(K, len(P_s) / float(K))
-    target = np.maximum((1.0 - target_mix) * emp + target_mix * unif, 1e-6)
+    target = np.maximum((1.0 - eff_mix) * emp + eff_mix * unif, 1e-6)
     c = np.ones(K, dtype=np.float64)
     for _ in range(iters):
         R = P_s * c
@@ -691,7 +781,7 @@ sub = pd.DataFrame({"id": test["id"].astype(str), "model": np.array(LABELS)[P.ar
 assert len(sub) == len(test) and sub["model"].isin(LABELS).all()
 sub.to_parquet("submission.parquet", index=False)
 print(sub["model"].value_counts().to_string())
-print(f"System One Apex V33 complete in {time.time() - T0:.1f}s!", flush=True)
+print(f"System One Apex V34 complete in {time.time() - T0:.1f}s!", flush=True)
 """
     c7 = {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": _lines(c7_code)}
 

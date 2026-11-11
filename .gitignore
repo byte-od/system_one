@@ -71,3 +71,4 @@ models/**/*.safetensors.part
 .DS_Store
 competitions/**/test_run/
 competitions/**/scratch/
+competitions/**/output_v*/
