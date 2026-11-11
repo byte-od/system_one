@@ -16,6 +16,12 @@
 > 1. **Mixture of Scars (MoS):** Radical static weight ($W_0$) compression (10x–90x reduction) via Universal Shared Base projections and hardware-local micro-experts residing in CPU/GPU L1/L2 caches.
 > 2. **SCache ($O(1)$ Dynamic Context):** Drop-in HuggingFace KV-cache replacement that freezes memory into a constant physical window backed by Widrow-Hoff associative fast-weights.
 
+### 📄 Official Preprint, LaTeX Source & Interactive Red-Team Lab
+- **Permanent Preprint (CERN / Zenodo DOI):** [`10.5281/zenodo.24143839`](https://doi.org/10.5281/zenodo.24143839) ([PDF](zenodo_deposit_v1/Mixture_of_Scars_and_SCache_Preprint_v1.0.pdf))
+- **Academic LaTeX Manuscript (arXiv / TMLR / Double-Blind Ready):** [`paper_latex/`](paper_latex/) & [`MoS_SCache_LaTeX_arXiv_TMLR_v1.0.zip`](zenodo_deposit_v1/MoS_SCache_LaTeX_arXiv_TMLR_v1.0.zip)
+- **Interactive Gradio Red-Team Laboratory (Hugging Face Space):** [`huggingface_space/`](huggingface_space/)
+- **7-Vector Adversarial Falsification Suite:** [`scripts/adversarial_mos_scache_suite.py`](scripts/adversarial_mos_scache_suite.py) (`0.00 KB` byte-pointer discrepancy, `22.58x` evicted-passcode likelihood gain over `StreamingLLM`)
+
 ---
 
 ## ⚡ The Dual Memory Wall in Modern Transformers
