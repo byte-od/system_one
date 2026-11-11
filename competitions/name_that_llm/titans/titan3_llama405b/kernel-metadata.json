@@ -1,0 +1,19 @@
+{
+  "id": "thetod/titan3-llama-3-1-405b-slices-trainer",
+  "title": "Titan 3 - Llama 3.1 405B MoS Slices Trainer",
+  "code_file": "extract_and_train_titan3.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "kernel_sources": [],
+  "competition_sources": [
+    "name-that-llm"
+  ],
+  "dataset_sources": [],
+  "model_sources": [
+    "metaresearch/llama-3.1"
+  ]
+}

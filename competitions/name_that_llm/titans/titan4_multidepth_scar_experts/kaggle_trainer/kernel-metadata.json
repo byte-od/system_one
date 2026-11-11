@@ -1,0 +1,22 @@
+{
+  "id": "thetod/ntl-titan4-qwen3emb-mos-scar-trainer",
+  "title": "NTL Titan4 Qwen3Emb MoS Scar Trainer",
+  "code_file": "train_titan4_kaggle_2xt4.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "nishantdahal/ntl-handwriting-blend",
+    "prvsiyan/prvsiyans-extended-name-that-llm-dataset"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [
+    "name-that-llm"
+  ],
+  "model_sources": [
+    "qwen-lm/qwen-3-embedding/Transformers/4b/1"
+  ]
+}

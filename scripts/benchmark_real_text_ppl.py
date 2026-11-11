@@ -78,7 +78,7 @@ def compute_nll_and_ppl(
     if cache_type == "vanilla":
         cache = DynamicCache()
     elif cache_type == "scache":
-        cache = SCacheDynamicCache(window_size=window_size, num_sink_tokens=num_sinks, num_slots=8)
+        cache = SCacheDynamicCache(window_size=window_size, num_sink_tokens=num_sinks, num_slots=8, project_slots=True)
     elif cache_type == "streaming_llm":
         # StreamingLLM é equivalente a SCache sem gravação associativa (apenas buffer circular)
         cache = SCacheDynamicCache(window_size=window_size, num_sink_tokens=num_sinks, num_slots=0)

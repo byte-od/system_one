@@ -1,0 +1,41 @@
+[{"stream_name":"stderr","time":8.14399495,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":8.144059319,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":8.14406402,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":8.144066752,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stderr","time":8.769427966,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":8.769455293,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":8.7694599,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":8.769465499,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stdout","time":21.744854124,"data":"train=(2699, 4) | test=(3, 2) | gpus=2 | OOF=65.87%\n"}
+,{"stream_name":"stdout","time":28.814590642,"data":"svc_open_pool: weight 1.0441, done after 11.0s\n"}
+,{"stream_name":"stdout","time":28.902744062,"data":"topic clusters (size-capped \u003c=18): 3 alone, 0 in clusters of 2..18\n"}
+,{"stream_name":"stdout","time":40.659832135,"data":"svc_host_exact: weight 0.1584, done after 23.0s\n"}
+,{"stream_name":"stdout","time":180.549071571,"data":"svc_proxy_clean_8view: weight 0.5403, done after 162.9s\n"}
+,{"stream_name":"stdout","time":201.518799035,"data":"compass1_forensic_120d: weight 0.1583, done after 183.9s\n"}
+,{"stream_name":"stdout","time":229.855079111,"data":"deberta_v3_large: weight 0.2800, done after 212.2s\n"}
+,{"stream_name":"stdout","time":373.920373623,"data":"  [MoS Stream - Titan2-Yi34B] Macro 1/1 | Layer 10/30 | Elapsed 142.3s | GPU0 Post-Layer Alloc 0.03 GiB\n"}
+,{"stream_name":"stdout","time":453.433463811,"data":"  [MoS Stream - Titan2-Yi34B] Macro 1/1 | Layer 20/30 | Elapsed 221.8s | GPU0 Post-Layer Alloc 0.03 GiB\n"}
+,{"stream_name":"stdout","time":492.769331961,"data":"  [MoS Stream - Titan2-Yi34B] Macro 1/1 | Layer 30/30 | Elapsed 261.1s | GPU0 Post-Layer Alloc 0.03 GiB\n"}
+,{"stream_name":"stdout","time":493.177558396,"data":"titan2_yi34b_120d_plain: weight 0.0188, done after 475.5s\n"}
+,{"stream_name":"stdout","time":670.107376836,"data":"  [MoS Stream - Titan3-Mistral123B] Macro 1/1 | Layer 10/44 | Elapsed 175.4s | GPU0 Post-Layer Alloc 0.04 GiB\n"}
+,{"stream_name":"stdout","time":747.829574739,"data":"  [MoS Stream - Titan3-Mistral123B] Macro 1/1 | Layer 20/44 | Elapsed 253.0s | GPU0 Post-Layer Alloc 0.04 GiB\n"}
+,{"stream_name":"stdout","time":830.515910558,"data":"  [MoS Stream - Titan3-Mistral123B] Macro 1/1 | Layer 30/44 | Elapsed 335.8s | GPU0 Post-Layer Alloc 0.04 GiB\n"}
+,{"stream_name":"stdout","time":927.418575143,"data":"  [MoS Stream - Titan3-Mistral123B] Macro 1/1 | Layer 40/44 | Elapsed 432.4s | GPU0 Post-Layer Alloc 0.04 GiB\n"}
+,{"stream_name":"stdout","time":956.204085965,"data":"  [MoS Stream - Titan3-Mistral123B] Macro 1/1 | Layer 44/44 | Elapsed 461.5s | GPU0 Post-Layer Alloc 0.04 GiB\n"}
+,{"stream_name":"stdout","time":956.800680683,"data":"titan3_mistral123b_120d_plain: weight 0.0342, done after 938.9s\n"}
+,{"stream_name":"stdout","time":974.408560091,"data":"universal_s1_reflex_mlp: weight 0.0985, done after 956.8s\n"}
+,{"stream_name":"stdout","time":974.760278038,"data":"scache_o1_bayesian_shared_prompt: weight 0.2383, done after 957.1s\n"}
+,{"stream_name":"stdout","time":974.951418902,"data":"model\n"}
+,{"stream_name":"stdout","time":974.951461366,"data":"claude-opus-4-8           1\n"}
+,{"stream_name":"stdout","time":974.95147966,"data":"gpt-5.5                   1\n"}
+,{"stream_name":"stdout","time":974.951483545,"data":"gemini-3.1-pro-preview    1\n"}
+,{"stream_name":"stdout","time":974.951486839,"data":"System One Apex V33 complete in 957.3s!\n"}
+,{"stream_name":"stderr","time":981.302762091,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":981.302823971,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":981.502368559,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":981.502393646,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":982.363683873,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to notebook\n"}
+,{"stream_name":"stderr","time":982.450509569,"data":"[NbConvertApp] Writing 98667 bytes to __notebook__.ipynb\n"}
+,{"stream_name":"stderr","time":985.08666855,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to html\n"}
+,{"stream_name":"stderr","time":985.972846516,"data":"[NbConvertApp] Writing 651795 bytes to __results__.html\n"}
+]

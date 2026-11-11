@@ -1,0 +1,46 @@
+{
+  "architecture": "Titan1_Qwen72B_MoS_Layer40",
+  "golden_slice": "Layers 1 -> 40 (Half Depth)",
+  "features_dim": 8220,
+  "hidden_dim": 8192,
+  "style_dim": 28,
+  "labels": [
+    "claude-fable-5",
+    "claude-opus-4-6",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "gemini-3.1-pro-preview",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+    "gemini-3.8-flash",
+    "glm-5.3",
+    "glm-5.3-flash",
+    "gpt-5.5",
+    "gpt-5.6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-6-astra",
+    "kimi-k3",
+    "qwen3.8-max"
+  ],
+  "overall_oof_raw_acc": 0.2045201926639496,
+  "overall_oof_sinkhorn_acc": 0.20822526861800666,
+  "overall_oof_logloss": 3.2210189643519826,
+  "fold_accs": [
+    0.22263450834879406,
+    0.21851851851851853,
+    0.19074074074074074,
+    0.17037037037037037,
+    0.22037037037037038
+  ],
+  "fold_sinkhorn_accs": [
+    0.22263450834879406,
+    0.22037037037037038,
+    0.19814814814814816,
+    0.17777777777777778,
+    0.23148148148148148
+  ],
+  "train_acc": 0.8206743238236384,
+  "created_at": "2026-11-09 21:18:35 UTC"
+}

@@ -1,0 +1,145 @@
+[{"stream_name":"stderr","time":7.8149514799999995,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":7.815000073,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":7.815004916,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":7.815007924,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stderr","time":8.439506644,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":8.439536188,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":8.439541336,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":8.439566448,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stdout","time":17.492711485,"data":"Installing offline bitsandbytes from /kaggle/input/ntl-short-trace-offline-bnb-0502/bitsandbytes-0.50.2-py3-none-manylinux_2_24_x86_64.whl...\n"}
+,{"stream_name":"stdout","time":22.530319628,"data":"train (2699, 4) test (3, 2) gpus 2\n"}
+,{"stream_name":"stdout","time":29.672875519,"data":"svc: weight 1.0, done after 13s\n"}
+,{"stream_name":"stdout","time":29.75088271,"data":"topic clusters: 3 passages alone, 0 in clusters of 2 to 18\n"}
+,{"stream_name":"stdout","time":57.755615957,"data":"deberta: weight 0.25, done after 41s\n"}
+,{"stream_name":"stdout","time":58.536235501,"data":"Loading Titan 3 Head from /kaggle/input/name-that-llm-titan3-mistral-head/head_tricompass_mistral_large_123b_l44.safetensors...\n"}
+,{"stream_name":"stdout","time":58.896532491,"data":"Loading Titan 3 123B 44-Layer Backbone from /kaggle/input/name-that-llm-titan3-mistral-backbone...\n"}
+,{"stream_name":"stdout","time":59.466959548,"data":"Loading Titan 3 with BitsAndBytes 4-bit (NF4)...\n"}
+,{"stream_name":"stderr","time":59.687833364,"data":"/usr/local/lib/python3.13/dist-packages/transformers/quantizers/auto.py:279: UserWarning: You passed `quantization_config` or equivalent parameters to `from_pretrained` but the model you're loading already has a `quantization_config` attribute. The `quantization_config` from the model will be used.\n"}
+,{"stream_name":"stderr","time":59.687860247,"data":"  warnings.warn(warning_msg)\n"}
+,{"stream_name":"stderr","time":59.687866201,"data":"\n"}
+,{"stream_name":"stderr","time":59.687870646,"data":"/usr/local/lib/python3.13/dist-packages/transformers/quantizers/auto.py:279: UserWarning: You passed `quantization_config` or equivalent parameters to `from_pretrained` but the model you're loading already has a `quantization_config` attribute. The `quantization_config` from the model will be used.\n"}
+,{"stream_name":"stderr","time":59.687876244,"data":"  warnings.warn(warning_msg)\n"}
+,{"stream_name":"stdout","time":63.33822732,"data":"BitsAndBytes 4bit failed (Some modules are dispatched on the CPU or the disk. Make sure you have enough GPU RAM to fit the quantized model. If you want to dispatch the model on the CPU or the disk while keeping these modules in 32-bit, you need to set `llm_int8_enable_fp32_cpu_offload=True` and pass a custom `device_map` to `from_pretrained`. Check https://huggingface.co/docs/transformers/main/en/main_classes/quantization#offload-between-cpu-and-gpu for more details. ), trying standard auto offload with FP32 CPU offload enabled...\n"}
+,{"stream_name":"stderr","time":63.342215355,"data":"[transformers] `torch_dtype` is deprecated! Use `dtype` instead!\n"}
+,{"stream_name":"stderr","time":63.342238673,"data":"\n"}
+,{"stream_name":"stderr","time":63.342363183,"data":"[transformers] `torch_dtype` is deprecated! Use `dtype` instead!\n"}
+,{"stream_name":"stdout","time":63.347073679,"data":"Warning: Titan 3 evaluation bypassed: MistralModel.__init__() got an unexpected keyword argument 'llm_int8_enable_fp32_cpu_offload'\n"}
+,{"stream_name":"stderr","time":63.353563565,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":63.353581339,"data":"  File \"/tmp/ipykernel_24/867486611.py\", line 29, in \u003ccell line: 0\u003e\n"}
+,{"stream_name":"stderr","time":63.353587307,"data":"    model_mistral = AutoModel.from_pretrained(\n"}
+,{"stream_name":"stderr","time":63.353591554,"data":"                    ~~~~~~~~~~~~~~~~~~~~~~~~~^\n"}
+,{"stream_name":"stderr","time":63.353595453,"data":"        mistral_backbone_dir,\n"}
+,{"stream_name":"stderr","time":63.353599203,"data":"        ^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.353603213,"data":"    ...\u003c2 lines\u003e...\n"}
+,{"stream_name":"stderr","time":63.353607213,"data":"        low_cpu_mem_usage=True\n"}
+,{"stream_name":"stderr","time":63.353611397,"data":"        ^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.353615544,"data":"    ).eval()\n"}
+,{"stream_name":"stderr","time":63.353619247,"data":"    ^\n"}
+,{"stream_name":"stderr","time":63.353623271000004,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/models/auto/auto_factory.py\", line 411, in from_pretrained\n"}
+,{"stream_name":"stderr","time":63.353627636,"data":"    return model_class.from_pretrained(\n"}
+,{"stream_name":"stderr","time":63.353631537,"data":"           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^\n"}
+,{"stream_name":"stderr","time":63.353635565,"data":"        pretrained_model_name_or_path, *model_args, config=config, **hub_kwargs, **kwargs\n"}
+,{"stream_name":"stderr","time":63.353639911,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.353644564,"data":"    )\n"}
+,{"stream_name":"stderr","time":63.353649022,"data":"    ^\n"}
+,{"stream_name":"stderr","time":63.353652756,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/modeling_utils.py\", line 4327, in from_pretrained\n"}
+,{"stream_name":"stderr","time":63.353657055,"data":"    device_map = _get_device_map(model, device_map, max_memory, hf_quantizer)\n"}
+,{"stream_name":"stderr","time":63.353661226,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/integrations/accelerate.py\", line 374, in _get_device_map\n"}
+,{"stream_name":"stderr","time":63.353665898,"data":"    hf_quantizer.validate_environment(device_map=device_map)\n"}
+,{"stream_name":"stderr","time":63.353670006,"data":"    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.353674016,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/quantizers/quantizer_bnb_4bit.py\", line 74, in validate_environment\n"}
+,{"stream_name":"stderr","time":63.353678676,"data":"    raise ValueError(\n"}
+,{"stream_name":"stderr","time":63.353682437,"data":"    ...\u003c6 lines\u003e...\n"}
+,{"stream_name":"stderr","time":63.353686507,"data":"    )\n"}
+,{"stream_name":"stderr","time":63.35369049,"data":"ValueError: Some modules are dispatched on the CPU or the disk. Make sure you have enough GPU RAM to fit the quantized model. If you want to dispatch the model on the CPU or the disk while keeping these modules in 32-bit, you need to set `llm_int8_enable_fp32_cpu_offload=True` and pass a custom `device_map` to `from_pretrained`. Check https://huggingface.co/docs/transformers/main/en/main_classes/quantization#offload-between-cpu-and-gpu for more details. \n"}
+,{"stream_name":"stderr","time":63.353705881,"data":"\n"}
+,{"stream_name":"stderr","time":63.35370995,"data":"During handling of the above exception, another exception occurred:\n"}
+,{"stream_name":"stderr","time":63.353713993,"data":"\n"}
+,{"stream_name":"stderr","time":63.353717746,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":63.353721663,"data":"  File \"/tmp/ipykernel_24/867486611.py\", line 37, in \u003ccell line: 0\u003e\n"}
+,{"stream_name":"stderr","time":63.353726167,"data":"    model_mistral = AutoModel.from_pretrained(\n"}
+,{"stream_name":"stderr","time":63.35373156,"data":"                    ~~~~~~~~~~~~~~~~~~~~~~~~~^\n"}
+,{"stream_name":"stderr","time":63.353735742,"data":"        mistral_backbone_dir,\n"}
+,{"stream_name":"stderr","time":63.353739648,"data":"        ^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.353743497,"data":"    ...\u003c4 lines\u003e...\n"}
+,{"stream_name":"stderr","time":63.353747564,"data":"        low_cpu_mem_usage=True\n"}
+,{"stream_name":"stderr","time":63.353751519,"data":"        ^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.353755465,"data":"    ).eval()\n"}
+,{"stream_name":"stderr","time":63.353759368,"data":"    ^\n"}
+,{"stream_name":"stderr","time":63.353763152,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/models/auto/auto_factory.py\", line 411, in from_pretrained\n"}
+,{"stream_name":"stderr","time":63.353767113,"data":"    return model_class.from_pretrained(\n"}
+,{"stream_name":"stderr","time":63.353770974,"data":"           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^\n"}
+,{"stream_name":"stderr","time":63.353774895,"data":"        pretrained_model_name_or_path, *model_args, config=config, **hub_kwargs, **kwargs\n"}
+,{"stream_name":"stderr","time":63.353778948,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.353783053,"data":"    )\n"}
+,{"stream_name":"stderr","time":63.35378685,"data":"    ^\n"}
+,{"stream_name":"stderr","time":63.353790599,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/modeling_utils.py\", line 4300, in from_pretrained\n"}
+,{"stream_name":"stderr","time":63.353794796,"data":"    model = cls(config, *model_args, **model_kwargs)\n"}
+,{"stream_name":"stderr","time":63.353798577,"data":"TypeError: MistralModel.__init__() got an unexpected keyword argument 'llm_int8_enable_fp32_cpu_offload'\n"}
+,{"stream_name":"stderr","time":63.353802234,"data":"\n"}
+,{"stream_name":"stderr","time":63.353805688,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":63.353810111,"data":"  File \"/tmp/ipykernel_24/867486611.py\", line 29, in \u003ccell line: 0\u003e\n"}
+,{"stream_name":"stderr","time":63.353815184,"data":"    model_mistral = AutoModel.from_pretrained(\n"}
+,{"stream_name":"stderr","time":63.353819079,"data":"                    ~~~~~~~~~~~~~~~~~~~~~~~~~^\n"}
+,{"stream_name":"stderr","time":63.353823098,"data":"        mistral_backbone_dir,\n"}
+,{"stream_name":"stderr","time":63.353826688,"data":"        ^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.353830274,"data":"    ...\u003c2 lines\u003e...\n"}
+,{"stream_name":"stderr","time":63.353834126,"data":"        low_cpu_mem_usage=True\n"}
+,{"stream_name":"stderr","time":63.353838,"data":"        ^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.353841827,"data":"    ).eval()\n"}
+,{"stream_name":"stderr","time":63.353845728,"data":"    ^\n"}
+,{"stream_name":"stderr","time":63.353855123,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/models/auto/auto_factory.py\", line 411, in from_pretrained\n"}
+,{"stream_name":"stderr","time":63.353859772,"data":"    return model_class.from_pretrained(\n"}
+,{"stream_name":"stderr","time":63.353864368,"data":"           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^\n"}
+,{"stream_name":"stderr","time":63.353868737,"data":"        pretrained_model_name_or_path, *model_args, config=config, **hub_kwargs, **kwargs\n"}
+,{"stream_name":"stderr","time":63.353873539,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.35388092,"data":"    )\n"}
+,{"stream_name":"stderr","time":63.353885288,"data":"    ^\n"}
+,{"stream_name":"stderr","time":63.353889271,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/modeling_utils.py\", line 4327, in from_pretrained\n"}
+,{"stream_name":"stderr","time":63.353893479,"data":"    device_map = _get_device_map(model, device_map, max_memory, hf_quantizer)\n"}
+,{"stream_name":"stderr","time":63.35389753,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/integrations/accelerate.py\", line 374, in _get_device_map\n"}
+,{"stream_name":"stderr","time":63.353901778,"data":"    hf_quantizer.validate_environment(device_map=device_map)\n"}
+,{"stream_name":"stderr","time":63.353905688,"data":"    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.353910504,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/quantizers/quantizer_bnb_4bit.py\", line 74, in validate_environment\n"}
+,{"stream_name":"stderr","time":63.353914985,"data":"    raise ValueError(\n"}
+,{"stream_name":"stderr","time":63.353918677,"data":"    ...\u003c6 lines\u003e...\n"}
+,{"stream_name":"stderr","time":63.353922554,"data":"    )\n"}
+,{"stream_name":"stderr","time":63.353926916,"data":"ValueError: Some modules are dispatched on the CPU or the disk. Make sure you have enough GPU RAM to fit the quantized model. If you want to dispatch the model on the CPU or the disk while keeping these modules in 32-bit, you need to set `llm_int8_enable_fp32_cpu_offload=True` and pass a custom `device_map` to `from_pretrained`. Check https://huggingface.co/docs/transformers/main/en/main_classes/quantization#offload-between-cpu-and-gpu for more details. \n"}
+,{"stream_name":"stderr","time":63.353932918,"data":"\n"}
+,{"stream_name":"stderr","time":63.353937165,"data":"During handling of the above exception, another exception occurred:\n"}
+,{"stream_name":"stderr","time":63.35394182,"data":"\n"}
+,{"stream_name":"stderr","time":63.353946137,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":63.353950493,"data":"  File \"/tmp/ipykernel_24/867486611.py\", line 37, in \u003ccell line: 0\u003e\n"}
+,{"stream_name":"stderr","time":63.353954716,"data":"    model_mistral = AutoModel.from_pretrained(\n"}
+,{"stream_name":"stderr","time":63.353958626,"data":"                    ~~~~~~~~~~~~~~~~~~~~~~~~~^\n"}
+,{"stream_name":"stderr","time":63.353962436,"data":"        mistral_backbone_dir,\n"}
+,{"stream_name":"stderr","time":63.353966189,"data":"        ^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.353970022,"data":"    ...\u003c4 lines\u003e...\n"}
+,{"stream_name":"stderr","time":63.35397394,"data":"        low_cpu_mem_usage=True\n"}
+,{"stream_name":"stderr","time":63.353977718,"data":"        ^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.353981529,"data":"    ).eval()\n"}
+,{"stream_name":"stderr","time":63.35398522,"data":"    ^\n"}
+,{"stream_name":"stderr","time":63.353993287,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/models/auto/auto_factory.py\", line 411, in from_pretrained\n"}
+,{"stream_name":"stderr","time":63.353997667,"data":"    return model_class.from_pretrained(\n"}
+,{"stream_name":"stderr","time":63.354001559,"data":"           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^\n"}
+,{"stream_name":"stderr","time":63.354005286,"data":"        pretrained_model_name_or_path, *model_args, config=config, **hub_kwargs, **kwargs\n"}
+,{"stream_name":"stderr","time":63.354010957,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.354014751,"data":"    )\n"}
+,{"stream_name":"stderr","time":63.354018511,"data":"    ^\n"}
+,{"stream_name":"stderr","time":63.354024197,"data":"  File \"/usr/local/lib/python3.13/dist-packages/transformers/modeling_utils.py\", line 4300, in from_pretrained\n"}
+,{"stream_name":"stderr","time":63.354028309,"data":"    model = cls(config, *model_args, **model_kwargs)\n"}
+,{"stream_name":"stderr","time":63.354032964,"data":"TypeError: MistralModel.__init__() got an unexpected keyword argument 'llm_int8_enable_fp32_cpu_offload'\n"}
+,{"stream_name":"stdout","time":63.487999692,"data":"model\n"}
+,{"stream_name":"stdout","time":63.488025054,"data":"claude-opus-4-8           1\n"}
+,{"stream_name":"stdout","time":63.488030442,"data":"gpt-5.5                   1\n"}
+,{"stream_name":"stdout","time":63.488035532,"data":"gemini-3.1-pro-preview    1\n"}
+,{"stream_name":"stdout","time":63.48804055,"data":"done in 47s\n"}
+,{"stream_name":"stderr","time":69.396627644,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":69.396660336,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":69.56350252,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":69.563546789,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":70.434937493,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to notebook\n"}
+,{"stream_name":"stderr","time":70.522745038,"data":"[NbConvertApp] Writing 42506 bytes to __notebook__.ipynb\n"}
+,{"stream_name":"stderr","time":73.356533163,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to html\n"}
+,{"stream_name":"stderr","time":73.988669946,"data":"[NbConvertApp] Writing 382125 bytes to __results__.html\n"}
+]

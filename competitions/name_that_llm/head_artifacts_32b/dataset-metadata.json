@@ -1,0 +1,10 @@
+{
+  "title": "Name That LLM - 32B MoS TriCompass Head",
+  "id": "thetod/name-that-llm-32b-mos-tricompass-head",
+  "licenses": [
+    {
+      "name": "CC0-1.0"
+    }
+  ],
+  "isPrivate": true
+}

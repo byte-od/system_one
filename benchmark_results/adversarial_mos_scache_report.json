@@ -1,0 +1,273 @@
+{
+  "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+  "attacks": {
+    "attack_0_anti_facade": {
+      "passed": true,
+      "memory_scaling": [
+        {
+          "tokens": 128,
+          "vanilla_actual_kb": 3048.0,
+          "scache_reported_kb": 2631.94,
+          "scache_actual_recursive_kb": 2631.94,
+          "kv_ram_reduction_x": 1.16
+        },
+        {
+          "tokens": 256,
+          "vanilla_actual_kb": 6120.0,
+          "scache_reported_kb": 2631.94,
+          "scache_actual_recursive_kb": 2631.94,
+          "kv_ram_reduction_x": 2.33
+        },
+        {
+          "tokens": 512,
+          "vanilla_actual_kb": 12264.0,
+          "scache_reported_kb": 2631.94,
+          "scache_actual_recursive_kb": 2631.94,
+          "kv_ram_reduction_x": 4.66
+        },
+        {
+          "tokens": 1024,
+          "vanilla_actual_kb": 24552.0,
+          "scache_reported_kb": 2631.94,
+          "scache_actual_recursive_kb": 2631.94,
+          "kv_ram_reduction_x": 9.33
+        },
+        {
+          "tokens": 1280,
+          "vanilla_actual_kb": 30696.0,
+          "scache_reported_kb": 2631.94,
+          "scache_actual_recursive_kb": 2631.94,
+          "kv_ram_reduction_x": 11.66
+        }
+      ],
+      "delta_bytes_128_to_1280": 0.0,
+      "reported_vs_recursive_diff_kb": 0.0,
+      "scache_active_causal_max_logit_shift": 0.6430759429931641
+    },
+    "attack_1_mos_multidomain_outliers": {
+      "passed": true,
+      "mos_int4_asvd_stats": {
+        "dense_fp16_mlp_mb": 598.5,
+        "mos_mlp_mb": 196.9453125,
+        "mlp_compression_ratio_vs_fp16": 3.0389146733309533,
+        "mlp_savings_pct_vs_fp16": 67.09351503759399
+      },
+      "mos_perrow_scars_stats": {
+        "dense_fp16_mlp_mb": 598.5,
+        "mos_mlp_mb": 188.080078125,
+        "mlp_compression_ratio_vs_fp16": 3.182155207327331,
+        "mlp_savings_pct_vs_fp16": 68.57475720551378
+      },
+      "multi_tenant_8x_compression_ratio": 13.58,
+      "mos_active_causal_logit_shift": 18.595,
+      "domains": {
+        "python_code": {
+          "dense_fp16": {
+            "cos_hidden": 1.0,
+            "ppl": 1.924,
+            "kl_div": 0.0,
+            "top5_agree": 1.0
+          },
+          "mos_int4_asvd_r48": {
+            "cos_hidden": 0.97754,
+            "ppl": 2.057,
+            "kl_div": 0.0385,
+            "top5_agree": 1.0
+          },
+          "mos_perrow_int4_with_scars_r48": {
+            "cos_hidden": 0.95606,
+            "ppl": 2.09,
+            "kl_div": 0.0606,
+            "top5_agree": 1.0
+          },
+          "naive_perrow_int4_no_scars": {
+            "cos_hidden": 0.89047,
+            "ppl": 2.414,
+            "kl_div": 0.2555,
+            "top5_agree": 0.9868
+          },
+          "scar_kl_divergence_reduction_x": 4.22
+        },
+        "physics_math": {
+          "dense_fp16": {
+            "cos_hidden": 1.0,
+            "ppl": 5.55,
+            "kl_div": 0.0,
+            "top5_agree": 1.0
+          },
+          "mos_int4_asvd_r48": {
+            "cos_hidden": 0.97954,
+            "ppl": 5.878,
+            "kl_div": 0.0868,
+            "top5_agree": 0.9939
+          },
+          "mos_perrow_int4_with_scars_r48": {
+            "cos_hidden": 0.96223,
+            "ppl": 6.373,
+            "kl_div": 0.1641,
+            "top5_agree": 0.9939
+          },
+          "naive_perrow_int4_no_scars": {
+            "cos_hidden": 0.92137,
+            "ppl": 8.052,
+            "kl_div": 0.4027,
+            "top5_agree": 0.9573
+          },
+          "scar_kl_divergence_reduction_x": 2.45
+        },
+        "portuguese_tech": {
+          "dense_fp16": {
+            "cos_hidden": 1.0,
+            "ppl": 67.714,
+            "kl_div": 0.0,
+            "top5_agree": 1.0
+          },
+          "mos_int4_asvd_r48": {
+            "cos_hidden": 0.98145,
+            "ppl": 75.39,
+            "kl_div": 0.1262,
+            "top5_agree": 0.982
+          },
+          "mos_perrow_int4_with_scars_r48": {
+            "cos_hidden": 0.9645,
+            "ppl": 99.731,
+            "kl_div": 0.2618,
+            "top5_agree": 0.955
+          },
+          "naive_perrow_int4_no_scars": {
+            "cos_hidden": 0.91179,
+            "ppl": 156.046,
+            "kl_div": 0.7599,
+            "top5_agree": 0.8468
+          },
+          "scar_kl_divergence_reduction_x": 2.9
+        },
+        "json_structured": {
+          "dense_fp16": {
+            "cos_hidden": 1.0,
+            "ppl": 16.745,
+            "kl_div": 0.0,
+            "top5_agree": 1.0
+          },
+          "mos_int4_asvd_r48": {
+            "cos_hidden": 0.98963,
+            "ppl": 17.14,
+            "kl_div": 0.036,
+            "top5_agree": 0.9926
+          },
+          "mos_perrow_int4_with_scars_r48": {
+            "cos_hidden": 0.97966,
+            "ppl": 17.877,
+            "kl_div": 0.0809,
+            "top5_agree": 0.9706
+          },
+          "naive_perrow_int4_no_scars": {
+            "cos_hidden": 0.94471,
+            "ppl": 17.897,
+            "kl_div": 0.2926,
+            "top5_agree": 0.9191
+          },
+          "scar_kl_divergence_reduction_x": 3.62
+        }
+      }
+    },
+    "attack_2_context_horizon_bomb": {
+      "passed": true,
+      "seq_len": 1308,
+      "vanilla": {
+        "cache_mode": "vanilla",
+        "seq_len": 1308,
+        "ppl_full": 2.4450303834499993,
+        "ppl_tail": 2.72260792578587,
+        "nll_full": 0.8940575496185396,
+        "nll_tail": 1.0015902172011846,
+        "reported_kb": 31368.0,
+        "actual_recursive_kb": 31368.0,
+        "avg_kv_len_per_step": 661.4789594491201,
+        "elapsed_s": 9.571101903915405
+      },
+      "naive_window_no_sinks": {
+        "cache_mode": "naive_window_no_sinks",
+        "seq_len": 1308,
+        "ppl_full": 770.778163158004,
+        "ppl_tail": 597.8066002180939,
+        "nll_full": 6.647400606037718,
+        "nll_tail": 6.393267290635482,
+        "reported_kb": 1536.0,
+        "actual_recursive_kb": 1536.0,
+        "avg_kv_len_per_step": 62.8247895944912,
+        "elapsed_s": 9.12395691871643
+      },
+      "streaming_llm": {
+        "cache_mode": "streaming_llm",
+        "seq_len": 1308,
+        "ppl_full": 81.97534037904697,
+        "ppl_tail": 64.56362330358583,
+        "nll_full": 4.406418474952003,
+        "nll_tail": 4.167651145428766,
+        "reported_kb": 1536.0,
+        "actual_recursive_kb": 1536.0,
+        "avg_kv_len_per_step": 62.8247895944912,
+        "elapsed_s": 9.161298274993896
+      },
+      "scache_o1": {
+        "cache_mode": "scache_o1",
+        "seq_len": 1308,
+        "ppl_full": 78.00527172527721,
+        "ppl_tail": 61.790932435799526,
+        "nll_full": 4.356776410627249,
+        "nll_tail": 4.123756629358763,
+        "reported_kb": 2729.0625,
+        "actual_recursive_kb": 2729.0625,
+        "avg_kv_len_per_step": 78.04131599081867,
+        "elapsed_s": 12.901627779006958
+      }
+    },
+    "attack_3_poisoned_haystack_antighosting": {
+      "passed": true,
+      "canonical_scache_bytes": 34816,
+      "delta_rule_final_cosine": 1.0,
+      "delta_rule_old_ghost_cosine": -0.137656,
+      "naive_hebbian_final_cosine": 0.467348,
+      "naive_hebbian_old_ghost_cosine": 0.500555,
+      "llm_evicted_needle_nll": {
+        "context_tokens": 534,
+        "vanilla_nll": 0.0471,
+        "streaming_llm_nll": 4.3012,
+        "scache_o1_nll": 1.184,
+        "scache_vs_streaming_likelihood_gain_x": 22.582
+      }
+    },
+    "attack_4_noise_flood_dos_immunity": {
+      "passed": true,
+      "slot7_cosine_after_500_noise_steps": 1.0,
+      "antipodal_out_of_manifold_leak": 0.0
+    },
+    "attack_5_combined_fullstack_mos_scache": {
+      "passed": true,
+      "tasks_total": 6,
+      "dense_top3_hits": 4,
+      "mos_scache_top3_hits": 5,
+      "dense_answer_nll": 2.1651,
+      "mos_scache_answer_nll": 2.1654,
+      "long_doc_dense_vanilla_ppl": 2.445,
+      "long_doc_mos_scache_ppl": 83.352,
+      "mlp_weight_reduction_x": 3.04,
+      "long_doc_kv_reduction_x": 11.49
+    },
+    "attack_6_colossal_72b_streaming_proof": {
+      "passed": true,
+      "dense_72b_fp16_gb": 145.4,
+      "mos_72b_disk_gb": 11.44,
+      "active_streaming_group_ram_gb": 3.698,
+      "post_unload_group_ram_mb": 0.0,
+      "peak_weight_ram_savings_pct": 97.46,
+      "scar_expert_relative_state_contribution_pct": 38.68,
+      "kv_128k_vanilla_gb": 40.0,
+      "kv_128k_scache_mb": 22.66,
+      "kv_128k_reduction_x": 1807.9
+    }
+  },
+  "all_passed": true,
+  "total_elapsed_s": 181.48
+}
