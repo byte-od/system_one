@@ -1,0 +1,15 @@
+{
+  "id": "thetod/mos-scache-7b-adversarial-redteam-audit",
+  "title": "MoS SCache 7B Adversarial RedTeam Audit",
+  "code_file": "run_7b_redteam.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

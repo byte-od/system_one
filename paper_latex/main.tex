@@ -1,5 +1,5 @@
 % ==============================================================================
-% Mixture of Scars (MoS) & SCache O(1) — Official Academic Manuscript
+% Mixture of Scars (MoS) & SCache O(1) — Official Academic Manuscript (v1.1)
 % Compatible with: arXiv (cs.LG / cs.CL), TMLR, and Double-Blind Workshops
 % ==============================================================================
 \documentclass[10pt,twocolumn]{article}
@@ -13,7 +13,7 @@
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
 \usepackage{microtype}
-\usepackage[margin=0.75in,columnsep=0.28in]{geometry}
+\usepackage[margin=0.72in,columnsep=0.26in]{geometry}
 \usepackage{amsmath,amssymb,amsfonts,amsthm}
 \usepackage{mathtools}
 \usepackage{booktabs}
@@ -44,160 +44,177 @@
 }
 \fi
 
-\date{November 11, 2026}
+\date{November 11, 2026 \quad (Revision v1.1 --- Multi-Scale $0.5\text{B} \to 7.6\text{B} \to 123\text{B}$ \& 3D Pareto Audit)}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-Autoregressive Large Language Models (LLMs) face a compounding \emph{Dual Memory Wall}: (i) a static parameter wall $\mathcal{O}(N)$ requiring tens to hundreds of gigabytes of VRAM to store frontier weights, and (ii) a dynamic context wall $\mathcal{O}(T)$ where key-value (KV) caches expand linearly with sequence length $T$. Existing post-training interventions typically address only one bottleneck in isolation---either suffering severe logit degradation on out-of-distribution activation outliers under 4-bit weight quantization, or permanently discarding evicted context tokens in fixed-window caches. We introduce two complementary primitives that break both walls simultaneously without retraining from scratch: (1) \textbf{Mixture of Scars (MoS)}, which pairs symmetric \texttt{INT4} base projections with compact ($<64$~KB) Activation-Aware Singular Value Decomposition (\texttt{ASVD}) residual ``scar'' experts and sequential layer-group streaming; and (2) \textbf{SCache (\texttt{SCacheDynamicCache})}, a drop-in $\mathcal{O}(1)$ constant-space dynamic cache combining attention sinks, a rolling local FIFO window, and per-KV-head associative fast-weight slots updated via the orthogonal \emph{Widrow-Hoff Delta Rule} with ReLU manifold gating and monotonic cumulative RoPE phase tracking. To prevent benchmark facades, we introduce a 7-vector \emph{Adversarial Red-Team Falsification Suite} enforcing recursive PyTorch storage-pointer byte audits ($0.00$~KB discrepancy) and mid-flight causality ablations across real pretrained Transformers (\texttt{Qwen2.5-0.5B-Instruct}, \texttt{Qwen2.5-72B-Instruct}, and \texttt{Mistral-Large-123B}). Empirically, \texttt{MoS} reduces single-model MLP RAM by $68.6\%$, cuts 8-specialist multi-tenant VRAM by $92.6\%$ ($13.58\times$), lowers unseen-domain logit KL divergence by $2.45\times$--$4.22\times$ over pure \texttt{INT4}, and streams 72B/123B backbones with $0.04$~GiB post-layer residual VRAM. Simultaneously, \texttt{SCache} enforces $+0.00$ marginal bytes beyond window saturation ($-91.4\%$ KV RAM at $L=1{,}280$), eliminates additive Hebbian ghosting ($\cos=1.0000$ vs.\ $0.467$), and achieves $22.58\times$ higher exact target probability on evicted passcodes than \texttt{StreamingLLM} with zero fine-tuning.
+Autoregressive Large Language Models (LLMs) face a compounding \emph{Dual Memory Wall}: (i) a static parameter wall $\mathcal{O}(N)$ requiring tens to hundreds of gigabytes of VRAM to store frontier weights, and (ii) a dynamic context wall $\mathcal{O}(T)$ where key-value (KV) caches expand linearly with sequence length $T$. Existing post-training solutions either degrade on heavy-tailed activation outliers ($>6.7\text{B}$ scale), discard all evicted context tokens (\texttt{StreamingLLM}), or offload weights to non-volatile storage (\texttt{AirLLM}/\texttt{mmap}) at the cost of sub-token-per-second PCIe stalls and unbounded $\mathcal{O}(T)$ KV growth. We introduce two synergistic, training-free primitives: (1) \textbf{Mixture of Scars (MoS)}, pairing symmetric \texttt{INT4} base projections with compact Activation-Aware SVD (\texttt{ASVD}) low-rank ``scar'' experts and layer-group streaming; and (2) \textbf{SCache (\texttt{SCacheDynamicCache})}, a drop-in $\mathcal{O}(1)$ constant-space cache combining attention sinks, a rolling FIFO window, and per-KV-head associative fast-weight matrices updated via the orthogonal \emph{Widrow-Hoff Delta Rule}. We validate both primitives across 8 hostile vectors enforcing recursive PyTorch storage-pointer audits ($0.00$~KB discrepancy) and mid-flight causality ablations from $0.5\text{B}$ to $7.62\text{B}$ (\texttt{Qwen2.5-7B-Instruct}, $28$ layers, $3{,}336\times$ SwiGLU outlier ratio) and $72\text{B}/123\text{B}$ scale. On \texttt{Qwen2.5-7B-Instruct}, \texttt{MoS} cuts single-model MLP VRAM by $71.8\%$ and 8-specialist multi-tenant VRAM by $95.6\%$ ($22.82\times$) while preserving \textbf{100.0\% Top-5 token agreement} across unseen Python, Quantum Physics, Portuguese, and JSON ($1.70\times$--$3.33\times$ lower KL error than \texttt{INT4}). Simultaneously, \texttt{SCache} locks KV memory at $+0.00$ marginal bytes up to $L=4{,}096$ ($-94.9\%$ KV VRAM), recovers evicted passcodes $1{,}745$ tokens post-eviction with $7.51\times$--$22.58\times$ higher exact probability than \texttt{StreamingLLM}, and achieves non-repeating prose/code/SQL perplexity of $6.67$ vs.\ $6.05$ dense FP16 at $24.7$~tok/s---$\mathbf{224.5\times}$ faster than \texttt{AirLLM} FP16 ($62.7\times$ faster than \texttt{INT4}) SSD offloading.
 \end{abstract}
 
 \section{Introduction}
-Modern Transformer inference~\citep{vaswani2017attention} is governed by two simultaneous hardware bottlenecks. First, static parameters scale as $\mathcal{O}(N)$: a 72B-parameter model occupies $\sim 145$~GB in FP16/BF16 and $\sim 40$~GB even in 4-bit precision, exceeding commodity 8--24~GB GPUs. Second, autoregressive decoding caches explicit key-value tensors across all $L_{\text{layers}}$ layers and $H_{\text{kv}}$ grouped-query heads, consuming $\mathcal{O}(T \cdot L_{\text{layers}} \cdot H_{\text{kv}} \cdot d_{\text{head}})$ dynamic memory that grows unboundedly with sequence length $T$.
-
-Prior efficiency methods tackle either static weights or dynamic context separately, introducing distinct failure modes under adversarial stress:
+Modern Transformer inference~\citep{vaswani2017attention} is constrained by two compounding memory walls: static parameters scaling as $\mathcal{O}(N)$ ($15.2$~GB in FP16 at $7.6\text{B}$; $145.4$~GB at $72\text{B}$) and dynamic KV caches scaling linearly with sequence length $T$ as $\mathcal{O}(T \cdot L_{\text{layers}} \cdot H_{\text{kv}} \cdot d_{\text{head}})$. Existing post-training approaches leave critical gaps along the three-dimensional \emph{Memory $\times$ Quality $\times$ Throughput} frontier:
 \begin{itemize}
-    \item \textbf{Outlier fragility in static 4-bit quantization:} Uniform post-training \texttt{INT4} quantization suffers large logit KL divergence when heavy-tailed activation channels~\citep{lin2024awq,dettmers2023qlora} encounter unseen code, symbolic equations, or strict schemas.
-    \item \textbf{Amnesia vs.\ ghosting in bounded context:} Sliding-window caches with attention sinks (\texttt{StreamingLLM}~\citep{xiao2024efficient}) stabilize perplexity but suffer total amnesia once a token exits the local window. Conversely, compressing evicted tokens via additive Hebbian outer products~\citep{schmidhuber1992learning} causes severe superposition interference (``ghosting'') whenever state variables mutate over time~\citep{schlag2021linear,yang2024parallelizing}.
+    \item \textbf{Emergent $>6.7\text{B}$ outlier fragility in 4-bit quantization:} Above $\sim 6.7\text{B}$ parameters, Transformer blocks develop extreme channel-wise activation outliers~\citep{dettmers2022llmint8,lin2024awq} (reaching $217\times$ input and $3{,}336\times$ SwiGLU intermediate RMS ratios in \texttt{Qwen2.5-7B}), inflating uniform \texttt{INT4} logit divergence on unseen code and symbolic syntax.
+    \item \textbf{Amnesia vs.\ ghosting in bounded caches:} Attention-sink sliding windows (\texttt{StreamingLLM}~\citep{xiao2024efficient}) prevent perplexity collapse but suffer total amnesia once tokens exit the window, whereas additive Hebbian fast weights~\citep{schmidhuber1992learning} suffer superposition ``ghosting'' under state mutations~\citep{schlag2021linear,yang2024parallelizing}.
+    \item \textbf{PCIe starvation in disk-offload engines:} Layer-by-layer SSD/\texttt{mmap} executors (e.g., \texttt{AirLLM}) minimize resident RAM during batch-1 decoding only by streaming the entire model from storage on \emph{every generated token}, capping throughput to $\sim 0.1$--$0.4$~tok/s while leaving the $\mathcal{O}(T)$ KV cache uncompressed.
 \end{itemize}
 
-In this paper, we unify static and dynamic compression around a shared geometric observation: bulk representational energy is compressible into coarse substrates (\texttt{INT4} bases and local windows), whereas high-leverage semantic deviations concentrate in low-rank directional residuals (\emph{scars}). Crucially, we evaluate both primitives under a hostile 7-vector Red-Team protocol designed explicitly to falsify $\mathcal{O}(1)$ memory claims, causal readout activity, out-of-domain robustness, and contradictory state overwrites.
+In this paper, we demonstrate that static weight redundancy and evicted context history obey a unified geometric decomposition: bulk structure compresses into coarse substrates (\texttt{INT4} bases and local windows), while high-leverage outliers and evicted facts concentrate in low-rank directional residuals (\emph{scars}). Every claim is audited via an 8-vector Adversarial Red-Team Suite across $0.5\text{B}$, $7.62\text{B}$, $72\text{B}$, and $123\text{B}$ pretrained Transformers.
 
 \begin{figure*}[t]
     \centering
-    \includegraphics[width=0.98\textwidth]{figures/fig1_mos_scache_audit.pdf}
-    \caption{\textbf{Adversarial Red-Team Audit on Real Pretrained Transformers (\texttt{Qwen2.5-0.5B-Instruct}, 24 layers).} \textbf{(A)} Recursive physical storage bytes measured via \texttt{untyped\_storage().data\_ptr()} remain strictly invariant at $2{,}631.9$~KB ($2.57$~MB, $+0.00$~bytes growth) from $L=128$ to $L=1{,}280$ ($-91.4\%$ KV RAM). \textbf{(B)} \texttt{MoS} (\texttt{INT4} + rank-32 \texttt{ASVD} Scar Experts calibrated on a single 24-token generic English sentence) reduces out-of-domain logit KL divergence by $2.45\times$--$4.22\times$ across unseen Python, Physics, Portuguese, and JSON.}
+    \includegraphics[width=0.99\textwidth]{figures/fig1_mos_scache_audit.pdf}
+    \caption{\textbf{Multi-Scale Adversarial Audit on \texttt{Qwen2.5-7B-Instruct} ($7.62\text{B}$, $28$ layers, $2\times$ Tesla T4).} \textbf{(A)} Recursive physical storage bytes via \texttt{untyped\_storage().data\_ptr()} stay locked at $11{,}599.9$~KB ($11.33$~MB, $+0.00$~B growth) from $L=128$ to $L=4{,}096$ ($-94.94\%$ KV VRAM). \textbf{(B)} Under $3{,}336\times$ emergent SwiGLU outliers, \texttt{MoS} (\texttt{INT4} + rank-48 \texttt{ASVD} scars calibrated on one 24-token English sentence) cuts unseen-domain KL divergence by $1.70\times$--$3.33\times$ with \textbf{100.0\% Top-5 agreement} across all 4 domains. \textbf{(C)} 3D Pareto frontier on a 926-token non-repeating prose/Python/SQL benchmark: resident \texttt{MoS}+\texttt{SCache} ($W=256$) achieves PPL $6.67$ (vs.\ $6.05$ Dense FP16) at $24.7$~tok/s ($\mathbf{224.5\times}$ faster than \texttt{AirLLM} FP16 SSD offloading).}
     \label{fig:audit}
 \end{figure*}
 
 \section{Related Work}
-\paragraph{Static Quantization and Low-Rank Residuals.}
-\texttt{AWQ}~\citep{lin2024awq} protects salient input channels via per-channel scaling, while \texttt{QLoRA}~\citep{dettmers2023qlora} and \texttt{LoftQ}~\citep{li2024loftq} attach low-rank adapters primarily for supervised fine-tuning. \texttt{ASVD}~\citep{yuan2023asvd} scales weight matrices by activation magnitudes prior to SVD truncation. \texttt{MoS} synthesizes activation-weighted residual SVD on top of symmetric \texttt{INT4} bases with directional ReLU manifold routing and layer-group VRAM streaming, enabling both training-free out-of-domain outlier recovery and multi-tenant shared-base deployment.
+\paragraph{Quantization, Outliers, and Disk Offloading.}
+\texttt{LLM.int8()}~\citep{dettmers2022llmint8} identified emergent high-magnitude features above $6.7\text{B}$ scale. \texttt{AWQ}~\citep{lin2024awq} scales salient channels, whereas \texttt{QLoRA}~\citep{dettmers2023qlora}, \texttt{LoftQ}~\citep{li2024loftq}, and \texttt{ASVD}~\citep{yuan2023asvd} employ low-rank factorizations. \texttt{MoS} combines symmetric \texttt{INT4} bases with activation-weighted \texttt{ASVD} residual experts ($<2.1$~MB/matrix at $7.6\text{B}$), enabling resident multi-tenant sharing ($-95.6\%$ VRAM across 8 specialists) without per-token disk I/O stalls, while supporting amortized group streaming for $72\text{B}$--$123\text{B}$ batch/prefill workloads.
 
-\paragraph{Bounded KV Caches and Fast-Weight Programmers.}
-\texttt{StreamingLLM}~\citep{xiao2024efficient} preserves initial sink tokens plus a rolling window, preventing softmax collapse at the cost of discarding all intermediate facts. Eviction policies such as \texttt{H2O}~\citep{zhang2023h2o} retain heavy-hitter tokens selectively. Meanwhile, fast-weight programmers~\citep{schmidhuber1992learning,schlag2021linear} and \texttt{DeltaNet}~\citep{yang2024parallelizing} replace softmax attention with recurrent Delta updates trained from scratch. In contrast, \texttt{SCache} operates \emph{training-free} as a drop-in HuggingFace \texttt{DynamicCache} replacement on off-the-shelf pretrained Transformers, applying Widrow-Hoff associative compression exclusively to tokens evicted from the exact local window while maintaining exact cumulative RoPE phase alignment.
+\paragraph{Bounded KV Caches and Associative Fast Weights.}
+\texttt{StreamingLLM}~\citep{xiao2024efficient} and \texttt{H2O}~\citep{zhang2023h2o} bound KV growth via token eviction, losing evicted details permanently. Recurrent Delta architectures~\citep{widrow1960adaptive,schlag2021linear,yang2024parallelizing} require pretraining from scratch. \texttt{SCache} operates \emph{training-free} as a drop-in HuggingFace \texttt{DynamicCache}, compressing evicted tokens into per-KV-head Widrow-Hoff fast weights with monotonic RoPE phase alignment.
 
 \section{Mathematical Formulation}
 
 \subsection{Mixture of Scars (\texttt{MoS}) \& Group Streaming}
-Let $\mathbf{W} \in \mathbb{R}^{D_{\text{out}} \times D_{\text{in}}}$ denote a pretrained linear projection and let $\mathbf{s} \in \mathbb{R}_+^{D_{\text{in}}}$ be the empirical root-mean-square activation scale $s_j = \sqrt{\mathbb{E}[x_j^2]} + \epsilon$ estimated on a tiny calibration prompt. We first quantize $\mathbf{W}$ into a symmetric 4-bit base $\widehat{\mathbf{W}}_4 = \mathrm{dequant}(\mathbf{W}_q, \boldsymbol{\alpha}_w)$. Rather than decomposing the unweighted error $\mathbf{R} = \mathbf{W} - \widehat{\mathbf{W}}_4$ (which ignores outlier amplification), \texttt{MoS} weights columns in activation space and computes a rank-$r$ ($r \ll \min(D_{\text{out}}, D_{\text{in}})$) truncated SVD:
+Given pretrained weight $\mathbf{W} \in \mathbb{R}^{D_{\text{out}} \times D_{\text{in}}}$, empirical calibration RMS scale $s_j = \sqrt{\mathbb{E}[x_j^2]} + \epsilon$, and symmetric 4-bit quantization $\widehat{\mathbf{W}}_4 = \mathrm{dequant}(\mathbf{W}_q, \boldsymbol{\alpha}_w)$, \texttt{MoS} decomposes the activation-weighted residual $\mathbf{R}\,\mathrm{diag}(\mathbf{s}) = (\mathbf{W} - \widehat{\mathbf{W}}_4)\,\mathrm{diag}(\mathbf{s}) \approx \mathbf{U}_r \boldsymbol{\Sigma}_r \mathbf{V}_r^\top$ ($r \ll \min(D_{\text{out}}, D_{\text{in}})$), defining $\mathbf{B}_{\text{scar}} = \mathbf{U}_r \boldsymbol{\Sigma}_r^{1/2}$ and $\mathbf{A}_{\text{scar}} = \boldsymbol{\Sigma}_r^{1/2} \mathbf{V}_r^\top \mathrm{diag}(\mathbf{s})^{-1}$:
 \begin{equation}
-    \mathbf{R}\,\mathrm{diag}(\mathbf{s}) \approx \mathbf{U}_r \boldsymbol{\Sigma}_r \mathbf{V}_r^\top,
-\end{equation}
-yielding compact FP16/BF16 scar factors $\mathbf{A} = \mathbf{U}_r \boldsymbol{\Sigma}_r^{1/2} \in \mathbb{R}^{D_{\text{out}} \times r}$ and $\mathbf{B}^\top = \boldsymbol{\Sigma}_r^{1/2} \mathbf{V}_r^\top \mathrm{diag}(\mathbf{s})^{-1} \in \mathbb{R}^{r \times D_{\text{in}}}$. For multi-expert specialization ($k \in \{1,\dots,K\}$) with unit semantic centroids $\mathbf{z}_k \in \mathbb{S}^{D_{\text{in}}-1}$, the forward operator is:
-\begin{equation}
-    \mathbf{y}(\mathbf{x}) = \widehat{\mathbf{W}}_4 \mathbf{x} + \sum_{k \in \mathrm{TopK}(\mathbf{x})} \mathrm{ReLU}\!\left(\frac{\mathbf{x}^\top \mathbf{z}_k}{\|\mathbf{x}\|_2 + \epsilon}\right) \mathbf{A}_k (\mathbf{B}_k^\top \mathbf{x}).
+    \mathbf{y}(\mathbf{x}) = \widehat{\mathbf{W}}_4 \mathbf{x} + \sum_{k \in \mathrm{TopK}(\mathbf{x})} \mathrm{ReLU}\!\left(\frac{\mathbf{x}^\top \mathbf{z}_k}{\|\mathbf{x}\|_2 + \epsilon}\right) \mathbf{B}_{k} (\mathbf{A}_{k} \mathbf{x}).
     \label{eq:mos}
 \end{equation}
-For colossal backbones (34B--123B), layers are partitioned into sequential groups $\mathcal{G}_1, \dots, \mathcal{G}_M$; each group is streamed into GPU VRAM, executed, and explicitly freed prior to loading $\mathcal{G}_{m+1}$, decoupling peak VRAM from total model depth.
+Evaluating the rank-$r$ scar path in FP32 accumulation before casting back to native Tensor Core precision prevents $>65{,}504$ FP16 overflow on extreme SwiGLU channels while adding $<0.2\%$ FLOPs.
 
 \subsection{\texttt{SCache} $\mathcal{O}(1)$ Dynamic Memory}
-For each Transformer layer and KV head $h \in \{1,\dots,H_{\text{kv}}\}$, \texttt{SCache} maintains three fixed-capacity structures: (i) $N_{\text{sink}}$ initial attention sink tokens, (ii) a local rolling FIFO window of $W_{\text{win}} - N_{\text{sink}}$ recent tokens, and (iii) $S_{\text{slots}}$ prototype slots $(\mathbf{K}_{\text{scar}}, \mathbf{V}_{\text{scar}}) \in \mathbb{R}^{S_{\text{slots}} \times d_h}$ refined by a per-head associative fast-weight matrix $\mathbf{W}_{\text{scar}}^{(h)} \in \mathbb{R}^{d_h \times d_h}$.
-
-When a token $(\mathbf{k}_{\text{ev}}, \mathbf{v}_{\text{ev}})$ (already rotated by its exact cumulative RoPE angle $\theta_{t_{\text{ev}}}$) is evicted from the FIFO window, we normalize $\hat{\mathbf{k}} = \mathbf{k}_{\text{ev}} / (\|\mathbf{k}_{\text{ev}}\|_2 + \epsilon)$, compute manifold alignment $g_m = \mathrm{ReLU}(\hat{\mathbf{k}}^\top \mathbf{c}_m)$ against slot centroids $\mathbf{c}_m$, and update $\mathbf{W}_{\text{scar}}^{(h)}$ via the Widrow-Hoff Delta Rule~\citep{widrow1960adaptive}:
+Per layer and KV head $h \in \{1,\dots,H_{\text{kv}}\}$, \texttt{SCache} maintains $N_{\text{sink}}$ attention sinks, a rolling FIFO window of $W_{\text{win}} - N_{\text{sink}}$ tokens, and $S_{\text{slots}}$ prototype slots $(\mathbf{K}_{\text{scar}}, \mathbf{V}_{\text{scar}}) \in \mathbb{R}^{S_{\text{slots}} \times d_h}$ coupled to a fast-weight matrix $\mathbf{W}_{\text{scar}}^{(h)} \in \mathbb{R}^{d_h \times d_h}$. Upon FIFO eviction of $(\mathbf{k}_{\text{ev}}, \mathbf{v}_{\text{ev}})$ with $\hat{\mathbf{k}} = \mathbf{k}_{\text{ev}} / (\|\mathbf{k}_{\text{ev}}\|_2 + \epsilon)$ and ReLU gate $g_{m^\star} = \mathrm{ReLU}(\hat{\mathbf{k}}^\top \mathbf{c}_{m^\star})$, \texttt{SCache} applies the orthogonal Widrow-Hoff Delta update~\citep{widrow1960adaptive}:
 \begin{equation}
-    \mathbf{W}_{\text{scar}}^{(t)} = \gamma \mathbf{W}_{\text{scar}}^{(t-1)} + \eta\, g_{m^\star} \!\left(\mathbf{v}_{\text{ev}} - \mathbf{W}_{\text{scar}}^{(t-1)} \hat{\mathbf{k}}\right) \hat{\mathbf{k}}^\top.
+    \mathbf{W}_{\text{scar}}^{(t)} = \gamma \mathbf{W}_{\text{scar}}^{(t-1)} + \eta\, g_{m^\star} \!\left(\mathbf{v}_{\text{ev}} - \mathbf{W}_{\text{scar}}^{(t-1)} \hat{\mathbf{k}}\right) \hat{\mathbf{k}}^\top,
     \label{eq:delta}
 \end{equation}
-During attention readout, active scar values blend prototype anchors with Delta-corrected associative projections:
-\begin{equation}
-    \widetilde{\mathbf{v}}_s = (1 - \beta)\mathbf{V}_{\text{scar}}[s] + \beta \mathbf{W}_{\text{scar}}^{(t)} \hat{\mathbf{k}}_s,
-\end{equation}
-concatenated between the $N_{\text{sink}}$ sinks and the local FIFO window while tracking exact monotonic sequence length $t_{\text{cum}}$ for causal mask and RoPE generation.
+reading out $\widetilde{\mathbf{v}}_s = (1 - \beta)\mathbf{V}_{\text{scar}}[s] + \beta \mathbf{W}_{\text{scar}}^{(t)} \hat{\mathbf{k}}_s$ between sinks and local window while tracking decoupled monotonic position $t_{\text{cum}}$ via \texttt{get\_mask\_sizes}.
 
-\begin{proposition}[Strict $\mathcal{O}(1)$ Spatial Invariance \& Orthogonal State Overwrite]
+\begin{proposition}[Strict $\mathcal{O}(1)$ Invariance \& Orthogonal Overwrite]
 \label{prop:invariance}
-For any sequence length $T > W_{\text{win}}$, total resident dynamic bytes per layer satisfy $B(T) = B(W_{\text{win}}) = \mathrm{const}$ ($\Delta B / \Delta T = 0$). Furthermore, for $\gamma = 1$, $\eta g_{m^\star} = 1$, and unit key $\hat{\mathbf{k}}$, a contradictory update $(\hat{\mathbf{k}}, \mathbf{v}_{\text{new}})$ yields $\mathbf{W}_{\text{scar}}^{(t)} \hat{\mathbf{k}} = \mathbf{W}_{\text{scar}}^{(t-1)}\hat{\mathbf{k}} + (\mathbf{v}_{\text{new}} - \mathbf{W}_{\text{scar}}^{(t-1)}\hat{\mathbf{k}})(\hat{\mathbf{k}}^\top \hat{\mathbf{k}}) = \mathbf{v}_{\text{new}}$, erasing the stale value along $\mathrm{span}(\hat{\mathbf{k}})$ while leaving $\mathrm{span}(\hat{\mathbf{k}})^\perp$ invariant, whereas antipodal noise $\mathbf{k}_{\text{anti}} = -\mathbf{c}_{m^\star}$ induces exact zero write ($g_{m^\star} = \mathrm{ReLU}(-1) = 0$).
+For all $T > W_{\text{win}}$, resident dynamic storage satisfies $\Delta B / \Delta T = 0$. For $\gamma = 1, \eta g_{m^\star} = 1$, and $\|\hat{\mathbf{k}}\|_2 = 1$, updating $(\hat{\mathbf{k}}, \mathbf{v}_{\text{new}})$ yields $\mathbf{W}_{\text{scar}}^{(t)} \hat{\mathbf{k}} = \mathbf{v}_{\text{new}}$, erasing stale values on $\mathrm{span}(\hat{\mathbf{k}})$ without perturbing $\mathrm{span}(\hat{\mathbf{k}})^\perp$, while antipodal inputs $\mathbf{k}_{\text{anti}} = -\mathbf{c}_{m^\star}$ incur exact zero write ($g_{m^\star} = 0$). Furthermore, random-key cross-talk variance scales as $\mathcal{O}(1/d_h)$, improving from $d_h=64$ ($0.5\text{B}$) to $d_h=128$ ($7.6\text{B}$--$72\text{B}$).
 \end{proposition}
 
-\section{Adversarial Red-Team Falsification Protocol}
-To prevent unintentional benchmark facades, our Red-Team Suite enforces two automated invariants across 7 attack vectors:
-\begin{enumerate}
-    \item \textbf{Recursive Storage-Pointer Byte Audit:} Traverses the complete Python/PyTorch object graph of the cache via \texttt{tensor.untyped\_storage().data\_ptr()} deduplication, asserting \texttt{actual\_recursive\_bytes == reported\_bytes} ($0.00$~KB discrepancy) and zero hidden $\mathcal{O}(T)$ lists or tensors.
-    \item \textbf{In-Flight Active Causality Ablation:} Zeroes $(\mathbf{V}_{\text{scar}}, \mathbf{W}_{\text{scar}})$ mid-generation and verifies immediate non-zero logit shift ($\max |\Delta \text{logits}| = 0.6431$), proving evicted scars causally participate in attention.
-\end{enumerate}
+\section{Adversarial Red-Team Protocol \& Multi-Scale Results}
+Every benchmark enforces: (1) \textbf{Recursive Multi-Device Storage-Pointer Auditing} deduplicating \texttt{(device, untyped\_storage().data\_ptr())} to assert $0.00$~KB discrepancy; and (2) \textbf{Mid-Flight Causality Ablation} asserting significant logit shift when scars are zeroed ($\max |\Delta\text{logits}| = 0.643$ at $0.5\text{B}$; $2.853$ at $7.62\text{B}$).
 
 \begin{table}[t]
 \centering
 \small
-\caption{\textbf{Vector 0 --- Recursive Physical Storage Audit} across all 24 layers of \texttt{Qwen2.5-0.5B-Instruct} ($W_{\text{win}}=64, S_{\text{slots}}=12, N_{\text{sink}}=4$).}
+\caption{\textbf{Vector 0 --- Multi-Scale $\mathcal{O}(1)$ Recursive Byte Audit} on \texttt{Qwen2.5-0.5B} ($24\text{L}$) and \texttt{Qwen2.5-7B-Instruct} ($28\text{L}, 2\times\text{T4}$, $W_{\text{win}}=64, S_{\text{slots}}=12, N_{\text{sink}}=4$). Discrepancy vs.\ reported bytes: \textbf{$0.00$~KB} at all lengths.}
 \label{tab:v0}
-\setlength{\tabcolsep}{4.2pt}
-\begin{tabular}{lcccc}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{llccc}
 \toprule
-\textbf{Length $L$} & \textbf{Vanilla KV} & \textbf{SCache Real} & \textbf{$\Delta$ Growth} & \textbf{Saving} \\
+\textbf{Model} & \textbf{Length $L$} & \textbf{Vanilla KV} & \textbf{SCache Real} & \textbf{Saving} \\
 \midrule
-128 tok   & 3,048.0 KB  & \textbf{2,631.9 KB} & Baseline     & $1.16\times$ \\
-256 tok   & 6,120.0 KB  & \textbf{2,631.9 KB} & $+0.00$ B    & $2.33\times$ \\
-512 tok   & 12,264.0 KB & \textbf{2,631.9 KB} & $+0.00$ B    & $4.66\times$ \\
-1,024 tok & 24,552.0 KB & \textbf{2,631.9 KB} & $+0.00$ B    & $9.33\times$ \\
-1,280 tok & 30,696.0 KB & \textbf{2,631.9 KB} & $+0.00$ B    & \textbf{11.66$\times$ ($-$91.4\%)} \\
+\multirow{2}{*}{0.5B (24L)} & 256 tok   & 6,120.0 KB   & \textbf{2,631.9 KB}  & $2.33\times$ ($-$57.0\%) \\
+                            & 1,280 tok & 30,696.0 KB  & \textbf{2,631.9 KB}  & \textbf{11.66$\times$ ($-$91.4\%)} \\
+\midrule
+\multirow{4}{*}{7.6B (28L)} & 512 tok   & 28,672.0 KB  & \textbf{11,599.9 KB} & $2.47\times$ ($-$59.5\%) \\
+                            & 1,024 tok & 57,344.0 KB  & \textbf{11,599.9 KB} & $4.94\times$ ($-$79.8\%) \\
+                            & 2,048 tok & 114,688.0 KB & \textbf{11,599.9 KB} & $9.89\times$ ($-$89.9\%) \\
+                            & 4,096 tok & 229,376.0 KB & \textbf{11,599.9 KB} & \textbf{19.77$\times$ ($-$94.9\%)} \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
 
 \begin{table}[t]
 \centering
 \small
-\caption{\textbf{Vector 1 --- Out-of-Domain \texttt{MoS} Compression} across all 72 MLP projections ($-68.6\%$ single-model RAM; $-92.6\%$ / $13.58\times$ across 8 multi-tenant specialist banks), calibrated on one 24-token generic English sentence.}
-\label{tab:v1}
-\setlength{\tabcolsep}{3.5pt}
+\caption{\textbf{Vector 1 at $7.62\text{B}$ Scale (\texttt{Qwen2.5-7B-Instruct}, $84$ SwiGLU MLPs)} under $217.5\times$ input and $3{,}336.0\times$ intermediate emergent activation outliers. Single-model MLP: $10{,}878$~MB $\to 3{,}062.7$~MB ($-71.84\%$); 8-specialist bank: $85.0$~GiB $\to 3.72$~GiB (\textbf{$-$95.62\% / 22.82$\times$}).}
+\label{tab:v1_7b}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcccc}
 \toprule
 \textbf{Unseen Domain} & \textbf{FP16 PPL} & \textbf{MoS PPL} & \textbf{Top-5} & \textbf{KL: INT4 $\to$ MoS} \\
 \midrule
-Python (Dijkstra) & 1.92  & \textbf{2.06}  & 100.0\% & $0.256 \to \mathbf{0.061}$ ($4.22\times$) \\
-Quantum Physics   & 5.55  & \textbf{5.88}  & 99.4\%  & $0.403 \to \mathbf{0.164}$ ($2.45\times$) \\
-Tech Portuguese   & 67.71 & \textbf{75.39} & 98.2\%  & $0.760 \to \mathbf{0.262}$ ($2.90\times$) \\
-Strict JSON       & 16.75 & \textbf{17.14} & 99.3\%  & $0.293 \to \mathbf{0.081}$ ($3.62\times$) \\
+Python (Dijkstra) & 1.648  & \textbf{1.640}  & \textbf{100.0\%} & $0.0189 \to \mathbf{0.0083}$ ($2.28\times$) \\
+Quantum Physics   & 6.253  & \textbf{6.261}  & \textbf{100.0\%} & $0.0565 \to \mathbf{0.0332}$ ($1.70\times$) \\
+Tech Portuguese   & 19.152 & \textbf{21.698} & \textbf{100.0\%} & $0.0862 \to \mathbf{0.0380}$ ($2.27\times$) \\
+Strict JSON       & 25.356 & \textbf{25.352} & \textbf{100.0\%} & $0.1185 \to \mathbf{0.0356}$ ($3.33\times$) \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
+
+\subsection{Scale Validation ($7.62\text{B}$ Emergent Outliers \& Long-Distance Recall)}
+Tables~\ref{tab:v0}--\ref{tab:v26} demonstrate that scaling from $0.5\text{B}$ to $7.62\text{B}$ (\texttt{Qwen2.5-7B-Instruct}, $d_h=128$) \emph{strengthens} \texttt{MoS} fidelity while confirming multi-thousand-token \texttt{SCache} recall:
+\begin{itemize}
+    \item \textbf{Dominance over $>6.7\text{B}$ Emergent Outliers (Vector 1):} Despite SwiGLU channel outlier ratios reaching $3{,}336\times$ the median channel RMS, calibrating rank-48 \texttt{ASVD} scars on a single 24-token generic English sentence yields \textbf{100.0\% Top-5 token agreement} across all four unseen domains and virtually lossless perplexity ($1.648 \to 1.640$ on Python; $6.253 \to 6.261$ on Quantum Physics; $25.356 \to 25.352$ on JSON), cutting per-row \texttt{INT4} KL divergence by up to $3.18\times$ and block-64 \texttt{INT4} KL by up to $3.33\times$.
+    \item \textbf{Evicted Passcode Recall up to $1{,}745$ Tokens Post-Eviction (Vector 3B):} With zero fine-tuning and $W_{\text{win}}=64$, \texttt{SCache} recovers evicted passcode \texttt{7942-OMEGA} with $22.58\times$ higher exact probability at $0.5\text{B}$ ($445$~tok post-eviction), $11.23\times$ at $7.62\text{B}$ ($445$~tok post-eviction, NLL $1.481$ vs.\ $3.899$), and $\mathbf{7.51\times}$ even $\mathbf{1{,}745}$~\textbf{tokens after eviction} ($L=1{,}834$, $-88.1\%$ KV VRAM, NLL $1.667$ vs.\ $3.683$).
+\end{itemize}
 
 \begin{table*}[t]
 \centering
 \small
-\caption{\textbf{Vectors 2--6 --- Long-Horizon Recall, Anti-Ghosting, DoS Immunity, Full-Stack Composition, and 72B/123B Streaming.}}
+\caption{\textbf{Vector 7 --- 3D Pareto Frontier on Non-Repeating Continuous Technical Prose + Python + SQL ($926$ unique tokens, \texttt{Qwen2.5-7B-Instruct} on $2\times$ Tesla T4)} vs.\ Measured Sequential Disk-Offload Roofline (\texttt{AirLLM} / \texttt{mmap} at measured $1.57$~GB/s host safetensors bandwidth).}
+\label{tab:pareto}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Execution Engine ($7.62\text{B}$)} & \textbf{Non-Repeat PPL} & \textbf{MLP Weights (8x Bank)} & \textbf{KV VRAM ($L=4\text{k}$)} & \textbf{Disk Read / Tok} & \textbf{Throughput} & \textbf{vs.\ AirLLM FP16} \\
+\midrule
+Dense FP16 + Full KV $\mathcal{O}(T)$     & 6.05 & 10.62 GiB (85.0 GiB OOM) & 229.4 MB $\mathcal{O}(T)$ & 0 MB   & 314.0 tok/s & Resident Ref \\
+\texttt{AirLLM} / \texttt{mmap} FP16 SSD  & 6.05 & $<$2 GiB (SSD-bound)     & 229.4 MB $\mathcal{O}(T)$ & 14.2 GiB & 0.11 tok/s  & $1.0\times$ (9.1 s/tok) \\
+\texttt{AirLLM} / \texttt{mmap} INT4 SSD  & $\sim$6.5 & $<$2 GiB (SSD-bound) & 229.4 MB $\mathcal{O}(T)$ & 4.0 GiB  & 0.39 tok/s  & $3.6\times$ (2.5 s/tok) \\
+\midrule
+\texttt{MoS} + \texttt{StreamingLLM} ($W=128$) & 8.42 & 2.99 GiB (\textbf{3.72 GiB}) & \textbf{7.0 MB} $\mathcal{O}(1)$  & \textbf{0 MB} & 36.2 tok/s  & $329.1\times$ (Amnesia) \\
+\texttt{MoS} + \texttt{SCache} $\mathcal{O}(1)$ ($W=128, S=16$) & 7.75 & 2.99 GiB (\textbf{3.72 GiB}) & \textbf{15.0 MB} $\mathcal{O}(1)$ & \textbf{0 MB} & 23.2 tok/s  & $\mathbf{210.9\times}$ \\
+\textbf{\texttt{MoS} + \texttt{SCache} $\mathcal{O}(1)$ ($W=256, S=16$)} & \textbf{6.67} & \textbf{2.99 GiB (3.72 GiB)} & \textbf{22.0 MB $\mathcal{O}(1)$} & \textbf{0 MB} & \textbf{24.7 tok/s} & $\mathbf{224.5\times}$ (\textbf{62.7$\times$ vs.\ INT4}) \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}
+
+\begin{table*}[t]
+\centering
+\small
+\caption{\textbf{Summary of Hostile Vectors 2--6 Across $0.5\text{B}$, $7.62\text{B}$, $72\text{B}$, and $123\text{B}$ Models.}}
 \label{tab:v26}
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{llll}
 \toprule
 \textbf{Hostile Vector} & \textbf{Conventional Baseline} & \textbf{MoS / SCache $\mathcal{O}(1)$ Result} & \textbf{Audited Empirical Finding} \\
 \midrule
-V2: Long Document ($\sim 1.3$k tok, $W=64$) & Naive PPL: $770.78$; StreamingLLM Tail: $64.56$ & Tail PPL: $\mathbf{61.79}$; RAM: $\mathbf{2{,}729.1}$ KB & Beats StreamingLLM with $8.48\times$ fewer KV tok/step \\
-V3A: Contradictory Mutation ($34.8$ KB) & Additive Hebbian: $\cos=0.467$, Ghost $+0.501$ & Widrow-Hoff: $\cos=\mathbf{1.0000}$, Ghost $-0.138$ & Complete orthogonal erasure of obsolete ghost states \\
-V3B: Evicted Passcode (\texttt{7942-OMEGA}) & StreamingLLM NLL: $4.301$ (amnesia) & SCache $\mathcal{O}(1)$ NLL: $\mathbf{1.184}$ & $\mathbf{22.58\times}$ higher exact probability 470 tok post-eviction \\
+V2: Periodic Callback Stress ($W=64$) & 7.6B Naive: $81.50$; StreamingLLM: $41.05$ & 7.6B SCache PPL: $\mathbf{29.55}$ ($-91.2\%$ KV) & $28\%$ lower PPL than StreamingLLM under extreme $W=64$ \\
+V3A: Contradictory Mutation ($34.8$ KB) & Additive Hebbian: $\cos=0.467$, Ghost $+0.501$ & Widrow-Hoff: $\cos=\mathbf{1.0000}$, Ghost $-0.138$ & Exact orthogonal erasure of obsolete ghost states \\
+V3B: Evicted Passcode ($445$ \& $1{,}745$ tok) & StreamingLLM NLL: $4.301$ (0.5B) / $3.683$ (7.6B) & SCache NLL: $\mathbf{1.184}$ (0.5B) / $\mathbf{1.667}$ (7.6B) & $\mathbf{22.58\times}$ ($445$t) to $\mathbf{7.51\times}$ ($1{,}745$t) higher prob, 0 tuning \\
 V4: $500\times$ Noise DoS + Antipodal & Unbounded linear drift / corruption & Target $\cos=\mathbf{1.0000}$; Leak $\mathbf{0.000000}$ & Exact mathematical immunity outside ReLU cone \\
-V5: Full-Stack \texttt{MoS} + \texttt{SCache} & Dense FP16 + Vanilla KV: $4/6$ QA, NLL $2.165$ & \texttt{MoS} + \texttt{SCache}: $\mathbf{5/6}$ QA, NLL $\mathbf{2.165}$ & Simultaneous $-67.1\%$ MLP \& $-91.3\%$ KV RAM, 0 NLL loss \\
-V6: Colossal 72B / 123B Streaming & Qwen2.5-72B FP16: $145.4$ GB; Mistral-123B: $246$ GB & 72B Disk: $\mathbf{11.44}$ GB ($12.7\times$); Peak $\mathbf{3.70}$ GB & 123B L44 Dual-T4 streaming at $\mathbf{0.04}$ GiB post-layer VRAM \\
+V5: Full-Stack \texttt{MoS} + \texttt{SCache} (7.6B) & Dense FP16 + Full KV: $4/6$ QA, Ans NLL $3.078$ & \texttt{MoS} + \texttt{SCache}: $\mathbf{4/6}$ QA, Ans NLL $\mathbf{2.987}$ & Simultaneous $-71.8\%$ MLP \& $-91.2\%$ KV, better Ans NLL \\
+V6: Colossal 72B / 123B Streaming & Qwen2.5-72B: $145.4$ GB; Mistral-123B: $246$ GB & 72B Disk: $\mathbf{11.44}$ GB ($12.7\times$); Peak $\mathbf{3.70}$ GB & 123B L44 Dual-T4 streaming at $\mathbf{0.04}$ GiB post-layer VRAM \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table*}
 
-\section{Empirical Results \& Forensic Findings}
-Developing the hostile suite uncovered and resolved three subtle systems bugs prior to release: (i) a legacy flag leaving \texttt{project\_slots=False} inactive during attention readout; (ii) RoPE positional phase freezing at $W_{\text{win}}$ under \texttt{transformers} v5 \texttt{DynamicLayer} inheritance, solved via decoupled \texttt{cumulative\_length} and \texttt{get\_mask\_sizes}; and (iii) redundant per-head fast-weight allocations reduced from $7.42$~MB to $2.57$~MB ($0.00$~KB audit discrepancy).
+\subsection{3D Pareto Frontier: Why Periodic Benchmarks Mislead \& Comparison vs.\ Disk Offloading}
+A critical methodological finding emerges when comparing Vector 2 against Vector 7 (Table~\ref{tab:pareto}). In Vector 2's synthetic stress test, a 160-token technical block is repeated verbatim ($8\times$--$15\times$) under a deliberately tiny $W_{\text{win}}=64$ window. Under unbounded Full KV, induction heads copy repeated cycles verbatim at $\mathrm{PPL} \approx 1.004$ (artificially depressing mean Full-KV PPL to $1.43$--$2.45$), whereas any window $W_{\text{win}} < 160$ cannot observe the period and evaluates intrinsic first-pass vocabulary entropy ($\mathrm{PPL} \approx 29.5$ on $7.6\text{B}$ vs.\ $41.1$ for \texttt{StreamingLLM}).
 
-Tables~\ref{tab:v0}--\ref{tab:v26} and Figure~\ref{fig:audit} summarize all 7 audited vectors:
-\begin{itemize}
-    \item \textbf{Spatial $\mathcal{O}(1)$ Invariance (Vector 0):} Across $L \in \{128, 256, 512, 1024, 1280\}$, physical cache RAM remains locked at exactly $2{,}631.9$~KB ($-91.4\%$ vs.\ Vanilla KV at $L=1{,}280$).
-    \item \textbf{Outlier Resilience (Vector 1):} Calibrating rank-32 \texttt{ASVD} scars on a single 24-token English sentence cuts unseen-domain KL divergence by $2.45\times$--$4.22\times$ over pure \texttt{INT4} while preserving $98.2\%$--$100.0\%$ Top-5 token agreement with FP16.
-    \item \textbf{Evicted Needle \& Anti-Ghosting (Vectors 2--4):} When passcode \texttt{7942-OMEGA} is evicted 470 tokens prior to query ($W_{\text{win}}=64$), \texttt{SCache} achieves NLL $1.184$ vs.\ $4.301$ for \texttt{StreamingLLM} ($\exp(4.301 - 1.184) = 22.58\times$ higher exact probability) with \emph{zero fine-tuning}. Under $500\times$ out-of-manifold DoS injection, target cosine remains $1.00000$ with $0.00000000$ antipodal leakage.
-    \item \textbf{Full-Stack \& 72B/123B Scale (Vectors 5--6):} Combining 24-layer \texttt{MoS} with \texttt{SCache} matches FP16+Full-KV answer NLL ($2.165$ vs.\ $2.165$, $5/6$ Top-3 QA), while 80-layer \texttt{Qwen2.5-72B} and 44-layer \texttt{Mistral-123B} stream cleanly within $<3.8$~GB peak group memory ($0.04$~GiB post-layer VRAM).
-\end{itemize}
+To measure true real-world quality without periodic copy artifacts, Vector 7 evaluates a \textbf{non-repeating} 926-token multi-domain document (distributed storage architecture, asynchronous Python, M/G/1 queueing equations, and analytical SQL) alongside measured host safetensors SSD-to-GPU bandwidth ($1.57$~GB/s):
+\begin{enumerate}
+    \item \textbf{Near-Lossless Non-Repeating Quality:} On \texttt{Qwen2.5-7B-Instruct}, full-stack \texttt{MoS} + \texttt{SCache} ($W_{\text{win}}=256, S_{\text{slots}}=16$) achieves $\mathrm{PPL} = \mathbf{6.67}$ vs.\ $\mathbf{6.05}$ for Dense FP16 + Full KV ($\Delta\text{NLL} = +0.098$~nats), outperforming \texttt{StreamingLLM} while capping KV VRAM at $22.0$~MB ($-90.2\%$ at $L=4\text{k}$; $-98.8\%$ at $L=32\text{k}$).
+    \item \textbf{$224.5\times$ Throughput Advantage over Disk Offloading:} Because \texttt{AirLLM} and \texttt{mmap}-based executors must read all $14.2$~GiB (FP16) or $4.0$~GiB (INT4) from storage per batch-1 token, sequential $1.57$~GB/s I/O physically caps them to $0.11$~tok/s ($9.1$~s/token) in FP16 and $0.39$~tok/s ($2.5$~s/token) in INT4---while still suffering $\mathcal{O}(T)$ KV growth. Resident \texttt{MoS} + \texttt{SCache} eliminates per-token disk reads ($0$~MB/tok), delivering $24.7$~tok/s even in uncompiled pure PyTorch ($\mathbf{224.5\times}$ faster than FP16 offload; $\mathbf{62.7\times}$ faster than INT4 offload) and packing 8 distinct $7.6\text{B}$ domain specialists into $3.72$~GiB VRAM.
+\end{enumerate}
 
 \section{Boundary Conditions \& Limitations}
-Falsification testing also establishes clear operational boundaries:
 \begin{enumerate}
-    \item \textbf{Cross-Layer SwiGLU Permutation Sensitivity:} Directly sharing a single dense base matrix across \emph{distinct} pretrained SwiGLU layers without neuron-permutation alignment incurs high distortion ($\mathrm{KL} \approx 0.78$) because the Hadamard product $\mathrm{SiLU}(\mathbf{W}_{\text{gate}}\mathbf{x}) \odot (\mathbf{W}_{\text{up}}\mathbf{x})$ is non-invariant to channel permutations. Off-the-shelf models should therefore pair per-layer \texttt{INT4} bases with \texttt{ASVD} scars and group streaming, reserving single-base sharing for multi-tenant specialist banks anchored to a common backbone ($-92.6\%$ VRAM across 8 specialists) or jointly distilled blocks.
-    \item \textbf{Associative Capacity vs.\ Verbatim Long-String Copy:} \texttt{SCache} compresses arbitrarily long evicted histories into fixed $S_{\text{slots}} \times d_h$ fast weights (achieving NLL $1.184$ vs.\ $4.301$ \texttt{StreamingLLM}, compared to $0.047$ exact full-KV). Tasks requiring bit-exact verbatim copying of high-entropy strings across tens of thousands of evicted tokens trade off against slot count $S_{\text{slots}}$ and benefit from lightweight scar read-alignment.
+    \item \textbf{Cross-Layer SwiGLU Permutation Sensitivity:} Sharing one dense base across \emph{distinct} pretrained SwiGLU layers without channel-permutation alignment incurs distortion ($\mathrm{KL} \approx 0.78$). Off-the-shelf models should pair per-layer \texttt{INT4} bases with \texttt{ASVD} scars (and group streaming for $>30\text{B}$), reserving single-base sharing for multi-tenant specialist banks anchored to a shared backbone ($-95.6\%$ VRAM at $7.6\text{B}$).
+    \item \textbf{Associative Compression vs.\ Verbatim Copy:} Fixed $S_{\text{slots}} \times d_h$ fast weights preserve strong semantic and passcode likelihoods ($7.51\times$--$22.58\times$ over \texttt{StreamingLLM} up to $1{,}745$~tokens post-eviction), whereas bit-exact verbatim reproduction of long random strings across tens of thousands of evicted tokens trades off against $S_{\text{slots}}$ and lightweight read-alignment.
 \end{enumerate}
 
 \section{Conclusion \& Reproducibility}
-\texttt{Mixture of Scars (MoS)} and \texttt{SCache} demonstrate that static parameter bloat and dynamic KV-cache growth can be jointly compressed on real pretrained Transformers under strict physical byte-pointer and causality audits.
+\texttt{Mixture of Scars (MoS)} and \texttt{SCache} jointly break the static parameter and dynamic KV memory walls across $0.5\text{B}$--$123\text{B}$ Transformers while preserving interactive GPU throughput and out-of-domain fidelity.
 \ifanonymous
-All source code, \texttt{pytest} harnesses, and raw JSON telemetry are provided in the anonymized supplementary material.
+All source code, \texttt{pytest} harnesses, and raw JSON logs ($0.5\text{B}$ and $7.62\text{B}$) are included in the anonymized supplementary archive.
 \else
-Full open-source PyTorch implementations, \texttt{pytest} harnesses, and raw telemetry are archived at \href{https://doi.org/10.5281/zenodo.24143839}{DOI: 10.5281/zenodo.24143839}~\citep{reisfilho2026mos_zenodo} and \href{https://github.com/byte-od/mixture-of-scars}{github.com/byte-od/mixture-of-scars}.
+Full source code, automated harnesses, and raw $0.5\text{B}$/$7.62\text{B}$/$72\text{B}$ JSON telemetry are archived at \href{https://doi.org/10.5281/zenodo.24143839}{DOI: 10.5281/zenodo.24143839}~\citep{reisfilho2026mos_zenodo} and \href{https://github.com/byte-od/mixture-of-scars}{github.com/byte-od/mixture-of-scars}.
 \fi
 
 \bibliographystyle{plainnat}

@@ -1,0 +1,65 @@
+[{"stream_name":"stdout","time":0.646392513,"data":"[BOOT] Upgrading transformers\u003e=5.0.0, accelerate, safetensors for exact DynamicLayer parity...\n"}
+,{"stream_name":"stderr","time":17.566040943,"data":"ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\n"}
+,{"stream_name":"stderr","time":17.566066753,"data":"datasets 4.8.5 requires huggingface-hub\u003c2.0,\u003e=0.25.0, but you have huggingface-hub 2.4.0 which is incompatible.\n"}
+,{"stream_name":"stderr","time":17.566073186,"data":"gradio 6.30.0 requires pillow\u003c13.0,\u003e=8.0, but you have pillow 13.0.0 which is incompatible.\n"}
+,{"stream_name":"stdout","time":17.780940769,"data":"[EXEC] /usr/bin/python3 /tmp/mos_scache_7b_audit/scripts/adversarial_scale_7b_suite.py --model-id Qwen/Qwen2.5-7B-Instruct --output-json /kaggle/working/adversarial_scale_7b_report.json\n"}
+,{"stream_name":"stdout","time":32.973740492,"data":"==========================================================================================\n"}
+,{"stream_name":"stdout","time":32.97376488,"data":"⚔️ STARTING ADVERSARIAL SCALE FALSIFICATION SUITE ON: Qwen/Qwen2.5-7B-Instruct\n"}
+,{"stream_name":"stdout","time":32.973770588,"data":"==========================================================================================\n"}
+,{"stream_name":"stdout","time":32.97377482,"data":"[ENV] torch=2.11.0+cu130 | cuda=True (gpus=2) | dtype=torch.float16\n"}
+,{"stream_name":"stderr","time":33.063625429,"data":"\rFetching 14 files:   0%|          | 0/14 [00:00\u003c?, ?it/s]Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n"}
+,{"stream_name":"stderr","time":104.025841406,"data":"\rFetching 14 files:   7%|▋         | 1/14 [00:00\u003c00:01,  8.60it/s]\rFetching 14 files:  43%|████▎     | 6/14 [00:00\u003c00:00, 29.14it/s]\rFetching 14 files:  64%|██████▍   | 9/14 [00:00\u003c00:00, 24.45it/s]\rFetching 14 files:  71%|███████▏  | 10/14 [00:20\u003c00:00, 24.45it/s]\rFetching 14 files:  79%|███████▊  | 11/14 [01:11\u003c00:30, 10.28s/it]\rFetching 14 files: 100%|██████████| 14/14 [01:11\u003c00:00,  5.08s/it]\n"}
+,{"stream_name":"stderr","time":143.768765404,"data":"\rLoading weights:   0%|          | 0/339 [00:00\u003c?, ?it/s]\rLoading weights:   0%|          | 1/339 [00:11\u003c1:03:50, 11.33s/it]\rLoading weights:  44%|████▎     | 148/339 [00:12\u003c00:11, 16.12it/s]\rLoading weights:  47%|████▋     | 160/339 [00:12\u003c00:10, 17.42it/s]\rLoading weights:  50%|████▉     | 169/339 [00:13\u003c00:09, 17.82it/s]\rLoading weights:  52%|█████▏    | 175/339 [00:13\u003c00:10, 15.89it/s]\rLoading weights:  54%|█████▍    | 184/339 [00:15\u003c00:13, 11.75it/s]\rLoading weights:  55%|█████▌    | 187/339 [00:16\u003c00:12, 11.72it/s]\rLoading weights:  58%|█████▊    | 196/339 [00:17\u003c00:12, 11.04it/s]\rLoading weights:  58%|█████▊    | 198/339 [00:17\u003c00:16,  8.59it/s]\rLoading weights:  61%|██████▏   | 208/339 [00:19\u003c00:15,  8.53it/s]\rLoading weights:  62%|██████▏   | 210/339 [00:19\u003c00:17,  7.39it/s]\rLoading weights:  65%|██████▍   | 220/339 [00:20\u003c00:13,  8.75it/s]\rLoading weights:  65%|██████▌   | 221/339 [00:20\u003c00:14,  8.38it/s]\rLoading weights:  68%|██████▊   | 232/339 [00:21\u003c00:08, 12.28it/s]\rLoading weights:  72%|███████▏  | 244/339 [00:21\u003c00:05, 17.83it/s]\rLoading weights:  73%|███████▎  | 247/339 [00:21\u003c00:05, 18.05it/s]\rLoading weights:  76%|███████▌  | 258/339 [00:21\u003c00:03, 25.30it/s]\rLoading weights:  79%|███████▉  | 268/339 [00:22\u003c00:04, 14.96it/s]\rLoading weights:  83%|████████▎ | 280/339 [00:23\u003c00:04, 14.16it/s]\rLoading weights:  83%|████████▎ | 283/339 [00:24\u003c00:04, 13.59it/s]\rLoading weights:  86%|████████▌ | 292/339 [00:26\u003c00:05,  8.43it/s]\rLoading weights:  87%|████████▋ | 294/339 [00:26\u003c00:05,  8.59it/s]\rLoading weights:  90%|████████▉ | 304/339 [00:27\u003c00:03,  8.88it/s]\rLoading weights:  90%|█████████ | 306/339 [00:28\u003c00:04,  6.68it/s]\rLoading weights:  93%|█████████▎| 316/339 [00:29\u003c00:03,  7.57it/s]\rLoading weights:  94%|█████████▍| 318/339 [00:29\u003c00:03,  6.92it/s]\rLoading weights:  97%|█████████▋| 328/339 [00:30\u003c00:01, 10.50it/s]\rLoading weights: 100%|██████████| 339/339 [00:30\u003c00:00, 11.23it/s]\n"}
+,{"stream_name":"stdout","time":826.675085425,"data":"[MODEL] Qwen/Qwen2.5-7B-Instruct | Params=7.62B | Layers=28 | H_q=28 | H_kv=4 | d_head=128 | MLP=18944\n"}
+,{"stream_name":"stdout","time":826.675153624,"data":"  ✓ [Gate 0] Base model numerical sanity passed (100% finite logits).\n"}
+,{"stream_name":"stdout","time":826.67515935,"data":"\n"}
+,{"stream_name":"stdout","time":826.675162382,"data":"[VECTOR 0] 🔍 Recursive Storage-Pointer Byte Audit across [128, 256, 512, 1024, 2048, 4096] tokens...\n"}
+,{"stream_name":"stdout","time":826.675165547,"data":"  • L=128  | Vanilla=    7168.0 KB | SCache Real= 11599.9 KB (Rep= 11599.9 KB) | Saving=  0.62x (--61.8%)\n"}
+,{"stream_name":"stdout","time":826.67516868,"data":"  • L=256  | Vanilla=   14336.0 KB | SCache Real= 11599.9 KB (Rep= 11599.9 KB) | Saving=  1.24x (-19.1%)\n"}
+,{"stream_name":"stdout","time":826.675171706,"data":"  • L=512  | Vanilla=   28672.0 KB | SCache Real= 11599.9 KB (Rep= 11599.9 KB) | Saving=  2.47x (-59.5%)\n"}
+,{"stream_name":"stdout","time":826.675174579,"data":"  • L=1024 | Vanilla=   57344.0 KB | SCache Real= 11599.9 KB (Rep= 11599.9 KB) | Saving=  4.94x (-79.8%)\n"}
+,{"stream_name":"stdout","time":826.675178408,"data":"  • L=2048 | Vanilla=  114688.0 KB | SCache Real= 11599.9 KB (Rep= 11599.9 KB) | Saving=  9.89x (-89.9%)\n"}
+,{"stream_name":"stdout","time":826.67519489,"data":"  • L=4096 | Vanilla=  229376.0 KB | SCache Real= 11599.9 KB (Rep= 11599.9 KB) | Saving= 19.77x (-94.9%)\n"}
+,{"stream_name":"stdout","time":826.675200121,"data":"  ✓ Strict O(1) Invariance: ΔBytes(128 -\u003e 4096) = 0.00 B | Discrepancy = 0.00 KB | Causal |Δlogits| = 2.8526\n"}
+,{"stream_name":"stdout","time":826.675205712,"data":"\n"}
+,{"stream_name":"stdout","time":826.675210425,"data":"[VECTOR 2] ⚔️ Long-Horizon Document Recall (2400 tokens, W=64)...\n"}
+,{"stream_name":"stdout","time":826.675215324,"data":"  • Vanilla KV      | Tail PPL=    1.00 | Full PPL=    1.43 | RAM= 134400.0 KB\n"}
+,{"stream_name":"stdout","time":826.675219659,"data":"  • Naive Window    | Tail PPL=   85.86 | Full PPL=   81.50 | RAM=   3584.0 KB\n"}
+,{"stream_name":"stdout","time":826.675223973,"data":"  • StreamingLLM    | Tail PPL=   37.43 | Full PPL=   41.05 | RAM=   3584.0 KB\n"}
+,{"stream_name":"stdout","time":826.675228245,"data":"  • SCache O(1)     | Tail PPL=   29.08 | Full PPL=   29.55 | RAM=  11826.1 KB\n"}
+,{"stream_name":"stdout","time":826.675232431,"data":"\n"}
+,{"stream_name":"stdout","time":826.675236317,"data":"[VECTOR 3B] ⚔️ Multi-Distance Evicted Passcode Sweep (`7942-OMEGA`, Zero Fine-Tuning)...\n"}
+,{"stream_name":"stdout","time":826.675240654,"data":"  • [L=534 tok | Evicted 445 tok ago] NLL: Vanilla=0.040 | StreamingLLM=3.899 | SCache O(1)=1.481 (11.23x prob gain, -59.5% RAM)\n"}
+,{"stream_name":"stdout","time":826.675245018,"data":"  • [L=1834 tok | Evicted 1745 tok ago] NLL: Vanilla=0.030 | StreamingLLM=3.683 | SCache O(1)=1.667 (7.51x prob gain, -88.1% RAM)\n"}
+,{"stream_name":"stdout","time":826.675267687,"data":"\n"}
+,{"stream_name":"stdout","time":826.675270369,"data":"[PRE-MOS SNAPSHOT] Recording exact Dense reference logits, hidden states, and emergent outlier ratios...\n"}
+,{"stream_name":"stdout","time":826.675273209,"data":"  ✓ Emergent Channel Outlier Ratio (max/median RMS): Input Max=217.54x | SwiGLU Intermediate Max=3335.99x\n"}
+,{"stream_name":"stdout","time":826.675275662,"data":"\n"}
+,{"stream_name":"stdout","time":826.67528839,"data":"[VECTOR 1A] ⚔️ In-Place Per-Row INT4 + Rank-48 ASVD Scar Experts (84 SwiGLU Matrices)...\n"}
+,{"stream_name":"stdout","time":826.675292401,"data":"\n"}
+,{"stream_name":"stdout","time":826.675296093,"data":"[VECTOR 1B] ⚔️ In-Place Block-64 INT4 + Rank-48 ASVD Scar Experts (84 SwiGLU Matrices)...\n"}
+,{"stream_name":"stdout","time":826.675300204,"data":"  • [python_code    ] Dense PPL=  1.65 | PerRow KL: 0.1112 -\u003e 0.0352 (3.16x) | Block64 KL: 0.0189 -\u003e 0.0079 (2.39x, Top5=100.0%)\n"}
+,{"stream_name":"stdout","time":826.675304641,"data":"  • [quantum_physics] Dense PPL=  6.25 | PerRow KL: 0.2844 -\u003e 0.1319 (2.16x) | Block64 KL: 0.0565 -\u003e 0.0336 (1.68x, Top5=100.0%)\n"}
+,{"stream_name":"stdout","time":826.67530878,"data":"  • [portuguese_tech] Dense PPL= 19.15 | PerRow KL: 0.2367 -\u003e 0.1203 (1.97x) | Block64 KL: 0.0862 -\u003e 0.0379 (2.27x, Top5=100.0%)\n"}
+,{"stream_name":"stdout","time":826.675312403,"data":"  • [json_schema    ] Dense PPL= 25.36 | PerRow KL: 0.3554 -\u003e 0.1474 (2.41x) | Block64 KL: 0.1185 -\u003e 0.0356 (3.33x, Top5=100.0%)\n"}
+,{"stream_name":"stdout","time":826.675316062,"data":"\n"}
+,{"stream_name":"stdout","time":826.675319133,"data":"[VECTOR 5] ⚔️ Full-Stack Simultaneous (`MoS` + `SCache O(1)`) Evaluation...\n"}
+,{"stream_name":"stdout","time":826.675322602,"data":"  • Dense + Vanilla KV : Hits=4/6 | Ans NLL=3.078 | Long PPL=1.43\n"}
+,{"stream_name":"stdout","time":826.675325952,"data":"  • MoS + SCache O(1)  : Hits=4/6 | Ans NLL=2.987 | Long PPL=30.61 | MLP=-71.8% | KV=-91.2%\n"}
+,{"stream_name":"stdout","time":826.675329525,"data":"\n"}
+,{"stream_name":"stdout","time":826.675332657,"data":"[VECTOR 7] ⚖️ 3D Pareto Frontier on Non-Repeating Technical Document (926 unique tokens)...\n"}
+,{"stream_name":"stdout","time":826.675336082,"data":"  • dense_fp16_vanilla_kv    | Non-Repeat PPL=  6.05 | KV= 51856.0 KB | Speed= 314.0 tok/s\n"}
+,{"stream_name":"stdout","time":826.675339502,"data":"  • mos_streaming_w128       | Non-Repeat PPL=  8.42 | KV=  7168.0 KB | Speed=  36.2 tok/s (329.1x faster than AirLLM FP16 SSD ceiling!)\n"}
+,{"stream_name":"stdout","time":826.675343153,"data":"  • mos_scache_w128          | Non-Repeat PPL=  7.75 | KV= 15410.1 KB | Speed=  23.2 tok/s (210.9x faster than AirLLM FP16 SSD ceiling!)\n"}
+,{"stream_name":"stdout","time":826.675346639,"data":"  • mos_scache_w256          | Non-Repeat PPL=  6.67 | KV= 22578.1 KB | Speed=  24.7 tok/s (224.5x faster than AirLLM FP16 SSD ceiling!)\n"}
+,{"stream_name":"stdout","time":826.675350137,"data":"  • mos_scache_w384          | Non-Repeat PPL=  6.68 | KV= 29746.1 KB | Speed=  26.3 tok/s (239.1x faster than AirLLM FP16 SSD ceiling!)\n"}
+,{"stream_name":"stdout","time":826.675353602,"data":"\n"}
+,{"stream_name":"stdout","time":826.675356652,"data":"✅ ALL VECTORS COMPLETED CLEANLY IN 794.22s -\u003e /kaggle/working/adversarial_scale_7b_report.json\n"}
+,{"stream_name":"stdout","time":829.927490181,"data":"[DONE] Saved verified JSON telemetry to: /kaggle/working/adversarial_scale_7b_report.json\n"}
+,{"stream_name":"stderr","time":831.966396445,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":831.966437703,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":832.213859112,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":832.213885478,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":832.966535544,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":833.840514922,"data":"[NbConvertApp] Writing 362162 bytes to __results__.html\n"}
+]

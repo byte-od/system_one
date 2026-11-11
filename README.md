@@ -7,7 +7,7 @@
 [![HuggingFace Drop-in](https://img.shields.io/badge/HuggingFace-Compatible-yellow.svg)](https://huggingface.co/)
 [![KV Cache Reduction](https://img.shields.io/badge/KV%20Cache%20Reduction-187.5x-success.svg)]()
 [![Static Weights Reduction](https://img.shields.io/badge/Static%20Weights%20Reduction-90x-success.svg)]()
-[![Tests Passing](https://img.shields.io/badge/Tests-26%2F26%20Passing-brightgreen.svg)]()
+[![Tests Passing](https://img.shields.io/badge/Tests-37%2F37%20Passing-brightgreen.svg)]()
 [![Kaggle](https://kaggle.com/static/images/open-in-kaggle.svg)](https://www.kaggle.com/code/thetod/mixture-of-scars-benchmark)
 
 > **"Breaking the barrier between LLMs and hardware."**  
@@ -16,11 +16,27 @@
 > 1. **Mixture of Scars (MoS):** Radical static weight ($W_0$) compression (10x–90x reduction) via Universal Shared Base projections and hardware-local micro-experts residing in CPU/GPU L1/L2 caches.
 > 2. **SCache ($O(1)$ Dynamic Context):** Drop-in HuggingFace KV-cache replacement that freezes memory into a constant physical window backed by Widrow-Hoff associative fast-weights.
 
-### 📄 Official Preprint, LaTeX Source & Interactive Red-Team Lab
-- **Permanent Preprint (CERN / Zenodo DOI):** [`10.5281/zenodo.24143839`](https://doi.org/10.5281/zenodo.24143839) ([PDF](zenodo_deposit_v1/Mixture_of_Scars_and_SCache_Preprint_v1.0.pdf))
-- **Academic LaTeX Manuscript (arXiv / TMLR / Double-Blind Ready):** [`paper_latex/`](paper_latex/) & [`MoS_SCache_LaTeX_arXiv_TMLR_v1.0.zip`](zenodo_deposit_v1/MoS_SCache_LaTeX_arXiv_TMLR_v1.0.zip)
+### 📄 Official Preprint (`v1.1.0`), LaTeX Source & Interactive Red-Team Lab
+- **Permanent Preprint (CERN / Zenodo DOI):** [`10.5281/zenodo.24143839`](https://doi.org/10.5281/zenodo.24143839) ([**Preprint v1.1 PDF — 0.5B → 7.62B → 123B & 3D Pareto**](zenodo_deposit_v1_1/Mixture_of_Scars_and_SCache_Preprint_v1.1.pdf) | [v1.0 PDF](zenodo_deposit_v1/Mixture_of_Scars_and_SCache_Preprint_v1.0.pdf))
+- **Academic LaTeX Manuscript (arXiv / TMLR / Double-Blind Ready):** [`paper_latex/`](paper_latex/) & [`MoS_SCache_LaTeX_arXiv_TMLR_v1.1.zip`](zenodo_deposit_v1_1/MoS_SCache_LaTeX_arXiv_TMLR_v1.1.zip)
 - **Interactive Gradio Red-Team Laboratory (Hugging Face Space):** [`huggingface_space/`](huggingface_space/)
-- **7-Vector Adversarial Falsification Suite:** [`scripts/adversarial_mos_scache_suite.py`](scripts/adversarial_mos_scache_suite.py) (`0.00 KB` byte-pointer discrepancy, `22.58x` evicted-passcode likelihood gain over `StreamingLLM`)
+- **8-Vector Multi-Scale Adversarial Suites (`0.5B` & `7.62B` GPU Telemetry):**
+  - `7.62B` (`Qwen/Qwen2.5-7B-Instruct`, `28L`, `3,336x` SwiGLU outliers, `2x Tesla T4`): [`scripts/adversarial_scale_7b_suite.py`](scripts/adversarial_scale_7b_suite.py) & [`results/scale_7b_audit/adversarial_scale_7b_report.json`](results/scale_7b_audit/adversarial_scale_7b_report.json)
+  - `0.5B`–`123B` Red-Team Suite (`0.00 KB` byte-pointer discrepancy): [`scripts/adversarial_mos_scache_suite.py`](scripts/adversarial_mos_scache_suite.py)
+
+#### 🔬 New in `v1.1.0`: `7.62B` Scale & 3D Pareto Frontier vs. Disk Offloading (`AirLLM` / `mmap`)
+Evaluated on **`Qwen/Qwen2.5-7B-Instruct` (`7.62B`, `84` SwiGLU MLPs, `2x Tesla T4`)** across a **non-repeating 926-token distributed storage + Python + queueing math + SQL document** against measured host SSD-to-GPU bandwidth (`1.57 GB/s`):
+
+| Execution Engine (`7.62B`) | Non-Repeating PPL | MLP Weights (8x Multi-Tenant Bank) | KV VRAM (`L = 4,096`) | Disk Read / Tok | Throughput (`tok/s`) | Speedup vs. `AirLLM` FP16 |
+|---|---|---|---|---|---|---|
+| Dense FP16 + Vanilla KV $O(T)$ | `6.05` | `10.62 GiB` (`85.0 GiB` OOM) | `229.4 MB` $O(T)$ | `0 MB` | `314.0 tok/s` | Resident Reference |
+| `AirLLM` / `mmap` FP16 SSD Offload | `6.05` | `<2 GiB` (SSD-stalled) | `229.4 MB` $O(T)$ | `14.2 GiB` | `0.11 tok/s` | `1.0x` (`9.1 s/tok`) |
+| `AirLLM` / `mmap` INT4 SSD Offload | `~6.5` | `<2 GiB` (SSD-stalled) | `229.4 MB` $O(T)$ | `4.0 GiB` | `0.39 tok/s` | `3.6x` (`2.5 s/tok`) |
+| `MoS` + `StreamingLLM` ($W=128$) | `8.42` | `2.99 GiB` (**`3.72 GiB`**) | **`7.0 MB`** $O(1)$ | **`0 MB`** | `36.2 tok/s` | `329.1x` (Eviction Amnesia) |
+| **`MoS` + `SCache` $O(1)$ ($W=256, S=16$)** | **`6.67`** | **`2.99 GiB` (`3.72 GiB`, -95.6%)** | **`22.0 MB` $O(1)$ (`+0.00 B`)** | **`0 MB`** | **`24.7 tok/s`** | **`224.5x` (`62.7x` vs. INT4)** |
+
+- **`>6.7B` Emergent Outlier Dominance (`3,336x` SwiGLU RMS ratio):** `MoS` achieves **`100.0%` Top-5 token agreement** across all 4 unseen domains (Python `PPL 1.648 → 1.640`, Physics `6.253 → 6.261`, Tech Portuguese `19.15 → 21.70` vs. `23.54` INT4, Nested JSON `25.356 → 25.352`, up to **`3.33x` lower KL divergence** than `INT4`).
+- **Multi-Thousand-Token Evicted Passcode Recall (Zero Fine-Tuning):** `SCache` recovers evicted passcodes with **`22.58x`** (`0.5B`, `445` tok post-eviction), **`11.23x`** (`7.62B`, `445` tok post-eviction), and **`7.51x`** higher exact probability **`1,745` tokens after eviction** (`L = 1,834`, `-88.1%` KV VRAM).
 
 ---
 
@@ -213,7 +229,7 @@ The repository includes **16 standalone, self-contained reproduction scripts** i
 
 ## 🧪 Testing
 
-Run the full unit test suite (**26/26 tests passing in $< 1\text{s}$**):
+Run the full unit and adversarial red-team test suite (**37/37 tests passing**):
 
 ```bash
 pytest tests/
