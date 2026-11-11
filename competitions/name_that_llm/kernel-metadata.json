@@ -1,7 +1,7 @@
 {
   "id": "thetod/mixture-of-scars-70b-mos-scache-name-that-llm",
-  "title": "Mixture of Scars Titan 3 (Mistral Large 123B) Golden-Slice - Name That LLM",
-  "code_file": "name_that_llm_submission_titan3.ipynb",
+  "title": "Mixture of Scars 70B MoS + SCache - Name That LLM",
+  "code_file": "name_that_llm_submission_dual_titan.ipynb",
   "language": "python",
   "kernel_type": "notebook",
   "is_private": true,
@@ -12,9 +12,10 @@
     "cosmorin/name-that-llm-0-622-reproduction-svc-cache",
     "nishantdahal/ntl-handwriting-blend",
     "prvsiyan/prvsiyans-extended-name-that-llm-dataset",
+    "thetod/name-that-llm-titan2-yi34b-head",
+    "thetod/name-that-llm-titan2-yi34b-backbone",
     "thetod/name-that-llm-titan3-mistral-head",
-    "thetod/name-that-llm-titan3-mistral-backbone",
-    "kolihhan/ntl-short-trace-offline-bnb-0502"
+    "thetod/name-that-llm-titan3-mistral-backbone"
   ],
   "kernel_sources": [],
   "competition_sources": [

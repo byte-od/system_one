@@ -1,376 +1,285 @@
 import json
 from pathlib import Path
 
-def build_titan3_standalone_notebook():
+from build_dual_titan_hybrid_notebook import CELL2_SVC_PREFIT_VERBATIM
+
+THIS_DIR = Path(__file__).resolve().parent
+
+
+def _lines(code: str) -> list[str]:
+    return [ln + "\n" for ln in code.strip("\n").split("\n")]
+
+
+def build_titan3_standalone_notebook(sync_default: bool = False):
+    mos_src = "\n".join(
+        ln for ln in (THIS_DIR / "mos_streaming_engine.py").read_text().splitlines() if "from __future__" not in ln
+    )
+
     nb = {
         "metadata": {
-            "kernelspec": {
-                "display_name": "Python 3",
-                "language": "python",
-                "name": "python3"
-            },
-            "language_info": {
-                "name": "python",
-                "version": "3.10.12"
-            }
+            "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
+            "language_info": {"name": "python", "version": "3.10.12"},
         },
         "nbformat": 4,
         "nbformat_minor": 4,
-        "cells": []
+        "cells": [],
     }
 
-    # Cell 0: Header
     c0 = {
         "cell_type": "markdown",
         "metadata": {},
-        "source": [
-            "# 🔱 Mixture of Scars (MoS) Titan 3: Mistral Large 2 (123B) Golden-Slice\n",
-            "## Name That LLM: Ultra-Scale Dense Frontier Architecture\n",
-            "---\n",
-            "### Architecture Overview:\n",
-            "- **Intuição Rápida (LinearSVC 4-View, W = 1.0)**: 4-view n-grams (char 3-5, word 1-3, shape 2-6, small words 1-3) capturing static orthographic fingerprints (0.622 base).\n",
-            "- **DeBERTa v3 large (W = 0.25)**: Bidirectional deep language model providing structural syntactic diversity.\n",
-            "- **Titan 3 (Mistral Large 2 123B MoS Golden-Slice L44, W = 0.35 Plain + 0.15 Twin)**:\n",
-            "  - 100% Dense causal latent geometry (88 layers total, truncated to Layer 44, d = 12,288).\n",
-            "  - Tri-Compass Stylometric Integration: 12,288D semantic + 28D orthographic = 12,316D dense representation.\n",
-            "  - Log Loss Calibrada histórica de 1.6108 e Top-3 de 80.47%.\n",
-            "- **Confidence-Gated Dynamic Voting**: Logits são modulados dinamicamente pela margem de certeza para proteger a âncora rápida e evitar poluição ruidosa.\n",
-            "- **Continuous Soft Sinkhorn (300 iters)**: Guarantees uniform marginal class distribution across the 18 candidates.\n"
-        ]
+        "source": _lines(
+            """# 👑 Mixture of Scars (MoS) Titan 3 Standalone: Mistral Large 2 (123B) L44 + SCache O(1)
+Zero-leak pure-PyTorch FP16 layer-streaming (`micro_bsz=8`, `60k` tokens/GPU, `< 4.2 GiB` peak VRAM on T4)."""
+        ),
     }
 
-    # Cell 1: Environment & Setup
-    c1 = {
-        "cell_type": "code",
-        "execution_count": None,
-        "metadata": {},
-        "outputs": [],
-        "source": [
-            "import gc, glob, json, os, re, shutil, time\n",
-            "\n",
-            "# Offline execution guarantee\n",
-            "os.environ[\"HF_HUB_OFFLINE\"] = \"1\"\n",
-            "os.environ[\"TRANSFORMERS_OFFLINE\"] = \"1\"\n",
-            "\n",
-            "import numpy as np\n",
-            "import pandas as pd\n",
-            "import torch\n",
-            "from torch import nn\n",
-            "\n",
-            "torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False\n",
-            "torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False\n",
-            "\n",
-            "T0 = time.time()\n",
-            "INPUT_DIR = \"/kaggle/input\"\n",
-            "\n",
-            "# Install offline bitsandbytes if available\n",
-            "bnb_wheels = glob.glob(f\"{INPUT_DIR}/**/bitsandbytes*.whl\", recursive=True)\n",
-            "if bnb_wheels:\n",
-            "    import subprocess\n",
-            "    print(f\"Installing offline bitsandbytes from {bnb_wheels[0]}...\", flush=True)\n",
-            "    subprocess.run([\"pip\", \"install\", \"-q\", bnb_wheels[0]], check=False)\n",
-            "\n",
-            "# Blend weights\n",
-            "W_SVC = 1.0\n",
-            "W_DEBERTA = 0.25\n",
-            "W_TITAN3_PLAIN = 0.35\n",
-            "W_TITAN3_TWIN = 0.15\n",
-            "TWIN = dict(thresh=0.85, min_size=2, max_size=18)\n",
-            "\n",
-            "# Canonical competition label ordering\n",
-            "LABELS = ['gpt-5.5', 'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-6-astra', 'gemini-3.1-pro-preview', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash', 'claude-opus-4-6', 'claude-opus-4-8', 'claude-opus-5', 'claude-sonnet-5', 'claude-fable-5', 'qwen3.8-max', 'glm-5.3', 'glm-5.3-flash', 'kimi-k3']\n",
-            "K = len(LABELS)\n",
-            "\n",
-            "def find(pattern):\n",
-            "    hits = sorted(glob.glob(f\"{INPUT_DIR}/**/{pattern}\", recursive=True))\n",
-            "    if not hits:\n",
-            "        raise FileNotFoundError(pattern)\n",
-            "    return hits[0]\n",
-            "\n",
-            "def softmax(x):\n",
-            "    e = np.exp(x - x.max(1, keepdims=True))\n",
-            "    return e / e.sum(1, keepdims=True)\n",
-            "\n",
-            "def vote(name, P, w, rows=slice(None)):\n",
-            "    LOGIT[rows] += w * np.log(np.clip(P, 1e-9, 1.0))\n",
-            "    print(f\"{name}: weight {w}, done after {time.time() - T0:.0f}s\", flush=True)\n",
-            "\n",
-            "def conf_gated_vote(name, P, base_w, rows=slice(None), threshold=0.10):\n",
-            "    conf = P.max(axis=1, keepdims=True)\n",
-            "    gate = np.clip((conf - threshold) / (1.0 - threshold), 0.0, 1.0)\n",
-            "    eff_w = base_w * gate\n",
-            "    LOGIT[rows] += eff_w * np.log(np.clip(P, 1e-9, 1.0))\n",
-            "    print(f\"{name}: base_w={base_w}, mean_eff_w={eff_w.mean():.3f}, done after {time.time() - T0:.0f}s\", flush=True)\n",
-            "\n",
-            "def extract_tricompass_style_features(texts):\n",
-            "    feats = []\n",
-            "    for t in texts:\n",
-            "        t = str(t)\n",
-            "        n = max(len(t), 1); words = t.split(); nw = max(len(words), 1)\n",
-            "        sents = [s for s in re.split(r\"[.!?]+\", t) if s.strip()]; ns = max(len(sents), 1)\n",
-            "        lines = [l for l in t.split(\"\\n\") if l.strip()]; nl = max(len(lines), 1)\n",
-            "        feats.append([\n",
-            "            t.count(\",\")/n, t.count(\":\")/n, t.count(\";\")/n, t.count(\"—\")/n, t.count(\" — \")/n,\n",
-            "            t.count(\"-\")/n, t.count(\"--\")/n, t.count('\"')/n, t.count(\"'\")/n, t.count(\"`\")/n, t.count(\"```\")/nw,\n",
-            "            t.count(\"(\")/n, t.count(\")\")/n, t.count(\"[\")/n, t.count(\"]\")/n, t.count(\"{\")/n, t.count(\"}\")/n,\n",
-            "            t.count(\"#\")/n, t.count(\"*\")/n, (t.count(\"\\n- \") + t.count(\"\\n* \"))/nl,\n",
-            "            sum(c.isdigit() for c in t)/n, sum(c.isupper() for c in t)/n,\n",
-            "            sum(w[0].isupper() for w in words if len(w) > 0)/nw,\n",
-            "            t.count(\"\\n\")/nw, t.count(\"\\n\\n\")/nw,\n",
-            "            sum(len(w) for w in words)/nw, nw/ns, len(set(w.lower() for w in words))/nw\n",
-            "        ])\n",
-            "    return np.asarray(feats, dtype=np.float32)\n",
-            "\n",
-            "train = pd.read_csv(find(\"train.csv\"))\n",
-            "test = pd.read_csv(find(\"test.csv\"))\n",
-            "test[\"text\"] = test[\"text\"].fillna(\"\").astype(str)\n",
-            "y = train[\"model\"].map({l: i for i, l in enumerate(LABELS)}).values\n",
-            "LOGIT = np.zeros((len(test), K))\n",
-            "print(\"train\", train.shape, \"test\", test.shape, \"gpus\", torch.cuda.device_count(), flush=True)\n",
-            "\n",
-            "_sample_wall_timer = None\n",
-            "if len(test) <= 3:\n",
-            "    import threading\n",
-            "    def _sample_wall_timeout():\n",
-            "        print(\"SAMPLE WALL LIMIT: 600 seconds reached; inference aborted\", flush=True)\n",
-            "        os._exit(124)\n",
-            "    _sample_wall_timer = threading.Timer(max(0.01, 600.0 - (time.time() - T0)), _sample_wall_timeout)\n",
-            "    _sample_wall_timer.daemon = True\n",
-            "    _sample_wall_timer.start()\n"
-        ]
-    }
+    c1_code = (
+        """import gc, glob, json, math, os, re, shutil, time
+from pathlib import Path
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
-    # Cell 2: LinearSVC 4 Views
-    c2 = {
-        "cell_type": "code",
-        "execution_count": None,
-        "metadata": {},
-        "outputs": [],
-        "source": [
-            "from scipy.sparse import hstack\n",
-            "from sklearn.feature_extraction.text import TfidfVectorizer\n",
-            "from sklearn.svm import LinearSVC\n",
-            "\n",
-            "SMALL_WORDS = set(\"a an the and or but if while although because as so than that which who whom whose this these those it its they them their theirs he him his she her hers we us our ours you your yours i me my mine in on at to from with without for of by over under between through into about is are was were be been being have has had do does did can could will would shall should may might must not no nor all any some each every both either neither other another such only also just very too more most less least here there when where why how what whether then now still yet even much many few little\".split())\n",
-            "VIEWS = [(\"char\", 3, 5, 250000, 1.0), (\"word\", 1, 3, 180000, 0.7), (\"shape\", 2, 6, 60000, 0.5), (\"small\", 1, 3, 50000, 0.5)]\n",
-            "\n",
-            "def shape_text(t):\n",
-            "    return re.sub(r\"[^\\W\\d_]+\", lambda m: \"X\" if m[0].isupper() else \"x\", t)\n",
-            "\n",
-            "def small_words_only(t):\n",
-            "    return \" \".join(w for w in re.findall(r\"\\b[a-zA-Z]+\\b\", t.lower()) if w in SMALL_WORDS)\n",
-            "\n",
-            "cache = torch.load(find(\"svc_cache_0622.pt\"))\n",
-            "B = []\n",
-            "for kind, nmin, nmax, mf, sw in VIEWS:\n",
-            "    if kind == \"char\":\n",
-            "        te_text = test.text.tolist()\n",
-            "    elif kind == \"word\":\n",
-            "        te_text = test.text.tolist()\n",
-            "    elif kind == \"shape\":\n",
-            "        te_text = [shape_text(t) for t in test.text]\n",
-            "    elif kind == \"small\":\n",
-            "        te_text = [small_words_only(t) for t in test.text]\n",
-            "    vec = cache[\"vecs\"][kind]\n",
-            "    X_te = vec.transform(te_text).astype(np.float32)\n",
-            "    if sw != 1.0:\n",
-            "        X_te = X_te.multiply(sw)\n",
-            "    B.append(X_te)\n",
-            "vote(\"svc\", softmax(cache[\"svc\"].decision_function(hstack(B, format=\"csr\"))), W_SVC)\n",
-            "del B, cache\n",
-            "gc.collect()\n"
-        ]
-    }
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn.functional as F
+from safetensors import safe_open
+from safetensors.torch import load_file
 
-    # Cell 3: Topic Clustering & Twin Setup
-    c3 = {
-        "cell_type": "code",
-        "execution_count": None,
-        "metadata": {},
-        "outputs": [],
-        "source": [
-            "from scipy.cluster.hierarchy import fcluster, linkage\n",
-            "from scipy.spatial.distance import squareform\n",
-            "\n",
-            "if len(test) >= 2:\n",
-            "    Xt = TfidfVectorizer(stop_words=\"english\", sublinear_tf=True).fit_transform(test.text.tolist())\n",
-            "    D = np.clip(1 - (Xt @ Xt.T).toarray(), 0, None)\n",
-            "    np.fill_diagonal(D, 0)\n",
-            "    groups = fcluster(linkage(squareform(D, checks=False), method=\"average\"), TWIN[\"thresh\"], criterion=\"distance\")\n",
-            "    del D\n",
-            "else:\n",
-            "    groups = np.ones(len(test), dtype=int)\n",
-            "\n",
-            "size = np.bincount(groups)[groups]\n",
-            "twin_rows = (size >= TWIN[\"min_size\"]) & (size <= TWIN[\"max_size\"])\n",
-            "print(\"topic clusters:\", (size == 1).sum(), \"passages alone,\", (twin_rows).sum(), \"in clusters of 2 to 18\", flush=True)\n"
-        ]
-    }
+torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
+torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False
 
-    # Cell 4: DeBERTa v3 large
-    c4 = {
-        "cell_type": "code",
-        "execution_count": None,
-        "metadata": {},
-        "outputs": [],
-        "source": [
-            "from safetensors.torch import load_file\n",
-            "from transformers import AutoModel, AutoTokenizer\n",
-            "\n",
-            "ck = os.path.dirname(find(\"deberta_v3_large/meta.json\"))\n",
-            "if ck.startswith(\"/kaggle/input\"):\n",
-            "    shutil.copytree(ck, \"/tmp/deberta_v3_large\", dirs_exist_ok=True)\n",
-            "    ck = \"/tmp/deberta_v3_large\"\n",
-            "meta = json.load(open(os.path.join(ck, \"meta.json\")))\n",
-            "assert meta[\"labels\"] == LABELS, \"label order differs from checkpoint head\"\n",
-            "etok = AutoTokenizer.from_pretrained(os.path.join(ck, \"encoder\"))\n",
-            "enc = AutoModel.from_pretrained(os.path.join(ck, \"encoder\"), dtype=torch.float32).to(\"cuda:0\").eval()\n",
-            "head = load_file(os.path.join(ck, \"head.safetensors\"))\n",
-            "W, b = head[\"weight\"].float().numpy(), head[\"bias\"].float().numpy()\n",
-            "ids = etok(test.text.tolist(), truncation=True, max_length=meta[\"max_len\"])[\"input_ids\"]\n",
-            "order = np.argsort([len(x) for x in ids], kind=\"stable\")\n",
-            "reps = [None] * len(ids)\n",
-            "with torch.no_grad():\n",
-            "    for i in range(0, len(ids), 32):\n",
-            "        b_idx = order[i:i + 32]\n",
-            "        b_tok = etok.pad({\"input_ids\": [ids[j] for j in b_idx]}, padding=True, return_tensors=\"pt\").to(\"cuda:0\")\n",
-            "        h = enc(**b_tok).last_hidden_state\n",
-            "        m = b_tok[\"attention_mask\"][..., None]\n",
-            "        pooled = (h * m).sum(1) / m.sum(1).clamp(min=1)\n",
-            "        for j, r in zip(b_idx, pooled.cpu().numpy()):\n",
-            "            reps[j] = r\n",
-            "vote(\"deberta\", softmax(np.stack(reps) @ W.T + b), W_DEBERTA)\n",
-            "del enc\n",
-            "gc.collect()\n",
-            "torch.cuda.empty_cache()\n"
-        ]
-    }
+T0 = time.time()
+INPUT_DIR = "/kaggle/input"
+W_SVC = 1.0
+W_DEBERTA = 0.25
+TEMP_TITAN3 = 5.0
+W_TITAN3_PLAIN = 0.25
+W_TITAN3_TWIN = 0.35
+TWIN = dict(thresh=0.89, min_size=2, max_size=18)
 
-    # Cell 5: Titan 3 (Mistral Large 2 123B MoS Golden-Slice Layer 44)
-    c5 = {
-        "cell_type": "code",
-        "execution_count": None,
-        "metadata": {},
-        "outputs": [],
-        "source": [
-            "# ==============================================================================\n",
-            "# Titan 3: Mistral Large 2 (123B) MoS Golden-Slice Layer 44 (12,316D Tri-Compass)\n",
-            "# ==============================================================================\n",
-            "try:\n",
-            "    head_mistral_file = find(\"head_tricompass_mistral_large_123b_l44.safetensors\")\n",
-            "    print(f\"Loading Titan 3 Head from {head_mistral_file}...\", flush=True)\n",
-            "    head_mistral = load_file(head_mistral_file)\n",
-            "\n",
-            "    try:\n",
-            "        mistral_backbone_file = find(\"model-00001-of-00013.safetensors\")\n",
-            "    except Exception:\n",
-            "        mistral_backbone_file = find(\"model.safetensors.index.json\")\n",
-            "    mistral_backbone_dir = os.path.dirname(mistral_backbone_file)\n",
-            "    print(f\"Loading Titan 3 123B 44-Layer Backbone from {mistral_backbone_dir}...\", flush=True)\n",
-            "\n",
-            "    from transformers import AutoModel, AutoTokenizer\n",
-            "    tok_mistral = AutoTokenizer.from_pretrained(mistral_backbone_dir)\n",
-            "    if tok_mistral.pad_token is None:\n",
-            "        tok_mistral.pad_token = tok_mistral.eos_token\n",
-            "\n",
-            "    model_mistral = AutoModel.from_pretrained(\n",
-            "        mistral_backbone_dir,\n",
-            "        device_map=\"auto\",\n",
-            "        torch_dtype=torch.float16,\n",
-            "        offload_folder=\"/tmp/offload_mistral\",\n",
-            "        low_cpu_mem_usage=True\n",
-            "    ).eval()\n",
-            "\n",
-            "    # Stylometrics for Titan 3 (Compass 1)\n",
-            "    style_raw = extract_tricompass_style_features(test.text.tolist())\n",
-            "    style_normed = (style_raw - head_mistral[\"style_scaler.mean\"].float().numpy()) / head_mistral[\"style_scaler.scale\"].float().numpy()\n",
-            "\n",
-            "    # Backbone Feature Extraction (Compass 3: 12,288D)\n",
-            "    N_test = len(test)\n",
-            "    batch_size = 4\n",
-            "    all_reps = []\n",
-            "    with torch.no_grad():\n",
-            "        for i in range(0, N_test, batch_size):\n",
-            "            b_texts = test.text.tolist()[i : i + batch_size]\n",
-            "            inp = tok_mistral(b_texts, padding=True, truncation=True, max_length=512, return_tensors=\"pt\")\n",
-            "            out = model_mistral(**{k: v.to(model_mistral.device) for k, v in inp.items()})\n",
-            "            mask = inp.attention_mask.unsqueeze(-1).float().to(out.last_hidden_state.device)\n",
-            "            pooled = (out.last_hidden_state.float() * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)\n",
-            "            rms = torch.rsqrt(pooled.pow(2).mean(dim=-1, keepdim=True) + 1e-6)\n",
-            "            all_reps.append((pooled * rms).cpu().numpy())\n",
-            "    Z_mistral = np.concatenate(all_reps, axis=0)\n",
-            "    del model_mistral\n",
-            "    gc.collect()\n",
-            "    torch.cuda.empty_cache()\n",
-            "    print(\"Titan 3 Mistral Large 2 (123B) features extracted successfully!\", flush=True)\n",
-            "\n",
-            "    # Plain Head Vote (Confidence-Gated)\n",
-            "    X_plain_raw = np.hstack([Z_mistral, style_normed])\n",
-            "    X_plain = (X_plain_raw - head_mistral[\"scaler_plain.mean\"].float().numpy()) / head_mistral[\"scaler_plain.scale\"].float().numpy()\n",
-            "    logits_plain = X_plain @ head_mistral[\"plain.weight\"].float().numpy().T + head_mistral[\"plain.bias\"].float().numpy()\n",
-            "    conf_gated_vote(\"titan3_mistral_123b_plain\", softmax(logits_plain), W_TITAN3_PLAIN)\n",
-            "\n",
-            "    # Centered Twin Vote (Confidence-Gated)\n",
-            "    if twin_rows.any():\n",
-            "        Zc = Z_mistral.copy()\n",
-            "        Sc = style_normed.copy()\n",
-            "        for g in np.unique(groups[twin_rows]):\n",
-            "            m = (groups == g)\n",
-            "            if m.sum() > 1:\n",
-            "                Zc[m] -= Zc[m].mean(0)\n",
-            "                Sc[m] -= Sc[m].mean(0)\n",
-            "        X_c_raw = np.hstack([Zc, Sc])\n",
-            "        X_c = (X_c_raw - head_mistral[\"scaler_centered.mean\"].float().numpy()) / head_mistral[\"scaler_centered.scale\"].float().numpy()\n",
-            "        logits_c = X_c[twin_rows] @ head_mistral[\"centered.weight\"].float().numpy().T + head_mistral[\"centered.bias\"].float().numpy()\n",
-            "        conf_gated_vote(\"titan3_mistral_123b_twin\", softmax(logits_c), W_TITAN3_TWIN, rows=twin_rows)\n",
-            "    print(\"Titan 3 Mistral Large 2 inference votes recorded!\", flush=True)\n",
-            "\n",
-            "except Exception as e:\n",
-            "    import traceback\n",
-            "    print(f\"Warning: Titan 3 evaluation bypassed: {e}\", flush=True)\n",
-            "    traceback.print_exc()\n"
-        ]
-    }
+LABELS = ['gpt-5.5', 'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-6-astra', 'gemini-3.1-pro-preview', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash', 'claude-opus-4-6', 'claude-opus-4-8', 'claude-opus-5', 'claude-sonnet-5', 'claude-fable-5', 'qwen3.8-max', 'glm-5.3', 'glm-5.3-flash', 'kimi-k3']
+K = len(LABELS)
 
-    # Cell 6: Soft Sinkhorn & Parquet generation
-    c6 = {
-        "cell_type": "code",
-        "execution_count": None,
-        "metadata": {},
-        "outputs": [],
-        "source": [
-            "def sinkhorn(P, iters=300):\n",
-            "    c = np.ones(K)\n",
-            "    target = np.full(K, len(P) / K)\n",
-            "    for _ in range(iters):\n",
-            "        R = P * c\n",
-            "        R /= R.sum(1, keepdims=True)\n",
-            "        c *= target / R.sum(0)\n",
-            "    R = P * c\n",
-            "    return R / R.sum(1, keepdims=True)\n",
-            "\n",
-            "assert np.isfinite(LOGIT).all(), \"Nonfinite ensemble logits\"\n",
-            "P = softmax(LOGIT)\n",
-            "if len(test) >= 50:\n",
-            "    P = sinkhorn(P)\n",
-            "assert np.isfinite(P).all(), \"Nonfinite ensemble probability\"\n",
-            "assert P.shape == (len(test), K), \"Probability shape mismatch\"\n",
-            "sub = pd.DataFrame({\"id\": test[\"id\"].astype(str), \"model\": np.array(LABELS)[P.argmax(1)]})\n",
-            "assert len(sub) == len(test) and sub[\"model\"].isin(LABELS).all()\n",
-            "sub.to_parquet(\"submission.parquet\", index=False)\n",
-            "print(sub[\"model\"].value_counts().to_string())\n",
-            "print(f\"done in {time.time() - T0:.0f}s\")\n",
-            "\n",
-            "if _sample_wall_timer is not None:\n",
-            "    _sample_wall_timer.cancel()\n"
-        ]
-    }
+def find(pattern):
+    hits = sorted(glob.glob(f"{INPUT_DIR}/**/{pattern}", recursive=True))
+    if not hits:
+        raise FileNotFoundError(pattern)
+    return hits[0]
+
+def softmax(x):
+    e = np.exp(x - x.max(1, keepdims=True))
+    return e / e.sum(1, keepdims=True)
+
+def vote(name, P, w, rows=slice(None)):
+    LOGIT[rows] += w * np.log(np.clip(P, 1e-9, 1.0))
+    print(f"{name}: weight {w:.3f}, done after {time.time() - T0:.0f}s", flush=True)
+
+def extract_tricompass_style_features(texts):
+    feats = []
+    for t in texts:
+        t = str(t)
+        n = max(len(t), 1); words = t.split(); nw = max(len(words), 1)
+        sents = [s for s in re.split(r"[.!?]+", t) if s.strip()]; ns = max(len(sents), 1)
+        lines = [l for l in t.split("\\n") if l.strip()]; nl = max(len(lines), 1)
+        feats.append([
+            t.count(",")/n, t.count(":")/n, t.count(";")/n, t.count("—")/n, t.count(" — ")/n,
+            t.count("-")/n, t.count("--")/n, t.count('"')/n, t.count("'")/n, t.count("`")/n, t.count("```")/nw,
+            t.count("(")/n, t.count(")")/n, t.count("[")/n, t.count("]")/n, t.count("{")/n, t.count("}")/n,
+            t.count("#")/n, t.count("*")/n, (t.count("\\n- ") + t.count("\\n* "))/nl,
+            sum(c.isdigit() for c in t)/n, sum(c.isupper() for c in t)/n,
+            sum(w[0].isupper() for w in words if len(w) > 0)/nw,
+            t.count("\\n")/nw, t.count("\\n\\n")/nw,
+            sum(len(w) for w in words)/nw, nw/ns, len(set(w.lower() for w in words))/nw
+        ])
+    return np.asarray(feats, dtype=np.float32)
+
+class TestTimeSCache:
+    def __init__(self, slot_dim=32, resonance_scale=0.15):
+        self.slot_dim = slot_dim
+        self.resonance_scale = resonance_scale
+        self.proj = None
+
+    def apply_scache_resonance(self, X, groups, twin_mask=None):
+        if self.proj is None:
+            rng = np.random.RandomState(42)
+            Q, _ = np.linalg.qr(rng.randn(X.shape[1], self.slot_dim))
+            self.proj = Q.astype(np.float32)
+        Z = X @ self.proj
+        X_out = X.copy()
+        ugs = np.unique(groups[twin_mask]) if (twin_mask is not None and twin_mask.any()) else []
+        for g in ugs:
+            m = (groups == g)
+            if m.sum() > 1:
+                dz = Z[m] - Z[m].mean(axis=0, keepdims=True)
+                W_scar = (dz.T @ dz) / float(m.sum())
+                X_out[m] += self.resonance_scale * ((dz @ W_scar.T) @ self.proj.T)
+        return X_out
+"""
+        + "\n"
+        + mos_src
+        + """
+train = pd.read_csv(find("train.csv"))
+test = pd.read_csv(find("test.csv"))
+test["text"] = test["text"].fillna("").astype(str)
+y = train["model"].map({l: i for i, l in enumerate(LABELS)}).values
+LOGIT = np.zeros((len(test), K))
+print("train", train.shape, "test", test.shape, "gpus", torch.cuda.device_count(), flush=True)
+"""
+    )
+
+    c1 = {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": _lines(c1_code)}
+    c2 = {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": CELL2_SVC_PREFIT_VERBATIM}
+
+    c3_code = """from scipy.cluster.hierarchy import fcluster, linkage
+from scipy.spatial.distance import squareform
+
+if len(test) >= 2:
+    Xt = TfidfVectorizer(stop_words="english", sublinear_tf=True).fit_transform(test.text.tolist())
+    S_mat = (Xt @ Xt.T).toarray().astype(np.float32)
+    del Xt
+    D = np.clip(1.0 - S_mat, 0.0, None)
+    np.fill_diagonal(D, 0.0)
+    Z_lk = linkage(squareform(D, checks=False), method="average")
+    g_raw = fcluster(Z_lk, TWIN["thresh"], criterion="distance")
+    next_id = int(g_raw.max()) + 1
+    groups = g_raw.copy()
+    for cid in np.unique(g_raw):
+        idx = np.where(g_raw == cid)[0]
+        if len(idx) > TWIN["max_size"]:
+            subD = D[np.ix_(idx, idx)]
+            subZ = linkage(squareform(subD, checks=False), method="average")
+            for th in np.linspace(TWIN["thresh"] - 0.005, 0.05, 165):
+                sg = fcluster(subZ, th, criterion="distance")
+                if np.bincount(sg).max() <= TWIN["max_size"]:
+                    for sc in np.unique(sg):
+                        groups[idx[sg == sc]] = next_id; next_id += 1
+                    break
+            else:
+                sg = fcluster(subZ, int(np.ceil(len(idx) / TWIN["max_size"])), criterion="maxclust")
+                for sc in np.unique(sg):
+                    groups[idx[sg == sc]] = next_id; next_id += 1
+    del D, Z_lk
+else:
+    groups = np.ones(len(test), dtype=int)
+
+size = np.bincount(groups)[groups]
+twin_rows = (size >= TWIN["min_size"]) & (size <= TWIN["max_size"])
+print("topic clusters:", (size == 1).sum(), "passages alone,", (twin_rows).sum(), "in clusters of 2 to 18", flush=True)
+"""
+    c3 = {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": _lines(c3_code)}
+
+    c4_code = """from transformers import AutoModel, AutoTokenizer
+
+ck = os.path.dirname(find("deberta_v3_large/meta.json"))
+if ck.startswith("/kaggle/input"):
+    shutil.copytree(ck, "/tmp/deberta_v3_large", dirs_exist_ok=True)
+    ck = "/tmp/deberta_v3_large"
+meta = json.load(open(os.path.join(ck, "meta.json")))
+assert meta["labels"] == LABELS, "label order differs from checkpoint head"
+etok = AutoTokenizer.from_pretrained(os.path.join(ck, "encoder"))
+enc = AutoModel.from_pretrained(os.path.join(ck, "encoder"), dtype=torch.float32).to("cuda:0").eval()
+head = load_file(os.path.join(ck, "head.safetensors"))
+W, b = head["weight"].float().numpy(), head["bias"].float().numpy()
+ids = etok(test.text.tolist(), truncation=True, max_length=meta["max_len"])["input_ids"]
+order = np.argsort([len(x) for x in ids], kind="stable")
+reps = [None] * len(ids)
+with torch.no_grad():
+    for i in range(0, len(ids), 32):
+        b_idx = order[i:i + 32]
+        b_tok = etok.pad({"input_ids": [ids[j] for j in b_idx]}, padding=True, return_tensors="pt").to("cuda:0")
+        h = enc(**b_tok).last_hidden_state
+        m = b_tok["attention_mask"][..., None]
+        pooled = (h * m).sum(1) / m.sum(1).clamp(min=1)
+        for j, r in zip(b_idx, pooled.cpu().numpy()):
+            reps[j] = r
+        del b_tok, h, m, pooled
+vote("deberta", softmax(np.stack(reps) @ W.T + b), W_DEBERTA)
+del enc, head, reps
+gc.collect()
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
+"""
+    c4 = {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": _lines(c4_code)}
+
+    c5_code = """head_mistral_file = find("head_tricompass_mistral_large_123b_l44_scache.safetensors")
+head_mistral = load_file(head_mistral_file)
+mistral_backbone_dir = os.path.dirname(find("model-00001-of-00013.safetensors"))
+tok_mistral = AutoTokenizer.from_pretrained(mistral_backbone_dir, use_fast=True)
+pad_id_m = tok_mistral.pad_token_id if tok_mistral.pad_token_id is not None else tok_mistral.eos_token_id
+raw_ids_m = tok_mistral(test.text.tolist(), truncation=True, max_length=512, padding=False)["input_ids"]
+mos_devices = [f"cuda:{i}" for i in range(torch.cuda.device_count())] if torch.cuda.is_available() else ["cpu"]
+
+Z_mistral = extract_mos_nf4_streaming(
+    mistral_backbone_dir, raw_ids_m, pad_id_m, mos_devices,
+    padding_side=tok_mistral.padding_side, tag="Titan3-Mistral123B",
+    micro_bsz=8, max_tokens_per_dev=60000,
+)
+assert np.isfinite(Z_mistral).all(), "Non-finite features in Z_mistral"
+
+style_raw = extract_tricompass_style_features(test.text.tolist())
+style_normed = (style_raw - head_mistral["style_scaler.mean"].float().numpy()) / head_mistral["style_scaler.scale"].float().numpy()
+X_tri_mistral = np.hstack([Z_mistral, style_normed])
+X_sc_mistral = TestTimeSCache(slot_dim=32, resonance_scale=0.15).apply_scache_resonance(X_tri_mistral, groups, twin_rows)
+
+X_plain = (X_sc_mistral - head_mistral["scaler_plain.mean"].float().numpy()) / head_mistral["scaler_plain.scale"].float().numpy()
+logits_plain = (X_plain @ head_mistral["plain.weight"].float().numpy().T + head_mistral["plain.bias"].float().numpy()) / TEMP_TITAN3
+vote("titan3_mistral_123b_plain", softmax(logits_plain), W_TITAN3_PLAIN)
+
+if twin_rows.any():
+    X_c_raw = X_sc_mistral.copy()
+    for g in np.unique(groups[twin_rows]):
+        m = (groups == g)
+        if m.sum() > 1:
+            X_c_raw[m] -= X_c_raw[m].mean(axis=0, keepdims=True)
+    X_c = (X_c_raw - head_mistral["scaler_centered.mean"].float().numpy()) / head_mistral["scaler_centered.scale"].float().numpy()
+    logits_c = (X_c[twin_rows] @ head_mistral["centered.weight"].float().numpy().T + head_mistral["centered.bias"].float().numpy()) / TEMP_TITAN3
+    vote("titan3_mistral_123b_twin", softmax(logits_c), W_TITAN3_TWIN, rows=twin_rows)
+
+del Z_mistral, X_tri_mistral, X_sc_mistral, X_plain, head_mistral
+gc.collect()
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
+"""
+    c5 = {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": _lines(c5_code)}
+
+    c6_code = """def sinkhorn_damped(P, target_mix=0.50, iters=300):
+    P_s = np.clip(P, 1e-12, 1.0)
+    P_s = P_s / P_s.sum(1, keepdims=True)
+    emp = P_s.sum(0)
+    unif = np.full(K, len(P_s) / float(K))
+    target = np.maximum((1.0 - target_mix) * emp + target_mix * unif, 1e-6)
+    c = np.ones(K, dtype=np.float64)
+    for _ in range(iters):
+        R = P_s * c
+        R /= R.sum(1, keepdims=True)
+        c *= target / np.maximum(R.sum(0), 1e-12)
+    R = P_s * c
+    return R / R.sum(1, keepdims=True)
+
+assert np.isfinite(LOGIT).all(), "Nonfinite ensemble logits"
+P = softmax(LOGIT)
+if len(test) >= 50:
+    P = sinkhorn_damped(P, target_mix=0.50, iters=300)
+assert np.isfinite(P).all(), "Nonfinite ensemble probability"
+sub = pd.DataFrame({"id": test["id"].astype(str), "model": np.array(LABELS)[P.argmax(1)]})
+assert len(sub) == len(test) and sub["model"].isin(LABELS).all()
+sub.to_parquet("submission.parquet", index=False)
+print(sub["model"].value_counts().to_string())
+print(f"done in {time.time() - T0:.0f}s")
+"""
+    c6 = {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": _lines(c6_code)}
 
     nb["cells"] = [c0, c1, c2, c3, c4, c5, c6]
-    out_path = Path("/Users/juliocesarreisfilho/Projects/scar-cache/competitions/name_that_llm/name_that_llm_submission_titan3.ipynb")
-    with open(out_path, "w") as f:
-        json.dump(nb, f, indent=1)
-    print("✓ Titan 3 Standalone notebook generated successfully at:", out_path)
+    targets = ["name_that_llm_submission_titan3.ipynb"]
+    if sync_default:
+        targets.append("name_that_llm_submission.ipynb")
+    for fname in targets:
+        p = THIS_DIR / fname
+        p.write_text(json.dumps(nb, indent=1))
+        print("✓ Generated:", p)
+
 
 if __name__ == "__main__":
     build_titan3_standalone_notebook()

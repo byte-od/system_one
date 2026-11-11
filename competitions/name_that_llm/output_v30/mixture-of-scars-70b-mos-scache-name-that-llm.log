@@ -1,0 +1,35 @@
+[{"stream_name":"stderr","time":6.344253843,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":6.344290842,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":6.344295414,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":6.344312557,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stderr","time":6.895718252,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":6.8957474340000005,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":6.895751086,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":6.8957537,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stdout","time":14.142401768,"data":"train (2699, 4) test (3, 2) gpus 2\n"}
+,{"stream_name":"stdout","time":20.716411013,"data":"svc: weight 1.0, done after 7s\n"}
+,{"stream_name":"stdout","time":20.78471736,"data":"topic clusters: 3 passages alone, 0 in clusters of 2 to 18\n"}
+,{"stream_name":"stdout","time":55.099438848,"data":"deberta: weight 0.25, done after 42s\n"}
+,{"stream_name":"stdout","time":55.589616216,"data":"Loading Titan 3 Co-Trained SCache Head from /kaggle/input/name-that-llm-titan3-mistral-head/head_tricompass_mistral_large_123b_l44_scache.safetensors...\n"}
+,{"stream_name":"stdout","time":55.857277727,"data":"Streaming Titan 3 123B 44-Layer MoS Backbone from /kaggle/input/name-that-llm-titan3-mistral-backbone...\n"}
+,{"stream_name":"stdout","time":161.592695246,"data":"  [MoS Stream] Macro 1/1 | Layer 11/44 | Elapsed 105.2s | GPU0 Alloc 2.76 GiB\n"}
+,{"stream_name":"stdout","time":212.633306014,"data":"  [MoS Stream] Macro 1/1 | Layer 22/44 | Elapsed 156.3s | GPU0 Alloc 2.76 GiB\n"}
+,{"stream_name":"stdout","time":276.333492673,"data":"  [MoS Stream] Macro 1/1 | Layer 33/44 | Elapsed 219.9s | GPU0 Alloc 2.76 GiB\n"}
+,{"stream_name":"stdout","time":336.119231492,"data":"  [MoS Stream] Macro 1/1 | Layer 44/44 | Elapsed 279.7s | GPU0 Alloc 2.76 GiB\n"}
+,{"stream_name":"stdout","time":336.418116918,"data":"Titan 3 Mistral Large 2 (123B) MoS features extracted successfully! Shape: (3, 12288)\n"}
+,{"stream_name":"stdout","time":336.50474469,"data":"titan3_mistral_123b_plain: weight 0.25, done after 323s\n"}
+,{"stream_name":"stdout","time":336.50724289,"data":"Titan 3 Mistral Large 2 inference votes recorded!\n"}
+,{"stream_name":"stdout","time":336.639109727,"data":"model\n"}
+,{"stream_name":"stdout","time":336.639132277,"data":"claude-opus-4-8           1\n"}
+,{"stream_name":"stdout","time":336.639137208,"data":"gpt-5.5                   1\n"}
+,{"stream_name":"stdout","time":336.639142135,"data":"gemini-3.1-pro-preview    1\n"}
+,{"stream_name":"stdout","time":336.639146865,"data":"done in 324s\n"}
+,{"stream_name":"stderr","time":341.794812374,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":341.794841519,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":341.951368425,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":341.951393268,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":342.763494666,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to notebook\n"}
+,{"stream_name":"stderr","time":342.841602757,"data":"[NbConvertApp] Writing 48585 bytes to __notebook__.ipynb\n"}
+,{"stream_name":"stderr","time":345.334940042,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to html\n"}
+,{"stream_name":"stderr","time":345.939083402,"data":"[NbConvertApp] Writing 436254 bytes to __results__.html\n"}
+]

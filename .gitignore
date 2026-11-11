@@ -70,3 +70,4 @@ models/**/*.safetensors.part
 # macOS
 .DS_Store
 competitions/**/test_run/
+competitions/**/scratch/

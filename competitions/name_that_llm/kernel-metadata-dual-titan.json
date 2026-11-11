@@ -1,6 +1,6 @@
 {
   "id": "thetod/mixture-of-scars-70b-mos-scache-name-that-llm",
-  "title": "Mixture of Scars Dual-Titan SOTA Ensemble (Yi-34B + Mistral 123B) - Name That LLM",
+  "title": "Mixture of Scars 70B MoS + SCache - Name That LLM",
   "code_file": "name_that_llm_submission_dual_titan.ipynb",
   "language": "python",
   "kernel_type": "notebook",
@@ -15,8 +15,7 @@
     "thetod/name-that-llm-titan2-yi34b-head",
     "thetod/name-that-llm-titan2-yi34b-backbone",
     "thetod/name-that-llm-titan3-mistral-head",
-    "thetod/name-that-llm-titan3-mistral-backbone",
-    "kolihhan/ntl-short-trace-offline-bnb-0502"
+    "thetod/name-that-llm-titan3-mistral-backbone"
   ],
   "kernel_sources": [],
   "competition_sources": [

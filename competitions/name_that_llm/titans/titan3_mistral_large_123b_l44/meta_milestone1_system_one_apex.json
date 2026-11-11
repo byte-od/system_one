@@ -1,0 +1,43 @@
+{
+  "schema": "system-one-apex-v33",
+  "labels": [
+    "gpt-5.5",
+    "gpt-5.6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-6-astra",
+    "gemini-3.1-pro-preview",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+    "gemini-3.8-flash",
+    "claude-opus-4-6",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-fable-5",
+    "qwen3.8-max",
+    "glm-5.3",
+    "glm-5.3-flash",
+    "kimi-k3"
+  ],
+  "oof_v32_baseline_bal_acc": 0.5867834949043004,
+  "oof_v33_apex_bal_acc": 0.6586726323639075,
+  "oof_gain": 0.07188913745960712,
+  "learned_weights": {
+    "c2_svc": 1.04407010703373,
+    "host_svc": 0.1583736086906642,
+    "proxy_svc": 0.5403237341415635,
+    "forensic120": 0.15829590000570876,
+    "t2_plain": 0.018836248233774017,
+    "t2_twin": 0.27118752541749813,
+    "t3_plain": 0.03422541099443638,
+    "t3_twin": 1.4178591980947652,
+    "s1_mlp": 0.0985224350137879,
+    "scache_bayes": 0.2383058323740713
+  },
+  "best_cavity_gamma": 0.82,
+  "best_s2_beta": 0.0,
+  "best_sinkhorn_target_mix": 0.35,
+  "cluster_base_thresh": 0.89,
+  "safetensors_bytes": 22851488
+}

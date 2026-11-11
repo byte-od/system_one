@@ -1,0 +1,60 @@
+[{"stream_name":"stderr","time":8.828853321,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":8.828900297,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":8.828907131,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":8.828911315,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stderr","time":9.459452352,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":9.459482689,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":9.45948802,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":9.459491995,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stdout","time":20.554469213,"data":"train (2699, 4) test (3, 2) gpus 2\n"}
+,{"stream_name":"stdout","time":27.792258481,"data":"svc: weight 1.0, done after 9s\n"}
+,{"stream_name":"stdout","time":27.867101845,"data":"topic clusters: 3 passages alone, 0 in clusters of 2 to 18\n"}
+,{"stream_name":"stdout","time":57.2665781,"data":"deberta: weight 0.25, done after 38s\n"}
+,{"stream_name":"stdout","time":58.02955862,"data":"Loading Titan 2 Co-Trained SCache Head from /kaggle/input/name-that-llm-titan2-yi34b-head/head_tricompass_yi34b_l30_scache.safetensors...\n"}
+,{"stream_name":"stdout","time":58.39449847,"data":"Streaming Titan 2 Yi-34B 30-Layer MoS Backbone from /kaggle/input/name-that-llm-titan2-yi34b-backbone...\n"}
+,{"stream_name":"stderr","time":63.037998398,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":63.038638255,"data":"  File \"\u003cstring\u003e\", line 1, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":63.038653046,"data":"    import sys;import papermill as pm;pm.execute_notebook(\"__notebook__.ipynb\",\"__notebook__.ipynb\",progress_bar=False,log_output=True,stdout_file=sys.stdout,stderr_file=sys.stderr,allow_errors=False,timeout=43200)\n"}
+,{"stream_name":"stderr","time":63.03866177,"data":"                                      ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.038666457,"data":"  File \"/usr/local/lib/python3.13/dist-packages/papermill/execute.py\", line 131, in execute_notebook\n"}
+,{"stream_name":"stderr","time":63.038671435,"data":"    raise_for_execution_errors(nb, output_path)\n"}
+,{"stream_name":"stderr","time":63.038676736,"data":"    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":63.038681675,"data":"  File \"/usr/local/lib/python3.13/dist-packages/papermill/execute.py\", line 251, in raise_for_execution_errors\n"}
+,{"stream_name":"stderr","time":63.038686305,"data":"    raise error\n"}
+,{"stream_name":"stderr","time":63.03869477,"data":"papermill.exceptions.PapermillExecutionError: \n"}
+,{"stream_name":"stderr","time":63.038699673,"data":"---------------------------------------------------------------------------\n"}
+,{"stream_name":"stderr","time":63.038705203,"data":"Exception encountered at \"In [5]\":\n"}
+,{"stream_name":"stderr","time":63.03871039,"data":"---------------------------------------------------------------------------\n"}
+,{"stream_name":"stderr","time":63.038715183,"data":"KeyError                                  Traceback (most recent call last)\n"}
+,{"stream_name":"stderr","time":63.0387302,"data":"/tmp/ipykernel_23/845064942.py in \u003ccell line: 0\u003e()\n"}
+,{"stream_name":"stderr","time":63.038734736,"data":"     18 raw_ids_yi = tok_yi(test.text.tolist(), truncation=True, max_length=512, padding=False)[\"input_ids\"]\n"}
+,{"stream_name":"stderr","time":63.038738588,"data":"     19 \n"}
+,{"stream_name":"stderr","time":63.038747933,"data":"---\u003e 20 Z_yi = extract_mos_nf4_streaming(\n"}
+,{"stream_name":"stderr","time":63.038750571,"data":"     21     yi_backbone_dir,\n"}
+,{"stream_name":"stderr","time":63.038752865,"data":"     22     raw_ids_yi,\n"}
+,{"stream_name":"stderr","time":63.038755125,"data":"\n"}
+,{"stream_name":"stderr","time":63.03875729,"data":"/tmp/ipykernel_23/3132740581.py in extract_mos_nf4_streaming(backbone_dir, ids_list, pad_id, devices, padding_side, tag)\n"}
+,{"stream_name":"stderr","time":63.038759665,"data":"    183         for mc_idx, m_specs in enumerate(macro_chunks):\n"}
+,{"stream_name":"stderr","time":63.038761917,"data":"    184             open_shards.clear()\n"}
+,{"stream_name":"stderr","time":63.038764243,"data":"--\u003e 185             emb_w = get_tensor_cpu(\"model.embed_tokens.weight\")\n"}
+,{"stream_name":"stderr","time":63.038766634,"data":"    186             dev_states = {d: [] for d in devices}\n"}
+,{"stream_name":"stderr","time":63.038768846,"data":"    187             for bi, (b_idx, inp_ids, att_msk) in enumerate(m_specs):\n"}
+,{"stream_name":"stderr","time":63.038771471,"data":"\n"}
+,{"stream_name":"stderr","time":63.038773686,"data":"/tmp/ipykernel_23/3132740581.py in get_tensor_cpu(key)\n"}
+,{"stream_name":"stderr","time":63.03877595,"data":"    104 \n"}
+,{"stream_name":"stderr","time":63.038778833,"data":"    105     def get_tensor_cpu(key):\n"}
+,{"stream_name":"stderr","time":63.03879451,"data":"--\u003e 106         shard_name = idx_map[key]\n"}
+,{"stream_name":"stderr","time":63.038798331,"data":"    107         if shard_name not in open_shards:\n"}
+,{"stream_name":"stderr","time":63.038802462,"data":"    108             open_shards[shard_name] = safe_open(os.path.join(backbone_dir, shard_name), framework=\"pt\", device=\"cpu\")\n"}
+,{"stream_name":"stderr","time":63.03880631,"data":"\n"}
+,{"stream_name":"stderr","time":63.038810065,"data":"KeyError: 'model.embed_tokens.weight'\n"}
+,{"stream_name":"stderr","time":63.038813771,"data":"\n"}
+,{"stream_name":"stderr","time":65.35215916,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":65.35220808,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":65.525917529,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":65.52594748,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":66.378646427,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to notebook\n"}
+,{"stream_name":"stderr","time":66.464944971,"data":"[NbConvertApp] Writing 56786 bytes to __notebook__.ipynb\n"}
+,{"stream_name":"stderr","time":69.136067298,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to html\n"}
+,{"stream_name":"stderr","time":69.823672807,"data":"[NbConvertApp] Writing 457140 bytes to __results__.html\n"}
+]

@@ -1,6 +1,6 @@
 {
   "id": "thetod/mixture-of-scars-70b-mos-scache-name-that-llm",
-  "title": "Mixture of Scars Titan 3 (Mistral Large 123B) Golden-Slice - Name That LLM",
+  "title": "Mixture of Scars 70B MoS + SCache - Name That LLM",
   "code_file": "name_that_llm_submission_titan3.ipynb",
   "language": "python",
   "kernel_type": "notebook",
