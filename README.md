@@ -7,6 +7,7 @@
 [![Curriculum Milestone](https://img.shields.io/badge/Rubik's%20Cube-Depth%2014%20(44.12%25%20D1--D16)-purple.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-SymGradVac--PureCritic-blueviolet.svg)]()
 [![Roadmap v2.x](https://img.shields.io/badge/Roadmap-MoS%20%2B%20SCache%20v2.x-00b4d8.svg)](docs/ROADMAP_MOS_SCACHE_V2_INTEGRATION.md)
+[![Sponsor Research](https://img.shields.io/badge/Sponsor-Byte--OD%20Research-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/byte-od)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Modular, ultra-high-throughput Python/PyTorch library implementing an **amortized reflex agent (System 1)** trained via pure Recurrent Proximal Policy Optimization (PPO), Curvature-Gated Actor Surgery (GradVac/PCGrad), Unlimited Lossless Self-Imitation Learning (SIL), and Contrastive Online DPO.
@@ -220,6 +221,16 @@ All 210 tests validate:
 * Tri-Compass rotational invariance.
 * Asymmetric Teacher-Assisted SIL rollouts and lookahead convergence.
 * Multi-process HUD server lifecycle, REST APIs, and SSE stream health.
+
+---
+
+## ❤️ Sponsor Open Research & Compute
+
+**Universal System 1**, **Mixture of Scars (`MoS`)**, and **`SCache O(1)`** are developed as open-source MIT research by **Julio Cesar Reis Filho (*Byte-OD Research & System One Architecture Lab*)**.
+
+Sponsorships directly fund dedicated GPU/CPU compute for `System 1 + 72B MoS` speculative reflex fusion, continual `SCache → MoS` consolidation experiments, and open public checkpoints (`v1.4 → v2.x` [Roadmap](docs/ROADMAP_MOS_SCACHE_V2_INTEGRATION.md)):
+
+👉 **[Sponsor via GitHub Sponsors (`github.com/sponsors/byte-od`)](https://github.com/sponsors/byte-od)**
 
 ---
 
