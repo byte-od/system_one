@@ -6,6 +6,7 @@
 [![Inference Latency](https://img.shields.io/badge/CPU%20P50-0.23%20ms-success.svg)]()
 [![Curriculum Milestone](https://img.shields.io/badge/Rubik's%20Cube-Depth%2014%20(44.12%25%20D1--D16)-purple.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-SymGradVac--PureCritic-blueviolet.svg)]()
+[![Roadmap v2.x](https://img.shields.io/badge/Roadmap-MoS%20%2B%20SCache%20v2.x-00b4d8.svg)](docs/ROADMAP_MOS_SCACHE_V2_INTEGRATION.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Modular, ultra-high-throughput Python/PyTorch library implementing an **amortized reflex agent (System 1)** trained via pure Recurrent Proximal Policy Optimization (PPO), Curvature-Gated Actor Surgery (GradVac/PCGrad), Unlimited Lossless Self-Imitation Learning (SIL), and Contrastive Online DPO.
@@ -143,6 +144,9 @@ system_one/
 │   ├── test_rubiks.py              # Cube simulation & core permutation tests
 │   ├── test_hud.py                 # HUD server & worker lifecycle tests
 │   └── ...                         # Complete 210-test suite
+├── docs/                           # Architectural specs & v2.x evolution roadmaps
+│   ├── LOOKAHEAD_INTUITION_SCAR_ARCHITECTURE.md
+│   └── ROADMAP_MOS_SCACHE_V2_INTEGRATION.md
 ├── MANUAL_DE_USO.md                # Exhaustive operational manual (Portuguese)
 └── README.md                       # Main architecture & quickstart guide
 ```
