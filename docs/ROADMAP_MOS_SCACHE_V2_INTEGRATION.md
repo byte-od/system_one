@@ -8,7 +8,7 @@
 
 ## 🧬 1. De Onde Viemos: A Equação-Mãe das Cicatrizes (`v1.3.0` Consolidado)
 
-Originada no motor reflexivo [`system1_engine/core/scar_memory.py`](../system1_engine/core/scar_memory.py) (`34.8 KB` no Cache L1, latência CPU `0.23 ms`) e expandida em escala colossal no repositório irmão [`mixture-of-scars`](https://github.com/byte-od/mixture-of-scars) (`DOI: 10.5281/zenodo.24143839`), toda a arquitetura obedece ao **Princípio Unificado da Cicatriz**:
+Originada no motor reflexivo [`system1_engine/core/scar_memory.py`](../system1_engine/core/scar_memory.py) (`34.8 KB` no Cache L1, latência CPU `0.23 ms`) e expandida em escala colossal no repositório irmão [`mixture-of-scars`](https://github.com/byte-od/mixture-of-scars) (`DOI v1.3.0: 10.5281/zenodo.24172784` · `Concept DOI: 10.5281/zenodo.24144512`), toda a arquitetura obedece ao **Princípio Unificado da Cicatriz**:
 
 $$F(\mathbf{x}) = \underbrace{F_{\text{base}}(\mathbf{x})}_{\text{Tecido Base Enxuto}} + \sum_{k} \underbrace{\operatorname{ReLU}\!\left(\frac{\mathbf{x}^\top \mathbf{z}_k}{\|\mathbf{x}\|_2 \|\mathbf{z}_k\|_2 + \epsilon}\right)}_{\text{Cone Hemisférico (Vazamento 0.000000)}} \cdot \underbrace{\Delta_{\text{scar}, k}(\mathbf{x})}_{\text{Correção Residual de Erro / Surpresa}}$$
 
