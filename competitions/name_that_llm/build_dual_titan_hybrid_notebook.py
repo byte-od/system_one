@@ -85,7 +85,7 @@ def build_dual_titan_hybrid_notebook(sync_default: bool = True):
         "cell_type": "markdown",
         "metadata": {},
         "source": _lines(
-            """# 👑 System One Apex V34: Dual-Titan MoS (Yi-34B L30 + Mistral Large 123B L44) + Dual-Scale Bessel Twin + Woodbury Bayesian SCache O(1)
+            """# 👑 System One Apex V35: Tri-Titan MoS (Yi-34B L30 + Mistral Large 123B L44 + Qwen3-Emb 8-Depth MoS Scars) + Woodbury SCache O(1)
 ## Name That LLM — Pure Proprietary System One Architecture (Zero 3rd-Party LoRAs, Zero VRAM Leak, Multi-Regime Calibrated)
 ---
 ### Architectural Stack:
@@ -97,8 +97,8 @@ def build_dual_titan_hybrid_notebook(sync_default: bool = True):
    - Exact Unicode typography ratios, Markdown geometry, sentence burstiness, UK/US spelling & Ghost-Jump discourse transitions.
 3. **Compass 2 — Size-Capped Recursive Topic Clustering + Dual-Scale Bessel Centering (`m ∈ {1..18}`)**:
    - Exact Bessel degrees-of-freedom scaling $\\sqrt{m / (m - 1)}$ + normalized multiplicity gate (`gate(1)=0.0`, `gate(18)=1.0`) + specialized `centered_arena` (`m ∈ {2,3,4}`) vs `centered` (`m=18`) heads.
-4. **Compass 3 — Zero-Leak Multi-GPU FP16 `Mixture of Scars (MoS)` Layer-Streaming Engine**:
-   - **Titan 2 (`Yi-34B` Golden-Slice L30, `7,288D` Co-Trained `SCache`)** & **Titan 3 (`Mistral Large 2 123B` Golden-Slice L44, `12,408D` Co-Trained `SCache`)** (`< 4.2 GiB` peak VRAM on T4; auto-detects **Titan 4 `Qwen3-Embedding` 8-Depth MoS Scar Experts** when attached).
+4. **Compass 3 — Zero-Leak Multi-GPU `Mixture of Scars (MoS)` Tri-Titan Engine**:
+   - **Titan 2 (`Yi-34B` Golden-Slice L30, `7,288D` Co-Trained `SCache`)**, **Titan 3 (`Mistral Large 2 123B` Golden-Slice L44, `12,408D` Co-Trained `SCache`)**, and **Titan 4 (`Qwen3-Embedding` 8-Depth `[4,8,12,16,20,24,30,36]` + `252` Two-Stage Trained `MoS` Residual Scar Experts Across 5 Folds, `55.46%` Host OOF)**.
 5. **Intuition & Collective Memory (`UniversalS1ReflexiveMLP` 625D + `SCache O(1)` Exact Pair/Triple Woodbury & Cavity Bayesian Head + Cavity-EM + `ReflexDecision` S1 $\\to$ S2 Clan Verifiers + Size-Scaled Soft Sinkhorn)**."""
         ),
     }
@@ -210,11 +210,14 @@ W_T2_PLAIN = float(LW["t2_plain"])
 W_T2_TWIN = float(LW["t2_twin"])
 W_T3_PLAIN = float(LW["t3_plain"])
 W_T3_TWIN = float(LW["t3_twin"])
+W_T4_MOS = float(LW.get("t4_mos_scars", 0.95))
+W_T4_TWIN = float(LW.get("t4_twin_boost", 0.45))
 W_S1_MLP = float(LW["s1_mlp"])
 W_SCACHE_BAYES = float(LW["scache_bayes"])
 
 T_SVC = float(TEMPS.get("svc", 0.85))
 T_TITAN = float(TEMPS.get("titan", 4.2))
+T_T4 = float(TEMPS.get("titan4", 1.05))
 TWIN_KAPPA = float(apex_meta.get("best_twin_kappa", 2.5))
 CAVITY_GAMMA = float(apex_meta["best_cavity_gamma"])
 S2_BETA = float(apex_meta["best_s2_beta"])
@@ -484,8 +487,25 @@ def apply_dual_scale_titan_readout(Z_titan, t_pfx, name_pfx, w_plain, w_twin):
         P_twin = (1.0 - alpha_large) * softmax(lg_ca) + alpha_large * softmax(lg_c18)
         vote(f"{name_pfx}_dual_scale_twin", P_twin[twin_rows], w_twin * twin_gate[twin_rows], rows=twin_rows)
 
+def _find_backbone_dir(expected_hidden_size, hint_substr):
+    cands = []
+    for cfg_p in sorted(glob.glob(f"{INPUT_DIR}/**/config.json", recursive=True)):
+        d_p = os.path.dirname(cfg_p)
+        try:
+            cfg = json.loads(Path(cfg_p).read_text())
+        except Exception:
+            continue
+        if int(cfg.get("hidden_size", -1)) == expected_hidden_size and (
+            os.path.exists(os.path.join(d_p, "model.safetensors.index.json"))
+            or os.path.exists(os.path.join(d_p, "model.safetensors"))
+        ):
+            cands.append(d_p)
+    assert len(cands) >= 1, f"Backbone with hidden_size={expected_hidden_size} ({hint_substr}) not found in {INPUT_DIR}"
+    pref = [d for d in cands if hint_substr in d.lower()]
+    return pref[0] if pref else cands[0]
+
 # 1. Titan 2: Yi-34B Golden-Slice L30 (30 Layers, 7,168D + 120D = 7,288D)
-yi_backbone_dir = os.path.dirname(find("model-00001-of-00002.safetensors"))
+yi_backbone_dir = _find_backbone_dir(7168, "yi34b")
 tok_yi = AutoTokenizer.from_pretrained(yi_backbone_dir, use_fast=True)
 pad_id_yi = tok_yi.pad_token_id if tok_yi.pad_token_id is not None else tok_yi.eos_token_id
 raw_ids_yi = tok_yi(te_texts_list, truncation=True, max_length=512, padding=False)["input_ids"]
@@ -495,14 +515,14 @@ Z_yi = extract_mos_nf4_streaming(
     padding_side=tok_yi.padding_side, tag="Titan2-Yi34B",
     micro_bsz=8, max_tokens_per_dev=60000,
 )
-assert np.isfinite(Z_yi).all(), "Non-finite features in Z_yi"
+assert Z_yi.shape == (len(test), 7168) and np.isfinite(Z_yi).all(), f"Unexpected Z_yi shape/values: {Z_yi.shape}"
 apply_dual_scale_titan_readout(Z_yi, "t2", "titan2_yi34b_120d", W_T2_PLAIN, W_T2_TWIN)
 gc.collect()
 if torch.cuda.is_available():
     torch.cuda.empty_cache()
 
 # 2. Titan 3: Mistral Large 2 (123B) Golden-Slice L44 (44 Layers, 12,288D + 120D = 12,408D)
-mistral_backbone_dir = os.path.dirname(find("model-00001-of-00013.safetensors"))
+mistral_backbone_dir = _find_backbone_dir(12288, "mistral")
 tok_mistral = AutoTokenizer.from_pretrained(mistral_backbone_dir, use_fast=True)
 pad_id_m = tok_mistral.pad_token_id if tok_mistral.pad_token_id is not None else tok_mistral.eos_token_id
 raw_ids_m = tok_mistral(te_texts_list, truncation=True, max_length=512, padding=False)["input_ids"]
@@ -512,64 +532,158 @@ Z_mistral = extract_mos_nf4_streaming(
     padding_side=tok_mistral.padding_side, tag="Titan3-Mistral123B",
     micro_bsz=8, max_tokens_per_dev=60000,
 )
-assert np.isfinite(Z_mistral).all(), "Non-finite features in Z_mistral"
+assert Z_mistral.shape == (len(test), 12288) and np.isfinite(Z_mistral).all(), f"Unexpected Z_mistral shape/values: {Z_mistral.shape}"
 apply_dual_scale_titan_readout(Z_mistral, "t3", "titan3_mistral123b_120d", W_T3_PLAIN, W_T3_TWIN)
 gc.collect()
 if torch.cuda.is_available():
     torch.cuda.empty_cache()
 
-# 3. Optional Auto-Detected Titan 4: Qwen3-Embedding 8-Depth 5-Fold MoS Scar Experts (Milestone 2)
+# 3. Titan 4: Qwen3-Embedding 8-Depth 5-Fold MoS Residual Scar Experts (Fast In-VRAM Hot-Swap)
 t4_scars = sorted(glob.glob(f"{INPUT_DIR}/**/titan4_qwen3_emb_8b_fold*_scars.safetensors", recursive=True))
 t4_metas = sorted(glob.glob(f"{INPUT_DIR}/**/meta_titan4_qwen3_emb_8b.json", recursive=True))
-if t4_scars and t4_metas:
-    t4_meta = json.loads(Path(t4_metas[0]).read_text())
-    t4_bb_hits = [
-        p for p in sorted(glob.glob(f"{INPUT_DIR}/**/config.json", recursive=True))
-        if any(k in p.lower() for k in ("qwen-3-embedding", "qwen3-embedding", "qwen3emb", "qwen3_emb", "titan4"))
-    ]
-    if t4_bb_hits:
-        t4_bb_dir = os.path.dirname(t4_bb_hits[0])
-        tok_t4 = AutoTokenizer.from_pretrained(t4_bb_dir, use_fast=True)
-        pad_t4 = tok_t4.pad_token_id if tok_t4.pad_token_id is not None else tok_t4.eos_token_id
-        win_ids, doc_idx, win_wts = build_covering_windows(tok_t4(te_texts_list, truncation=False, padding=False)["input_ids"], max_len=512, stride=384)
-        cap_l = t4_meta["capture_layers_1b"]
-        n_dp = len(cap_l)
-        t4_probs_acc = np.zeros((len(test), K), dtype=np.float64)
-        for f_path in t4_scars:
-            st_f = load_file(f_path)
-            Z_w = extract_mos_nf4_streaming(t4_bb_dir, win_ids, pad_t4, mos_devices, padding_side="left", tag=Path(f_path).stem, capture_layers=cap_l, scar_tensors=st_f)
-            d_m = Z_w.shape[1] // n_dp
-            with torch.no_grad():
-                dw = F.softmax(st_f["head.depth_logits"].float(), dim=0) * n_dp
-                sls = [F.layer_norm(torch.from_numpy(Z_w[:, si*d_m:(si+1)*d_m]), (d_m,), st_f[f"head.depth_norms.{si}.weight"].float(), st_f[f"head.depth_norms.{si}.bias"].float()) * dw[si] for si in range(n_dp)]
-                h0 = F.linear(torch.cat(sls, dim=-1), st_f["head.proj.0.weight"].float(), st_f["head.proj.0.bias"].float())
-                zw_proj = F.silu(F.layer_norm(h0, (h0.shape[-1],), st_f["head.proj.1.weight"].float(), st_f["head.proj.1.bias"].float())).numpy()
-                z_doc = torch.from_numpy(aggregate_window_embeddings(zw_proj, doc_idx, win_wts, len(test), unit_rms=False))
-                s_k = F.linear(z_doc, st_f["head.scache_key.weight"].float())
-                z_sc = z_doc.clone()
-                z_ct = torch.zeros_like(z_doc)
-                t_gate = torch.zeros((len(test), 1), dtype=torch.float32)
-                for g_id in (np.unique(groups[twin_rows]) if twin_rows.any() else []):
-                    m_g = torch.from_numpy(groups == g_id)
-                    cnt = int(m_g.sum().item())
-                    if cnt > 1:
-                        bessel = math.sqrt(cnt / float(cnt - 1))
-                        gm = (cnt - 1.0) / (cnt - 1.0 + 3.0)
-                        dz = (s_k[m_g] - s_k[m_g].mean(0, keepdim=True)) * bessel
-                        w_s = (dz.T @ dz) / float(cnt)
-                        z_sc[m_g] = z_doc[m_g] + (float(st_f["head.scache_scale"].item()) * gm) * ((dz @ w_s.T) @ st_f["head.scache_key.weight"].float())
-                        t_gate[m_g, 0] = 0.55 * gm
-                for g_id in (np.unique(groups[twin_rows]) if twin_rows.any() else []):
-                    m_g = torch.from_numpy(groups == g_id)
-                    cnt = int(m_g.sum().item())
-                    if cnt > 1:
-                        bessel = math.sqrt(cnt / float(cnt - 1))
-                        z_ct[m_g] = (z_sc[m_g] - z_sc[m_g].mean(0, keepdim=True)) * bessel
-                lp = F.linear(F.layer_norm(z_sc, (z_sc.shape[-1],), st_f["head.plain_norm.weight"].float(), st_f["head.plain_norm.bias"].float()), st_f["head.plain_head.weight"].float(), st_f["head.plain_head.bias"].float())
-                lc = F.linear(F.layer_norm(z_ct, (z_ct.shape[-1],), st_f["head.twin_norm.weight"].float(), st_f["head.twin_norm.bias"].float()), st_f["head.twin_head.weight"].float(), st_f["head.twin_head.bias"].float())
-                t4_probs_acc += ((1.0 - t_gate) * F.softmax(lp, dim=-1) + t_gate * F.softmax(lc, dim=-1)).numpy() / len(t4_scars)
-            del st_f, Z_w
-        vote("titan4_qwen3emb_8depth_mos_scars", t4_probs_acc, 1.80)
+assert len(t4_scars) == 5 and len(t4_metas) >= 1, f"Expected 5 Titan-4 fold scars, got {len(t4_scars)}"
+t4_meta = json.loads(Path(t4_metas[0]).read_text())
+assert t4_meta["labels"] == LABELS, "Titan-4 label order mismatch"
+t4_bb_dir = _find_backbone_dir(2560, "qwen")
+
+tok_t4 = AutoTokenizer.from_pretrained(t4_bb_dir, padding_side="left")
+if tok_t4.pad_token_id is None:
+    tok_t4.pad_token = tok_t4.eos_token
+eos_t4 = tok_t4.eos_token_id if tok_t4.eos_token_id is not None else 0
+
+enc_t4_all = tok_t4(te_texts_list, truncation=False, padding=False)["input_ids"]
+win_ids_t4 = [seq if len(seq) > 0 else [eos_t4] for seq in enc_t4_all]
+win_ids_t4, doc_idx_t4, win_wts_t4 = build_covering_windows(win_ids_t4, max_len=512, stride=384)
+order_t4 = np.argsort([len(s) for s in win_ids_t4], kind="stable")
+
+t4_batches = []
+for b_s in range(0, len(win_ids_t4), 24):
+    b_i = order_t4[b_s : b_s + 24]
+    tok_b = tok_t4.pad({"input_ids": [win_ids_t4[j] for j in b_i]}, padding=True, return_tensors="pt")
+    t4_batches.append((b_i, tok_b["input_ids"], tok_b["attention_mask"]))
+
+class MoSResidualScarLinearInfer(nn.Module):
+    def __init__(self, base_linear, rank=16):
+        super().__init__()
+        self.base = base_linear
+        dev = next(base_linear.parameters()).device
+        self.register_buffer("scar_A", torch.zeros((rank, int(base_linear.in_features)), device=dev, dtype=torch.float32))
+        self.register_buffer("scar_B", torch.zeros((int(base_linear.out_features), rank), device=dev, dtype=torch.float32))
+
+    def forward(self, x):
+        base_out = self.base(x)
+        x_f32 = x.to(device=self.scar_A.device, dtype=torch.float32)
+        delta = F.linear(F.linear(x_f32, self.scar_A), self.scar_B)
+        return base_out + delta.to(device=base_out.device, dtype=base_out.dtype)
+
+base_t4 = AutoModel.from_pretrained(
+    t4_bb_dir,
+    dtype=(torch.float16 if torch.cuda.is_available() else torch.float32),
+    device_map=("auto" if torch.cuda.is_available() else None),
+).eval()
+base_t4.config.use_cache = False
+
+t4_rank = int(t4_meta.get("rank", 16))
+t4_target_mods = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
+injected_t4 = {}
+for mod_name, mod in list(base_t4.named_modules()):
+    for child_name, child in list(mod.named_children()):
+        if child_name in t4_target_mods and hasattr(child, "in_features") and hasattr(child, "out_features"):
+            raw_p = f"{mod_name}.{child_name}" if mod_name else child_name
+            sm = MoSResidualScarLinearInfer(child, rank=t4_rank)
+            setattr(mod, child_name, sm)
+            injected_t4[raw_p] = sm
+
+inp_dev_t4 = next(base_t4.parameters()).device
+head_dev_t4 = f"cuda:{torch.cuda.device_count() - 1}" if torch.cuda.is_available() else "cpu"
+cap_l = list(t4_meta["capture_layers_1b"])
+n_dp = len(cap_l)
+n_tot_t4 = int(base_t4.config.num_hidden_layers)
+eps_t4 = float(getattr(base_t4.config, "rms_norm_eps", 1e-6))
+t4_probs_acc = np.zeros((len(test), K), dtype=np.float64)
+
+with torch.no_grad():
+    for fold_idx, f_path in enumerate(t4_scars):
+        tf4 = time.time()
+        st_f = load_file(f_path)
+        n_swapped = 0
+        for raw_p, sm in injected_t4.items():
+            cp = raw_p[len("model.") :] if raw_p.startswith("model.") else raw_p
+            kA = f"{cp}.scar_A" if f"{cp}.scar_A" in st_f else f"model.{cp}.scar_A"
+            kB = f"{cp}.scar_B" if f"{cp}.scar_B" in st_f else f"model.{cp}.scar_B"
+            sm.scar_A.copy_(st_f[kA].to(device=sm.scar_A.device, dtype=torch.float32))
+            sm.scar_B.copy_(st_f[kB].to(device=sm.scar_B.device, dtype=torch.float32))
+            n_swapped += 1
+        assert n_swapped == len(injected_t4) > 0, f"Scar swap mismatch: {n_swapped} vs {len(injected_t4)}"
+
+        dw = (F.softmax(st_f["head.depth_logits"].to(head_dev_t4, dtype=torch.float32), dim=0) * n_dp)
+        dn_w = [st_f[f"head.depth_norms.{si}.weight"].to(head_dev_t4, dtype=torch.float32) for si in range(n_dp)]
+        dn_b = [st_f[f"head.depth_norms.{si}.bias"].to(head_dev_t4, dtype=torch.float32) for si in range(n_dp)]
+        p0_w = st_f["head.proj.0.weight"].to(head_dev_t4, dtype=torch.float32)
+        p0_b = st_f["head.proj.0.bias"].to(head_dev_t4, dtype=torch.float32)
+        p1_w = st_f["head.proj.1.weight"].to(head_dev_t4, dtype=torch.float32)
+        p1_b = st_f["head.proj.1.bias"].to(head_dev_t4, dtype=torch.float32)
+
+        Z_win = np.zeros((len(win_ids_t4), p0_w.shape[0]), dtype=np.float32)
+        for b_i, b_inp, b_msk in t4_batches:
+            if torch.cuda.is_available():
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
+                    hs = base_t4(input_ids=b_inp.to(inp_dev_t4), attention_mask=b_msk.to(inp_dev_t4), output_hidden_states=True, use_cache=False).hidden_states
+            else:
+                hs = base_t4(input_ids=b_inp, attention_mask=b_msk, output_hidden_states=True, use_cache=False).hidden_states
+            m_f = b_msk.to(head_dev_t4, dtype=torch.float32).unsqueeze(-1)
+            denom = m_f.sum(dim=1).clamp(min=1.0)
+            slices = []
+            for si, l_1b in enumerate(cap_l):
+                hl = hs[l_1b].to(head_dev_t4, dtype=torch.float32)
+                h_use = hl if l_1b == n_tot_t4 else hl * torch.rsqrt(hl.pow(2).mean(dim=-1, keepdim=True) + eps_t4)
+                p_pool = (h_use * m_f).sum(dim=1) / denom
+                p_unit = p_pool * torch.rsqrt(p_pool.pow(2).mean(dim=-1, keepdim=True) + 1e-6)
+                slices.append(F.layer_norm(p_unit, (p_unit.shape[-1],), dn_w[si], dn_b[si]) * dw[si])
+            h0 = F.linear(torch.cat(slices, dim=-1), p0_w, p0_b)
+            zw = F.silu(F.layer_norm(h0, (h0.shape[-1],), p1_w, p1_b))
+            Z_win[b_i] = zw.cpu().numpy()
+            del hs, m_f, slices, h0, zw
+
+        z_doc = torch.from_numpy(aggregate_window_embeddings(Z_win, doc_idx_t4, win_wts_t4, len(test), unit_rms=False))
+        sk_w = st_f["head.scache_key.weight"].float()
+        s_k = F.linear(z_doc, sk_w)
+        z_sc = z_doc.clone()
+        z_ct = torch.zeros_like(z_doc)
+        t_gate = torch.zeros((len(test), 1), dtype=torch.float32)
+        sc_scale = float(st_f["head.scache_scale"].item())
+        for g_id in (np.unique(groups[twin_rows]) if twin_rows.any() else []):
+            m_g = torch.from_numpy(groups == g_id)
+            cnt = int(m_g.sum().item())
+            if cnt > 1:
+                bessel = math.sqrt(cnt / float(cnt - 1))
+                gm = (cnt - 1.0) / (cnt - 1.0 + 3.0)
+                dz = (s_k[m_g] - s_k[m_g].mean(0, keepdim=True)) * bessel
+                w_s = (dz.T @ dz) / float(cnt)
+                z_sc[m_g] = z_doc[m_g] + (sc_scale * gm) * ((dz @ w_s.T) @ sk_w)
+                t_gate[m_g, 0] = 0.55 * gm
+        for g_id in (np.unique(groups[twin_rows]) if twin_rows.any() else []):
+            m_g = torch.from_numpy(groups == g_id)
+            cnt = int(m_g.sum().item())
+            if cnt > 1:
+                bessel = math.sqrt(cnt / float(cnt - 1))
+                z_ct[m_g] = (z_sc[m_g] - z_sc[m_g].mean(0, keepdim=True)) * bessel
+        lp_f = F.linear(F.layer_norm(z_sc, (z_sc.shape[-1],), st_f["head.plain_norm.weight"].float(), st_f["head.plain_norm.bias"].float()), st_f["head.plain_head.weight"].float(), st_f["head.plain_head.bias"].float())
+        lc_f = F.linear(F.layer_norm(z_ct, (z_ct.shape[-1],), st_f["head.twin_norm.weight"].float(), st_f["head.twin_norm.bias"].float()), st_f["head.twin_head.weight"].float(), st_f["head.twin_head.bias"].float())
+        t4_probs_acc += ((1.0 - t_gate) * F.softmax(lp_f, dim=-1) + t_gate * F.softmax(lc_f, dim=-1)).numpy() / len(t4_scars)
+        print(f"  [Titan-4 MoS Scars] Fold {fold_idx+1}/5 complete in {time.time()-tf4:.1f}s", flush=True)
+        del st_f, Z_win
+
+lp_t4_ens = np.log(np.clip(t4_probs_acc, 1e-9, 1.0)) / T_T4
+vote("titan4_qwen3emb_8depth_mos_scars", softmax(lp_t4_ens), W_T4_MOS)
+if twin_rows.any() and W_T4_TWIN > 1e-6:
+    lp_t4_bc = bessel_group_center(lp_t4_ens.astype(np.float32), groups, twin_rows) * b_norm
+    vote("titan4_bessel_twin_boost", softmax(lp_t4_ens + 0.55 * lp_t4_bc)[twin_rows], W_T4_TWIN * twin_gate[twin_rows], rows=twin_rows)
+
+del base_t4, injected_t4, t4_batches, win_ids_t4
+gc.collect()
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
 """
     c6 = {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": _lines(c6_code)}
 
@@ -781,7 +895,7 @@ sub = pd.DataFrame({"id": test["id"].astype(str), "model": np.array(LABELS)[P.ar
 assert len(sub) == len(test) and sub["model"].isin(LABELS).all()
 sub.to_parquet("submission.parquet", index=False)
 print(sub["model"].value_counts().to_string())
-print(f"System One Apex V34 complete in {time.time() - T0:.1f}s!", flush=True)
+print(f"System One Apex V35 Tri-Titan complete in {time.time() - T0:.1f}s!", flush=True)
 """
     c7 = {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": _lines(c7_code)}
 

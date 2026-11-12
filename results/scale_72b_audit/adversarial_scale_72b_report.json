@@ -1,0 +1,394 @@
+{
+  "timestamp": "2026-11-11T23:42:08Z",
+  "model_id": "Qwen/Qwen2.5-72B-Instruct",
+  "snapshot_dir": "/kaggle/input/models/qwen-lm/qwen2.5/transformers/72b-instruct/1",
+  "params_billions": 72.706,
+  "num_layers": 80,
+  "num_kv_heads": 8,
+  "head_dim": 128,
+  "hidden_size": 8192,
+  "intermediate_size": 29568,
+  "compute_dtype": "torch.float16",
+  "num_gpus": 2,
+  "gpu_names": [
+    "Tesla T4",
+    "Tesla T4"
+  ],
+  "vectors": {
+    "vector_1_mos_emergent_outliers": {
+      "passed": true,
+      "max_input_channel_outlier_ratio": 246.0,
+      "max_intermediate_channel_outlier_ratio": 195720.08,
+      "mos_active_causal_logit_shift": 3.6562,
+      "full_model_dense_fp16_gib": 135.43,
+      "full_model_mos_gib": 38.12,
+      "perrow_mos_stats": {
+        "dense_fp16_mlp_mb": 110880.0,
+        "mos_mlp_mb": 28559.96,
+        "int4_base_only_mb": 27730.27,
+        "scar_experts_mb": 829.69,
+        "mlp_compression_ratio_vs_fp16": 3.882,
+        "mlp_savings_pct_vs_fp16": 74.24,
+        "multi_tenant_8x_compression_ratio": 27.59,
+        "multi_tenant_8x_savings_pct": 96.37,
+        "mean_weighted_residual_rel_error": 0.8946
+      },
+      "block64_mos_stats": {
+        "dense_fp16_mlp_mb": 110880.0,
+        "mos_mlp_mb": 30282.19,
+        "int4_base_only_mb": 29452.5,
+        "scar_experts_mb": 829.69,
+        "mlp_compression_ratio_vs_fp16": 3.662,
+        "mlp_savings_pct_vs_fp16": 72.69,
+        "multi_tenant_8x_compression_ratio": 26.18,
+        "multi_tenant_8x_savings_pct": 96.18,
+        "mean_weighted_residual_rel_error": 0.9003
+      },
+      "domains": {
+        "python_code": {
+          "dense_ppl": 1.705,
+          "perrow_int4_no_scars": {
+            "dense_ppl": 1.705,
+            "ppl": 1.754,
+            "cos_hidden": 0.93939,
+            "kl_div": 0.0474,
+            "top5_agree": 1.0
+          },
+          "perrow_mos_scars": {
+            "dense_ppl": 1.705,
+            "ppl": 1.674,
+            "cos_hidden": 0.96663,
+            "kl_div": 0.0144,
+            "top5_agree": 1.0
+          },
+          "perrow_kl_reduction_x": 3.29,
+          "block64_int4_no_scars": {
+            "dense_ppl": 1.705,
+            "ppl": 1.882,
+            "cos_hidden": 0.97726,
+            "kl_div": 0.1043,
+            "top5_agree": 0.9934
+          },
+          "block64_mos_scars": {
+            "dense_ppl": 1.705,
+            "ppl": 1.85,
+            "cos_hidden": 0.98074,
+            "kl_div": 0.1027,
+            "top5_agree": 0.9934
+          },
+          "block64_kl_reduction_x": 1.02
+        },
+        "quantum_physics": {
+          "dense_ppl": 6.187,
+          "perrow_int4_no_scars": {
+            "dense_ppl": 6.187,
+            "ppl": 6.159,
+            "cos_hidden": 0.95363,
+            "kl_div": 0.1749,
+            "top5_agree": 0.9775
+          },
+          "perrow_mos_scars": {
+            "dense_ppl": 6.187,
+            "ppl": 6.257,
+            "cos_hidden": 0.97726,
+            "kl_div": 0.0549,
+            "top5_agree": 1.0
+          },
+          "perrow_kl_reduction_x": 3.19,
+          "block64_int4_no_scars": {
+            "dense_ppl": 6.187,
+            "ppl": 7.171,
+            "cos_hidden": 0.97558,
+            "kl_div": 0.1905,
+            "top5_agree": 0.9888
+          },
+          "block64_mos_scars": {
+            "dense_ppl": 6.187,
+            "ppl": 6.786,
+            "cos_hidden": 0.98101,
+            "kl_div": 0.1848,
+            "top5_agree": 0.9888
+          },
+          "block64_kl_reduction_x": 1.03
+        },
+        "portuguese_tech": {
+          "dense_ppl": 19.478,
+          "perrow_int4_no_scars": {
+            "dense_ppl": 19.478,
+            "ppl": 20.034,
+            "cos_hidden": 0.95395,
+            "kl_div": 0.1431,
+            "top5_agree": 0.987
+          },
+          "perrow_mos_scars": {
+            "dense_ppl": 19.478,
+            "ppl": 18.446,
+            "cos_hidden": 0.97893,
+            "kl_div": 0.0453,
+            "top5_agree": 1.0
+          },
+          "perrow_kl_reduction_x": 3.16,
+          "block64_int4_no_scars": {
+            "dense_ppl": 19.478,
+            "ppl": 21.48,
+            "cos_hidden": 0.97566,
+            "kl_div": 0.1919,
+            "top5_agree": 0.987
+          },
+          "block64_mos_scars": {
+            "dense_ppl": 19.478,
+            "ppl": 20.94,
+            "cos_hidden": 0.97951,
+            "kl_div": 0.1829,
+            "top5_agree": 0.987
+          },
+          "block64_kl_reduction_x": 1.05
+        },
+        "json_schema": {
+          "dense_ppl": 21.285,
+          "perrow_int4_no_scars": {
+            "dense_ppl": 21.285,
+            "ppl": 22.546,
+            "cos_hidden": 0.95024,
+            "kl_div": 0.3717,
+            "top5_agree": 0.9394
+          },
+          "perrow_mos_scars": {
+            "dense_ppl": 21.285,
+            "ppl": 19.058,
+            "cos_hidden": 0.9763,
+            "kl_div": 0.1206,
+            "top5_agree": 1.0
+          },
+          "perrow_kl_reduction_x": 3.08,
+          "block64_int4_no_scars": {
+            "dense_ppl": 21.285,
+            "ppl": 24.3,
+            "cos_hidden": 0.97843,
+            "kl_div": 0.1883,
+            "top5_agree": 0.9899
+          },
+          "block64_mos_scars": {
+            "dense_ppl": 21.285,
+            "ppl": 23.787,
+            "cos_hidden": 0.98229,
+            "kl_div": 0.1691,
+            "top5_agree": 0.9899
+          },
+          "block64_kl_reduction_x": 1.11
+        }
+      }
+    },
+    "vector_0_byte_audit": {
+      "passed": true,
+      "window_size": 64,
+      "num_slots": 12,
+      "scaling": [
+        {
+          "tokens": 128,
+          "vanilla_actual_kb": 40960.0,
+          "scache_reported_kb": 66281.25,
+          "scache_actual_recursive_kb": 66281.25,
+          "kv_ram_reduction_x": 0.62,
+          "kv_ram_saving_pct": -61.82
+        },
+        {
+          "tokens": 256,
+          "vanilla_actual_kb": 81920.0,
+          "scache_reported_kb": 66281.25,
+          "scache_actual_recursive_kb": 66281.25,
+          "kv_ram_reduction_x": 1.24,
+          "kv_ram_saving_pct": 19.09
+        },
+        {
+          "tokens": 512,
+          "vanilla_actual_kb": 163840.0,
+          "scache_reported_kb": 66281.25,
+          "scache_actual_recursive_kb": 66281.25,
+          "kv_ram_reduction_x": 2.47,
+          "kv_ram_saving_pct": 59.55
+        },
+        {
+          "tokens": 1024,
+          "vanilla_actual_kb": 327680.0,
+          "scache_reported_kb": 66281.25,
+          "scache_actual_recursive_kb": 66281.25,
+          "kv_ram_reduction_x": 4.94,
+          "kv_ram_saving_pct": 79.77
+        },
+        {
+          "tokens": 2048,
+          "vanilla_actual_kb": 655360.0,
+          "scache_reported_kb": 66281.25,
+          "scache_actual_recursive_kb": 66281.25,
+          "kv_ram_reduction_x": 9.89,
+          "kv_ram_saving_pct": 89.89
+        },
+        {
+          "tokens": 4096,
+          "vanilla_actual_kb": 1310720.0,
+          "scache_reported_kb": 66281.25,
+          "scache_actual_recursive_kb": 66281.25,
+          "kv_ram_reduction_x": 19.78,
+          "kv_ram_saving_pct": 94.94
+        }
+      ],
+      "delta_bytes_first_to_last": 0.0,
+      "reported_vs_recursive_diff_kb": 0.0,
+      "scache_active_causal_max_logit_shift": 0.8262
+    },
+    "vector_2_long_horizon_ppl": {
+      "seq_len": 1600,
+      "dense_vanilla": {
+        "nll_full": 0.4803,
+        "ppl_full": 1.617,
+        "nll_tail": 0.0124,
+        "ppl_tail": 1.012,
+        "actual_recursive_kb": 512000.0,
+        "reported_kb": 512000.0,
+        "avg_kv_len_per_step": 800.0
+      },
+      "mos_naive_window_no_sinks": {
+        "nll_full": 4.3817,
+        "ppl_full": 79.975,
+        "nll_tail": 4.8514,
+        "ppl_tail": 127.914,
+        "actual_recursive_kb": 20480.0,
+        "reported_kb": 20480.0,
+        "avg_kv_len_per_step": 64.0
+      },
+      "mos_streaming_llm": {
+        "nll_full": 4.9114,
+        "ppl_full": 135.835,
+        "nll_tail": 4.5794,
+        "ppl_tail": 97.459,
+        "actual_recursive_kb": 20480.0,
+        "reported_kb": 20480.0,
+        "avg_kv_len_per_step": 64.0
+      },
+      "mos_scache_o1": {
+        "nll_full": 3.0682,
+        "ppl_full": 21.503,
+        "nll_tail": 2.9707,
+        "ppl_tail": 19.507,
+        "actual_recursive_kb": 67572.5,
+        "reported_kb": 67572.5,
+        "avg_kv_len_per_step": 79.4
+      }
+    },
+    "vector_3b_evicted_passcode_sweep": [
+      {
+        "context_tokens": 534,
+        "eviction_distance_tokens": 445,
+        "window_size": 64,
+        "num_slots": 24,
+        "dense_vanilla_nll": 0.0219,
+        "mos_streaming_llm_nll": 3.2414,
+        "mos_scache_o1_nll": 0.5758,
+        "scache_vs_streaming_likelihood_gain_x": 14.377,
+        "vanilla_kv_kb": 173440.0,
+        "scache_kv_kb": 70155.0,
+        "kv_ram_saving_pct": 59.55
+      },
+      {
+        "context_tokens": 1314,
+        "eviction_distance_tokens": 1225,
+        "window_size": 64,
+        "num_slots": 24,
+        "dense_vanilla_nll": 0.0202,
+        "mos_streaming_llm_nll": 2.9612,
+        "mos_scache_o1_nll": 1.2786,
+        "scache_vs_streaming_likelihood_gain_x": 5.38,
+        "vanilla_kv_kb": 423040.0,
+        "scache_kv_kb": 70155.0,
+        "kv_ram_saving_pct": 83.42
+      }
+    ],
+    "vector_5_fullstack_mos_scache": {
+      "tasks_total": 6,
+      "dense_top3_hits": 3,
+      "mos_scache_top3_hits": 3,
+      "dense_answer_nll": 2.4862,
+      "mos_scache_answer_nll": 1.8584,
+      "long_doc_dense_vanilla_ppl": 1.617,
+      "long_doc_mos_scache_ppl": 21.503,
+      "mlp_savings_pct": 72.69,
+      "long_doc_kv_savings_pct": 86.8
+    },
+    "vector_6_single_group_streaming_footprint": {
+      "group_layers": 8,
+      "single_group_mos_gib": 3.579,
+      "scache_80layer_kv_mb": 64.73,
+      "projected_pure_vram_resident_tok_per_s": 7.27
+    },
+    "vector_7_non_repeating_pareto_vs_offload": {
+      "non_repeating_tokens": 926,
+      "measured_safetensors_disk_to_gpu_gibps": 0.08,
+      "airllm_fp16_batch1_ceiling_tok_per_s": 0.0006,
+      "airllm_int4_batch1_ceiling_tok_per_s": 0.0022,
+      "points": {
+        "dense_fp16_vanilla_kv": {
+          "nll_full": 1.4706,
+          "ppl_full": 4.352,
+          "nll_tail": 1.4706,
+          "ppl_tail": 4.352,
+          "actual_recursive_kb": 296320.0,
+          "reported_kb": 296320.0
+        },
+        "mos_streaming_w128": {
+          "nll_full": 1.8507,
+          "ppl_full": 6.365,
+          "nll_tail": 1.8507,
+          "ppl_tail": 6.365,
+          "actual_recursive_kb": 40960.0,
+          "reported_kb": 40960.0,
+          "avg_kv_len_per_step": 123.6,
+          "hybrid_2xt4_tok_per_s": 4.72,
+          "pure_vram_tok_per_s": 7.27,
+          "speedup_hybrid_vs_airllm_fp16_x": 7866.7,
+          "speedup_pure_vram_vs_airllm_fp16_x": 12116.7
+        },
+        "mos_scache_w128": {
+          "nll_full": 1.7428,
+          "ppl_full": 5.714,
+          "nll_tail": 1.7428,
+          "ppl_tail": 5.714,
+          "actual_recursive_kb": 88052.5,
+          "reported_kb": 88052.5,
+          "avg_kv_len_per_step": 137.5,
+          "hybrid_2xt4_tok_per_s": 3.77,
+          "pure_vram_tok_per_s": 7.27,
+          "speedup_hybrid_vs_airllm_fp16_x": 6283.3,
+          "speedup_pure_vram_vs_airllm_fp16_x": 12116.7
+        },
+        "mos_scache_w256": {
+          "nll_full": 1.5811,
+          "ppl_full": 4.86,
+          "nll_tail": 1.5811,
+          "ppl_tail": 4.86,
+          "actual_recursive_kb": 129012.5,
+          "reported_kb": 129012.5,
+          "avg_kv_len_per_step": 241.3,
+          "hybrid_2xt4_tok_per_s": 3.9,
+          "pure_vram_tok_per_s": 7.27,
+          "speedup_hybrid_vs_airllm_fp16_x": 6500.0,
+          "speedup_pure_vram_vs_airllm_fp16_x": 12116.7
+        },
+        "mos_scache_w384": {
+          "nll_full": 1.5575,
+          "ppl_full": 4.747,
+          "nll_tail": 1.5575,
+          "ppl_tail": 4.747,
+          "actual_recursive_kb": 169972.5,
+          "reported_kb": 169972.5,
+          "avg_kv_len_per_step": 327.4,
+          "hybrid_2xt4_tok_per_s": 4.03,
+          "pure_vram_tok_per_s": 7.27,
+          "speedup_hybrid_vs_airllm_fp16_x": 6716.7,
+          "speedup_pure_vram_vs_airllm_fp16_x": 12116.7
+        }
+      }
+    }
+  },
+  "elapsed_seconds": 7297.3
+}

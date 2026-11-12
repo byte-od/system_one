@@ -156,9 +156,9 @@ class Qwen72BMoSGroup:
         x: torch.Tensor,
         cos: torch.Tensor,
         sin: torch.Tensor,
-        kv_cache: Optional[Dict[int, Tuple[torch.Tensor, torch.Tensor]]] = None,
+        kv_cache: Optional[Union[SCacheDynamicCache, Dict[int, Tuple[torch.Tensor, torch.Tensor]]]] = None,
     ) -> torch.Tensor:
-        """Executa o forward pass de 1 camada MoS 70B."""
+        """Executa o forward pass de 1 camada MoS 70B com integração nativa ao SCacheDynamicCache O(1)."""
         d = self.layers_data[l]
 
         # 1. Atenção RMSNorm
@@ -178,13 +178,14 @@ class Qwen72BMoSGroup:
         # RoPE
         q, k = apply_rotary_pos_emb(q, k, cos, sin)
 
-        # KV Cache Streaming (O(1))
-        if kv_cache is not None:
+        # Memória Associativa SCache O(1) Genuína (Widrow-Hoff + Sinks)
+        if isinstance(kv_cache, SCacheDynamicCache):
+            k, v = kv_cache.update(k, v, l)
+        elif kv_cache is not None:
             if l in kv_cache:
                 old_k, old_v = kv_cache[l]
                 k = torch.cat([old_k, k], dim=2)
                 v = torch.cat([old_v, v], dim=2)
-                # Mantém janela local O(1)
                 if k.shape[2] > 64:
                     k = k[:, :, -64:, :]
                     v = v[:, :, -64:, :]
@@ -194,9 +195,16 @@ class Qwen72BMoSGroup:
         k_rep = k.repeat_interleave(8, dim=1)
         v_rep = v.repeat_interleave(8, dim=1)
 
-        # Scaled Dot-Product Attention (causal apenas quando prompt inicial)
-        is_causal = (q.shape[2] > 1 and q.shape[2] == k_rep.shape[2])
-        attn_out = F.scaled_dot_product_attention(q, k_rep, v_rep, is_causal=is_causal)
+        # Scaled Dot-Product Attention com máscara causal exata para prefill, chunking SCache O(1) e decode
+        q_len_cur = q.shape[2]
+        k_len_cur = k_rep.shape[2]
+        if q_len_cur == 1:
+            attn_out = F.scaled_dot_product_attention(q, k_rep, v_rep, is_causal=False)
+        elif q_len_cur == k_len_cur:
+            attn_out = F.scaled_dot_product_attention(q, k_rep, v_rep, is_causal=True)
+        else:
+            c_mask = torch.ones((q_len_cur, k_len_cur), dtype=torch.bool, device=q.device).tril(diagonal=k_len_cur - q_len_cur)
+            attn_out = F.scaled_dot_product_attention(q, k_rep, v_rep, attn_mask=c_mask)
         attn_out = attn_out.transpose(1, 2).contiguous().view(bsz, seq_len, 8192)
         attn_out = F.linear(attn_out, d["o_proj"])
 
@@ -290,8 +298,9 @@ class Qwen72BMoSEngine:
     def forward(
         self,
         input_ids: torch.Tensor,
-        kv_cache: Optional[Dict[int, Tuple[torch.Tensor, torch.Tensor]]] = None,
+        kv_cache: Optional[Union[SCacheDynamicCache, Dict[int, Tuple[torch.Tensor, torch.Tensor]]]] = None,
         streaming_groups: bool = False,
+        return_all_logits: bool = False,
     ) -> torch.Tensor:
         """Forward pass completo pelas 80 camadas reais de 70B."""
         bsz, seq_len = input_ids.shape
@@ -304,8 +313,13 @@ class Qwen72BMoSEngine:
         sel_scales = self.emb_scales[all_block_indices]
         x = dequantize_int4(sel_packed, sel_scales, (bsz, seq_len, 8192), dtype=self.dtype).to(self.device)
 
-        # RoPE com posição exata considerando histórico do KV Cache
-        past_len = kv_cache[0][0].shape[2] if (kv_cache is not None and 0 in kv_cache) else 0
+        # RoPE com posição exata considerando histórico real do SCacheDynamicCache O(1)
+        if isinstance(kv_cache, SCacheDynamicCache):
+            past_len = kv_cache.get_seq_length()
+        elif kv_cache is not None and 0 in kv_cache:
+            past_len = kv_cache[0][0].shape[2]
+        else:
+            past_len = 0
         position_ids = past_len + torch.arange(seq_len, dtype=torch.long, device=self.device).unsqueeze(0)
         cos, sin = self.precompute_freqs_cis(position_ids)
 
@@ -317,9 +331,9 @@ class Qwen72BMoSEngine:
             if streaming_groups:
                 g.unload()
 
-        # Normalização final
-        x_last = x[:, -1:, :]
-        x_normed = x_last * torch.rsqrt(x_last.to(torch.float32).pow(2).mean(-1, keepdim=True) + 1e-6).to(self.dtype)
+        # Normalização final (último token ou sequência completa para auditoria de PPL/KL)
+        x_slice = x if return_all_logits else x[:, -1:, :]
+        x_normed = x_slice * torch.rsqrt(x_slice.to(torch.float32).pow(2).mean(-1, keepdim=True) + 1e-6).to(self.dtype)
         x_normed = x_normed * self.final_norm_weight
 
         # LM Head projetada em chunks de 8192 tokens (ultra baixo consumo de RAM)
@@ -356,7 +370,7 @@ class Qwen72BMoSEngine:
         input_ids = self.tokenizer(formatted, return_tensors="pt").input_ids.to(self.device)
 
         generated_ids = input_ids.clone()
-        kv_cache = {}
+        kv_cache = SCacheDynamicCache(window_size=64, num_slots=16, num_sink_tokens=4, project_slots=True)
 
         t_start = time.time()
         for step in range(max_new_tokens):

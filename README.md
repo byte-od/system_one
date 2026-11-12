@@ -7,24 +7,47 @@
 [![HuggingFace Drop-in](https://img.shields.io/badge/HuggingFace-Compatible-yellow.svg)](https://huggingface.co/)
 [![KV Cache Reduction](https://img.shields.io/badge/KV%20Cache%20Reduction-187.5x-success.svg)]()
 [![Static Weights Reduction](https://img.shields.io/badge/Static%20Weights%20Reduction-90x-success.svg)]()
-[![Tests Passing](https://img.shields.io/badge/Tests-37%2F37%20Passing-brightgreen.svg)]()
+[![Tests Passing](https://img.shields.io/badge/Tests-39%2F39%20Passing-brightgreen.svg)]()
 [![Kaggle](https://kaggle.com/static/images/open-in-kaggle.svg)](https://www.kaggle.com/code/thetod/mixture-of-scars-benchmark)
 
 > **"Breaking the barrier between LLMs and hardware."**  
 > Modern Large Language Models have been crippled by a Dual Memory Wall: static weight bloat ($O(N)$) and linear context explosion ($O(L)$).  
 > **Mixture of Scars (MoS)** and **SCache** provide the architectural breakthrough to eliminate both bottlenecks simultaneously:
-> 1. **Mixture of Scars (MoS):** Radical static weight ($W_0$) compression (10x–90x reduction) via Universal Shared Base projections and hardware-local micro-experts residing in CPU/GPU L1/L2 caches.
-> 2. **SCache ($O(1)$ Dynamic Context):** Drop-in HuggingFace KV-cache replacement that freezes memory into a constant physical window backed by Widrow-Hoff associative fast-weights.
+> 1. **Mixture of Scars (MoS):** Radical static weight ($W_0$) compression (`135.43 GiB → 38.12 GiB` standalone at `72.71B`, and `27.59x` / `-96.37%` across an 8-specialist bank) via symmetric `INT4` bases, Activation-Aware SVD (`ASVD`) low-rank scar experts, and `20 × 4`-layer streaming shards (`1.79 GiB`/shard).
+> 2. **SCache ($O(1)$ Dynamic Context):** Drop-in HuggingFace KV-cache replacement that freezes memory into a constant physical window backed by Widrow-Hoff associative fast-weights (`0.00 B` growth at any sequence length).
 
-### 📄 Official Preprint (`v1.1.0`), LaTeX Source & Interactive Red-Team Lab
-- **Permanent Preprint (CERN / Zenodo DOI):** [`10.5281/zenodo.24143839`](https://doi.org/10.5281/zenodo.24143839) ([**Preprint v1.1 PDF — 0.5B → 7.62B → 123B & 3D Pareto**](zenodo_deposit_v1_1/Mixture_of_Scars_and_SCache_Preprint_v1.1.pdf) | [v1.0 PDF](zenodo_deposit_v1/Mixture_of_Scars_and_SCache_Preprint_v1.0.pdf))
-- **Academic LaTeX Manuscript (arXiv / TMLR / Double-Blind Ready):** [`paper_latex/`](paper_latex/) & [`MoS_SCache_LaTeX_arXiv_TMLR_v1.1.zip`](zenodo_deposit_v1_1/MoS_SCache_LaTeX_arXiv_TMLR_v1.1.zip)
+### 📄 Official Preprint (`v1.2.0`), Public `72.71B` Shards & Interactive Red-Team Lab
+- **Permanent Preprint (CERN / Zenodo DOI):** [`10.5281/zenodo.24143839`](https://doi.org/10.5281/zenodo.24143839) ([**Preprint v1.2 PDF — 0.5B → 7.62B → 72.71B → 123B & 3D Pareto**](zenodo_deposit_v1_2/Mixture_of_Scars_and_SCache_Preprint_v1.2.pdf) | [v1.1 PDF](zenodo_deposit_v1_1/Mixture_of_Scars_and_SCache_Preprint_v1.1.pdf) | [v1.0 PDF](zenodo_deposit_v1/Mixture_of_Scars_and_SCache_Preprint_v1.0.pdf))
+- **Academic LaTeX Manuscript (arXiv / TMLR / Double-Blind Ready):** [`paper_latex/`](paper_latex/) & [`MoS_SCache_LaTeX_arXiv_TMLR_v1.2.zip`](zenodo_deposit_v1_2/MoS_SCache_LaTeX_arXiv_TMLR_v1.2.zip)
+- **Public `Qwen2.5-72B-Instruct MoS v2` Checkpoint (`38.12 GiB`, `20 × 1.79 GiB` Shards) & Practical Guide:**
+  - **Practical Local Guide (PT-BR / CLI):** [`docs/GUIA_PRATICO_MOS_SCACHE_72B.md`](docs/GUIA_PRATICO_MOS_SCACHE_72B.md)
+  - **Zero-Login HTTPS Release (`HTTP 206 Range` + `SHA-256`):** [`github.com/byte-od/mixture-of-scars/releases/tag/v1.2.0-qwen72b-mos`](https://github.com/byte-od/mixture-of-scars/releases/tag/v1.2.0-qwen72b-mos)
 - **Interactive Gradio Red-Team Laboratory (Hugging Face Space):** [`huggingface_space/`](huggingface_space/)
-- **8-Vector Multi-Scale Adversarial Suites (`0.5B` & `7.62B` GPU Telemetry):**
+- **8-Vector Multi-Scale Adversarial Suites (`0.5B`, `7.62B` & `72.71B` Telemetry):**
+  - `72.71B` (`Qwen/Qwen2.5-72B-Instruct`, `80L`, `240` SwiGLU MLPs, `195,720x` outliers, `2x Tesla T4` + Live `16 GB` Apple M2 `MPS`): [`scripts/adversarial_scale_72b_suite.py`](scripts/adversarial_scale_72b_suite.py), [`results/scale_72b_audit/adversarial_scale_72b_report.json`](results/scale_72b_audit/adversarial_scale_72b_report.json) & [`results/scale_72b_audit/apple_m2_live_72b_generation.json`](results/scale_72b_audit/apple_m2_live_72b_generation.json)
   - `7.62B` (`Qwen/Qwen2.5-7B-Instruct`, `28L`, `3,336x` SwiGLU outliers, `2x Tesla T4`): [`scripts/adversarial_scale_7b_suite.py`](scripts/adversarial_scale_7b_suite.py) & [`results/scale_7b_audit/adversarial_scale_7b_report.json`](results/scale_7b_audit/adversarial_scale_7b_report.json)
   - `0.5B`–`123B` Red-Team Suite (`0.00 KB` byte-pointer discrepancy): [`scripts/adversarial_mos_scache_suite.py`](scripts/adversarial_mos_scache_suite.py)
 
-#### 🔬 New in `v1.1.0`: `7.62B` Scale & 3D Pareto Frontier vs. Disk Offloading (`AirLLM` / `mmap`)
+#### 🚀 New in `v1.2.0`: Colossal `72.71B` (`80L`, `195,720x` Outliers) 3D Pareto & Local Consumer Execution
+Evaluated on **`Qwen/Qwen2.5-72B-Instruct` (`72.71B`, `80` layers, `240` SwiGLU matrices `[29568, 8192]`)** across a **non-repeating 926-token distributed storage + Python + queueing math + SQL document**:
+
+| Execution Engine (`72.71B`, `80L`) | Non-Repeating PPL | Model / 8x Bank Footprint | KV VRAM (`L = 4,096`) | Disk Read / Tok | Throughput (`tok/s`) | Speedup vs. `AirLLM` FP16 |
+|---|---|---|---|---|---|---|
+| Dense FP16 + Vanilla KV $O(T)$ | `4.35` | `135.43 GiB` (`866.3 GiB` OOM) | `1,280.0 MiB` $O(T)$ | `0 MB` | Multi-A100 Ref | Cluster Only |
+| `AirLLM` FP16 SSD (`3.5 GiB/s` NVMe / Cloud) | `4.35` | `<2 GiB` (I/O-stalled) | `1,280.0 MiB` $O(T)$ | `135.43 GiB` | `0.026` / `0.0006` | `1.0x` (`38.7 s/tok` NVMe) |
+| `MoS` + `StreamingLLM` ($W=128$) | `6.37` | `38.12 GiB` (**`31.4 GiB 8x`**) | **`40.0 MiB`** $O(1)$ | **`0 MB` (VRAM)** | `4.72` / `7.27` | `182x–280x` (Eviction Amnesia) |
+| `MoS` + `SCache` $O(1)$ ($W=256, S=16$) | **`4.86`** | `38.12 GiB` (**`31.4 GiB 8x`**) | **`126.0 MiB` $O(1)$** | **`0 MB` (VRAM)** | `3.90` / `7.27` | **`150x–280x` NVMe** |
+| **`MoS` + `SCache` $O(1)$ ($W=384, S=16$)** | **`4.75`** | **`38.12 GiB` (`31.4 GiB 8x`, -96.4%)** | **`166.0 MiB` $O(1)$ (`+0.00 B`)** | **`0 MB` (VRAM)** | **`4.03` / `7.27`** | **`155x–280x` (`6,717x` Cloud)** |
+
+- **`195,720x` Colossal SwiGLU Outlier Neutralization (`72.71B`):** Rank-48 `ASVD` scars (`829.7 MB` across all `240` MLPs) preserve **`100.0%` Top-5 token agreement** across unseen Python (`PPL 1.705 → 1.674`), Quantum Physics (`6.187 → 6.257`), Tech Portuguese (`19.478 → 18.446`), and Nested JSON (`21.285 → 19.058`), cutting `INT4` KL divergence by **`3.08x–3.29x`**.
+- **Monotonic Long-Horizon Gain with Scale:** At `72.71B` ($W=64$), `SCache` cuts `StreamingLLM` tail PPL by **`5.00x` (`97.46 → 19.51`)** at **`64.73 MiB` (`-94.94%` KV VRAM @ `4k`)** and boosts evicted passcode probability by **`14.38x`** (`445` tok) and **`5.38x`** (`1,225` tok post-eviction).
+- **Verified Live on `16.0 GB` Apple Silicon M2 (`MPS`):** Runs all `80` layers via `20 × 1.79 GiB` shards at **`2.87 tok/s` prefill**, **`0.51 GiB` peak Python RSS**, **`68.57 MiB` post-unload MPS**, **`71,838,720 B` (`68.51 MiB`) `0 B`-drift `SCache`**, recalling evicted passcode `7942-OMEGA` verbatim:
+  ```bash
+  # Download canonical Qwen2.5-72B-Instruct MoS v2 shards (resumable HTTPS + SHA-256) & launch local chat:
+  python -m scar_cache.cli_72b --download --chat --model-dir ./models/qwen25_72b_mos_v2
+  ```
+
+#### 🔬 `7.62B` Scale & 3D Pareto Frontier (`Qwen/Qwen2.5-7B-Instruct`, `28L`)
 Evaluated on **`Qwen/Qwen2.5-7B-Instruct` (`7.62B`, `84` SwiGLU MLPs, `2x Tesla T4`)** across a **non-repeating 926-token distributed storage + Python + queueing math + SQL document** against measured host SSD-to-GPU bandwidth (`1.57 GB/s`):
 
 | Execution Engine (`7.62B`) | Non-Repeating PPL | MLP Weights (8x Multi-Tenant Bank) | KV VRAM (`L = 4,096`) | Disk Read / Tok | Throughput (`tok/s`) | Speedup vs. `AirLLM` FP16 |
@@ -229,7 +252,7 @@ The repository includes **16 standalone, self-contained reproduction scripts** i
 
 ## 🧪 Testing
 
-Run the full unit and adversarial red-team test suite (**37/37 tests passing**):
+Run the full unit and adversarial red-team test suite (**39/39 tests passing**):
 
 ```bash
 pytest tests/

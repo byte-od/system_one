@@ -1,0 +1,39 @@
+{
+  "schema": "system-one-titan4-mos-scars-v2",
+  "model_id": "/kaggle/input/models/qwen-lm/qwen-3-embedding/transformers/4b/1",
+  "capture_layers_1b": [
+    4,
+    8,
+    12,
+    16,
+    20,
+    24,
+    30,
+    36
+  ],
+  "key_prefix": "",
+  "rank": 16,
+  "n_folds_completed": 5,
+  "oof_balanced_accuracy": 0.5545587869748945,
+  "oof_log_loss": 1.2684994358641817,
+  "labels": [
+    "gpt-5.5",
+    "gpt-5.6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-6-astra",
+    "gemini-3.1-pro-preview",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+    "gemini-3.8-flash",
+    "claude-opus-4-6",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-fable-5",
+    "qwen3.8-max",
+    "glm-5.3",
+    "glm-5.3-flash",
+    "kimi-k3"
+  ]
+}

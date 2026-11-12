@@ -1,0 +1,145 @@
+{
+  "format": "mos_canonical_v2",
+  "source_model": "Qwen/Qwen2.5-72B-Instruct",
+  "num_hidden_layers": 80,
+  "layers_per_group": 4,
+  "num_groups": 20,
+  "hidden_size": 8192,
+  "intermediate_size": 29568,
+  "num_attention_heads": 64,
+  "num_key_value_heads": 8,
+  "head_dim": 128,
+  "vocab_size": 152064,
+  "rope_theta": 1000000.0,
+  "rms_norm_eps": 1e-06,
+  "block_size": 64,
+  "mlp_scar_rank": 48,
+  "attn_scar_rank": 32,
+  "exported_group_range": [
+    0,
+    20
+  ],
+  "aux_files": [
+    "config.json",
+    "generation_config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "vocab.json",
+    "merges.txt"
+  ],
+  "files": [
+    {
+      "name": "mos_embed_tokens.safetensors",
+      "bytes": 1246012608,
+      "sha256": "6ec75b87bdf96d9d60bee9e206c47710b13b6189065d844706905a92e240ac9b"
+    },
+    {
+      "name": "mos_group_00.safetensors",
+      "bytes": 1921857256,
+      "sha256": "5d2bf4261654e0b3437ac5dac9a118c588deb62f88480ec24b16650c8b89ac17"
+    },
+    {
+      "name": "mos_group_01.safetensors",
+      "bytes": 1921857256,
+      "sha256": "c61bc5e79ad9eac6165c9183b0029dde29efe791b1fc5c0533b290bfb96e99e7"
+    },
+    {
+      "name": "mos_group_02.safetensors",
+      "bytes": 1921857328,
+      "sha256": "5ccccfaee34d87149d05b5ef0eff24706cb251c824a060a4254f2f300834377a"
+    },
+    {
+      "name": "mos_group_03.safetensors",
+      "bytes": 1921857392,
+      "sha256": "7adc0bea626df4757d9398acf9e6c93815bfeac0ad004e5193ac87d62007cac6"
+    },
+    {
+      "name": "mos_group_04.safetensors",
+      "bytes": 1921857392,
+      "sha256": "6e33f0636c2270b44b6023389c62b6def6291d3856e3dcfcb21e32f67d956766"
+    },
+    {
+      "name": "mos_group_05.safetensors",
+      "bytes": 1921857392,
+      "sha256": "6611fa3e13237355b890737132f3da7154a5a99d499a11cc912970303ce3692a"
+    },
+    {
+      "name": "mos_group_06.safetensors",
+      "bytes": 1921857392,
+      "sha256": "8420d7bd511993aaaf9350b55f9aca446c85925c33fa9bc90327e424c621af5e"
+    },
+    {
+      "name": "mos_group_07.safetensors",
+      "bytes": 1921857392,
+      "sha256": "2185676d766f15b6106e88fc3cc5e4e5bf758f4a2e3ec86098e3befaa7384d58"
+    },
+    {
+      "name": "mos_group_08.safetensors",
+      "bytes": 1921857392,
+      "sha256": "2301a9e7b9d64951243909338931c93612e158dfecc4676d8619f3e14a2c3ef4"
+    },
+    {
+      "name": "mos_group_09.safetensors",
+      "bytes": 1921857392,
+      "sha256": "ddf2257360de88a59bbf915ca6ad342f9a28d579e3e905579b61ead7f1911961"
+    },
+    {
+      "name": "mos_group_10.safetensors",
+      "bytes": 1921857392,
+      "sha256": "3a21319e8f6fddcf58896dd062d08778a02f3fa53e69aea08e8f6a16f7cf5392"
+    },
+    {
+      "name": "mos_group_11.safetensors",
+      "bytes": 1921857392,
+      "sha256": "624ec621c6124334028aedae794bafc61b096ed198410c950b06198b89080bdc"
+    },
+    {
+      "name": "mos_group_12.safetensors",
+      "bytes": 1921857392,
+      "sha256": "88a1da21339c02ab289fc670b63be5ff2270a4e27b6ab568d1e27f099a5ee1a1"
+    },
+    {
+      "name": "mos_group_13.safetensors",
+      "bytes": 1921857392,
+      "sha256": "529f496986c6c847db461ce38e7814fdfd28ac872abc40b37198e0ed75408470"
+    },
+    {
+      "name": "mos_group_14.safetensors",
+      "bytes": 1921857392,
+      "sha256": "45fed1a8823155ad2f332a0ace127af3b725b349f9d645d33541980810a66b4c"
+    },
+    {
+      "name": "mos_group_15.safetensors",
+      "bytes": 1921857392,
+      "sha256": "cc13e1d3ecb452723adb03430c2e04401376e7c15935479df42b297da2c73106"
+    },
+    {
+      "name": "mos_group_16.safetensors",
+      "bytes": 1921857392,
+      "sha256": "b092ebf08fffe0c35fb99ee4a2499834b30d95b07d9dc16f58f69a626873bfa7"
+    },
+    {
+      "name": "mos_group_17.safetensors",
+      "bytes": 1921857392,
+      "sha256": "8f121b56c70a9d107e5da7551e935f311af4bd88c711567a36165afff49a4137"
+    },
+    {
+      "name": "mos_group_18.safetensors",
+      "bytes": 1921857392,
+      "sha256": "3e8486b8e298d4640e22b4e3a30cd76dbd05e826a5608d7048383bd03b004af9"
+    },
+    {
+      "name": "mos_group_19.safetensors",
+      "bytes": 1921857392,
+      "sha256": "ff8ee14acd2a6e15cff6c8a756c7e246c70e1437b31d703059953f25ac560bd5"
+    },
+    {
+      "name": "mos_lm_head.safetensors",
+      "bytes": 1246029064,
+      "sha256": "e122afc097245ce89e42d6ac40cbd5bf1241102d065f53296c8ff83d136fe8cb"
+    }
+  ],
+  "elapsed_seconds": 2526.34,
+  "total_bytes": 40929189176,
+  "total_gib": 38.1183
+}

@@ -15,11 +15,14 @@
     "thetod/name-that-llm-titan2-yi34b-head",
     "thetod/name-that-llm-titan2-yi34b-backbone",
     "thetod/name-that-llm-titan3-mistral-head",
-    "thetod/name-that-llm-titan3-mistral-backbone"
+    "thetod/name-that-llm-titan3-mistral-backbone",
+    "thetod/ntl-titan4-qwen3-mos-scars-v1"
   ],
   "kernel_sources": [],
   "competition_sources": [
     "name-that-llm"
   ],
-  "model_sources": []
+  "model_sources": [
+    "qwen-lm/qwen-3-embedding/Transformers/4b/1"
+  ]
 }

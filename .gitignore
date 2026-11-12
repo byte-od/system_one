@@ -62,10 +62,13 @@ venv.bak/
 *.pth
 *.onnx
 *.npy
+*.log
 competitions/**/head_artifacts/
 competitions/**/data/
 models/**/*.safetensors
 models/**/*.safetensors.part
+models/qwen25_72b_mos_v2/*
+!models/qwen25_72b_mos_v2/mos_manifest.json
 
 # macOS
 .DS_Store
@@ -73,3 +76,5 @@ competitions/**/test_run/
 competitions/**/scratch/
 competitions/**/output_v*/
 kaggle_scale_7b_redteam/run_7b_redteam.py
+kaggle_scale_72b_redteam/run_72b_redteam.py
+kaggle_export_72b_canonical/part*/run_export_part*.py

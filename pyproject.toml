@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mixture-of-scars"
-version = "1.1.0"
+version = "1.2.0"
 description = "Mixture of Scars (MoS) & SCache: Radical Static Weight Compression & O(1) Constant Memory KV-Cache Replacement for LLMs"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -37,7 +37,12 @@ classifiers = [
 dependencies = [
     "torch>=2.0.0",
     "numpy>=1.22.0",
+    "safetensors>=0.4.0",
+    "transformers>=4.45.0",
 ]
+
+[project.scripts]
+mos-run = "scar_cache.cli_72b:main"
 
 [project.optional-dependencies]
 dev = [

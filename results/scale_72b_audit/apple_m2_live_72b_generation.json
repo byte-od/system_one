@@ -1,0 +1,300 @@
+{
+  "hardware": {
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "machine": "arm64",
+    "python": "3.11.16",
+    "torch": "2.14.0",
+    "chip": "Apple M2",
+    "ram_gb": 16.0
+  },
+  "model": "Qwen/Qwen2.5-72B-Instruct",
+  "format": "mos_canonical_v2",
+  "num_layers": 80,
+  "num_groups": 20,
+  "layers_per_group": 4,
+  "checkpoint_total_gib": 38.1183,
+  "group_shard_gib": 1.79,
+  "scache_config": {
+    "window_size": 64,
+    "num_slots": 24,
+    "num_sinks": 4
+  },
+  "prompt_tokens": 154,
+  "needle": "7942-OMEGA",
+  "needle_distance_from_prompt_end_tokens": 107,
+  "prefill_seconds": 53.703,
+  "prefill_tok_per_s": 2.868,
+  "generated_tokens": 30,
+  "generated_text": "The emergency vault authorization code is 7942-OMEGA, and the asymptotic memory complexity of Scar-Cache is not specified in the",
+  "evicted_needle_recalled": true,
+  "scache_recursive_bytes": 71838720,
+  "scache_reported_bytes": 71838720,
+  "scache_strict_o1_zero_drift": true,
+  "mps_post_group_unload_mib": 68.57,
+  "process_peak_rss_gib": 0.508,
+  "mean_streaming_decode_s_per_tok": 44.036,
+  "mean_streaming_decode_tok_per_s": 0.02271,
+  "step_telemetry": [
+    {
+      "step": 1,
+      "seq_len": 155,
+      "token_id": 785,
+      "piece": "The",
+      "step_seconds": 43.87,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 2,
+      "seq_len": 156,
+      "token_id": 12851,
+      "piece": " emergency",
+      "step_seconds": 43.862,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 3,
+      "seq_len": 157,
+      "token_id": 34584,
+      "piece": " vault",
+      "step_seconds": 43.97,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 4,
+      "seq_len": 158,
+      "token_id": 23715,
+      "piece": " authorization",
+      "step_seconds": 43.887,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 5,
+      "seq_len": 159,
+      "token_id": 2038,
+      "piece": " code",
+      "step_seconds": 43.943,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 6,
+      "seq_len": 160,
+      "token_id": 374,
+      "piece": " is",
+      "step_seconds": 43.763,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 7,
+      "seq_len": 161,
+      "token_id": 220,
+      "piece": " ",
+      "step_seconds": 43.775,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 8,
+      "seq_len": 162,
+      "token_id": 22,
+      "piece": "7",
+      "step_seconds": 43.929,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 9,
+      "seq_len": 163,
+      "token_id": 24,
+      "piece": "9",
+      "step_seconds": 43.858,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 10,
+      "seq_len": 164,
+      "token_id": 19,
+      "piece": "4",
+      "step_seconds": 43.718,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 11,
+      "seq_len": 165,
+      "token_id": 17,
+      "piece": "2",
+      "step_seconds": 44.307,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 12,
+      "seq_len": 166,
+      "token_id": 12,
+      "piece": "-",
+      "step_seconds": 43.988,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 13,
+      "seq_len": 167,
+      "token_id": 1898,
+      "piece": "OM",
+      "step_seconds": 43.925,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 14,
+      "seq_len": 168,
+      "token_id": 87996,
+      "piece": "EGA",
+      "step_seconds": 44.162,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 15,
+      "seq_len": 169,
+      "token_id": 11,
+      "piece": ",",
+      "step_seconds": 43.952,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 16,
+      "seq_len": 170,
+      "token_id": 323,
+      "piece": " and",
+      "step_seconds": 44.782,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 17,
+      "seq_len": 171,
+      "token_id": 279,
+      "piece": " the",
+      "step_seconds": 44.144,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 18,
+      "seq_len": 172,
+      "token_id": 96254,
+      "piece": " asympt",
+      "step_seconds": 43.876,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 19,
+      "seq_len": 173,
+      "token_id": 14212,
+      "piece": "otic",
+      "step_seconds": 44.11,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 20,
+      "seq_len": 174,
+      "token_id": 4938,
+      "piece": " memory",
+      "step_seconds": 43.986,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 21,
+      "seq_len": 175,
+      "token_id": 23094,
+      "piece": " complexity",
+      "step_seconds": 44.012,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 22,
+      "seq_len": 176,
+      "token_id": 315,
+      "piece": " of",
+      "step_seconds": 44.316,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 23,
+      "seq_len": 177,
+      "token_id": 29660,
+      "piece": " Scar",
+      "step_seconds": 44.207,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 24,
+      "seq_len": 178,
+      "token_id": 7658,
+      "piece": "-C",
+      "step_seconds": 44.352,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 25,
+      "seq_len": 179,
+      "token_id": 1777,
+      "piece": "ache",
+      "step_seconds": 44.087,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 26,
+      "seq_len": 180,
+      "token_id": 374,
+      "piece": " is",
+      "step_seconds": 43.911,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 27,
+      "seq_len": 181,
+      "token_id": 537,
+      "piece": " not",
+      "step_seconds": 43.961,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 28,
+      "seq_len": 182,
+      "token_id": 5189,
+      "piece": " specified",
+      "step_seconds": 44.109,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    },
+    {
+      "step": 29,
+      "seq_len": 183,
+      "token_id": 304,
+      "piece": " in",
+      "step_seconds": 44.287,
+      "scache_recursive_bytes": 71838720,
+      "delta_bytes_vs_prefill": 0
+    }
+  ]
+}

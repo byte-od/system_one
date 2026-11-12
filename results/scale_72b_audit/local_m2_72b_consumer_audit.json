@@ -1,0 +1,53 @@
+{
+  "timestamp": "2026-11-11T22:51:27Z",
+  "hardware": "Apple M2 (16 GB Unified RAM) \u2014 MPS",
+  "checkpoint": "models/qwen25_72b_mos (80 layers, 10 groups x 8 cross-depth shared layers)",
+  "checkpoint_disk_gib": 11.436,
+  "single_group_disk_gib": 1.024,
+  "single_group_active_dequant_gib": 3.698,
+  "peak_process_rss_gib": 1.275,
+  "vector_0_80layer_scache_audit": {
+    "passed": true,
+    "window_size": 64,
+    "num_slots": 12,
+    "scaling": [
+      {
+        "tokens": 128,
+        "vanilla_72b_fp16_kb": 40960.0,
+        "scache_reported_kb": 66281.25,
+        "scache_actual_recursive_kb": 66281.25,
+        "kv_saving_pct": -61.82,
+        "chunk_128_wall_sec": 34.18,
+        "prefill_tok_per_s": 3.75
+      },
+      {
+        "tokens": 256,
+        "vanilla_72b_fp16_kb": 81920.0,
+        "scache_reported_kb": 66281.25,
+        "scache_actual_recursive_kb": 66281.25,
+        "kv_saving_pct": 19.09,
+        "chunk_128_wall_sec": 32.68,
+        "prefill_tok_per_s": 3.92
+      },
+      {
+        "tokens": 384,
+        "vanilla_72b_fp16_kb": 122880.0,
+        "scache_reported_kb": 66281.25,
+        "scache_actual_recursive_kb": 66281.25,
+        "kv_saving_pct": 46.06,
+        "chunk_128_wall_sec": 31.8,
+        "prefill_tok_per_s": 4.02
+      }
+    ],
+    "delta_bytes_128_to_384": 0.0,
+    "reported_vs_recursive_diff_kb": 0.0,
+    "scache_active_causal_logit_shift": 2.7988,
+    "Projected_4096_tok_vanilla_72b_kv_mb": 1280.0,
+    "Projected_4096_tok_scache_72b_kv_mb": 64.73,
+    "Projected_4096_tok_kv_reduction_x": 19.78
+  },
+  "streaming_decode_1tok_sec": 25.69,
+  "boundary_condition_1_cross_depth_python_nll": 14.0305,
+  "boundary_condition_1_cross_depth_python_ppl": 1239854.05,
+  "elapsed_seconds": 182.31
+}
