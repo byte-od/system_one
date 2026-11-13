@@ -41,10 +41,10 @@ flowchart LR
 
 ---
 
-## 🧠 3. Horizonte 2 — A Próxima Descoberta Científica (`v2.0.0`, `64/64` Testes)
+## 🧠 3. Horizonte 2 — A Próxima Descoberta Científica (`v2.1.0`, `67/67` Testes)
 
-### ✅ Fase 2.1 + `ScarStore v2` (Etapas 1–3): Transposição `72.71B → 0.5B` em Forma Fechada, Grade Kronecker `896×896` (`61,25 KB INT4` `mmap`), Roteamento *Span-Max* e Pontes *Dual-Depth* no Ciclo do Sono — **ENTREGUE E AUDITADO**
-* **Implementação Canônica & Auditorias (`scar-cache`):** `scar_cache/scar_grafting.py`, `scar_cache/scar_store_v2.py` (`Etapas 1 & 2`), `scar_cache/dual_depth_bridge.py` (`Etapa 3`), `docs/SCAR_STORE_V2_ARCHITECTURE.md` e `results/scar_store_v2_stage{1,2,3}_audit.json`.
+### ✅ Fase 2.1 + `ScarStore v2` (Etapas 1–4): Transposição `72.71B → 0.5B` em Forma Fechada, Grade Kronecker `896×896` (`61,25 KB INT4` `mmap`), Roteamento *Span-Max*, Pontes *Dual-Depth* e Expansão Dinâmica de Atenção (*Zero Mid-Cut*) — **ENTREGUE E AUDITADO**
+* **Implementação Canônica & Auditorias (`scar-cache`):** `scar_cache/scar_grafting.py`, `scar_cache/scar_store_v2.py` (`Etapas 1 & 2`), `scar_cache/dual_depth_bridge.py` (`Etapa 3`), `scar_cache/head_expanded_attention.py` (`Etapa 4`), `docs/SCAR_STORE_V2_ARCHITECTURE.md` e `results/scar_store_v2_stage{1,2,3,4}_audit.json`.
 * **Resultados Empíricos Auditados (`Qwen2.5-72B-Instruct MoS [72.71B] → Qwen2.5-0.5B-Instruct [0.49B]`):**
   * **Zero Backpropagation / Zero SGD (`~0,90 s` por cápsula):** Sintetiza em forma fechada cápsulas portáteis `.safetensors` de `225,75 KB` FP16 (`64,75 KB` equivalente `INT4`, índice L1 de `5,25 KB` — **`629.052,7×` menor** transferência ativa que os `135,43 GiB` do `72B` BF16).
   * **Superação da Barreira Linear $d = 896$ via Cones Esféricos `ReLU`:** Pelo próprio teorema de empacotamento esférico de Kabatiansky-Levenshtein em $\mathbb{S}^{895}$, os cones `ReLU` disjuntos (`tau = 0.62`, `strictly_disjoint_at_anchors = True`) evitam a saturação linear de `~896` edições estáticas, mantendo **`0.0000000000` (`torch.equal = True`)** de interferência fora do cone em 6 prompts de controle e **`< 2 ms` de `unlearn()` cirúrgico**.
