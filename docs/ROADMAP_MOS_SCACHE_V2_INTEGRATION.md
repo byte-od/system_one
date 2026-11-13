@@ -41,9 +41,9 @@ flowchart LR
 
 ---
 
-## ✅ 3. Horizonte 2 & Consolidação `v3.0.0` — CONCLUÍDO E AUDITADO (`v3.0.0`, `84/84` Testes Passando em `25` Suítes)
+## ✅ 3. Horizonte 2 & Consolidação `v3.0.0` — CONCLUÍDO E AUDITADO (`v3.0.0`, `86/86` Testes Passando em `25` Suítes)
 
-### ✅ Fase 2.1 + `ScarStore v2` + CLI `mos-store` (Etapas 1–6 + Red-Team `0.5B vs 3B`): Transposição `72.71B → 0.5B & 3B` em Forma Fechada, `HeadExpandedScarStore` (`140,00 KB = 35×4KB` `mmap`), Streaming Real `HTTP/1.1 206` & Apagamento Forense `0x00` em SSD — **ENTREGUE E AUDITADO**
+### ✅ Fase 2.1 + `ScarStore v2` + CLI/UI `mos-store` + Biblioteca Online `HTTP 206` + Fábrica Open-Weights: Transposição `72.71B → 0.5B & 3B` em Forma Fechada, `HeadExpandedScarStore` (`140,00 KB = 35×4KB` `mmap`), Streaming Real `HTTP/1.1 206` & Apagamento Forense `0x00` em SSD — **ENTREGUE E AUDITADO**
 * **Implementação Canônica & Auditorias (`scar-cache`):** `scar_cache/scar_grafting.py`, `scar_cache/scar_store_v2.py` (`Etapas 1 & 2`), `scar_cache/dual_depth_bridge.py` (`Etapa 3`), `scar_cache/head_expanded_attention.py` (`Etapas 4 & 5: HeadExpandedScarStore`), `docs/SCAR_STORE_V2_ARCHITECTURE.md`, `results/scar_store_v2_stage5_3b_vs_0p5b_audit.json` e `results/adversarial_0p5b_vs_3b_audit.json`.
 * **Resultados Empíricos Auditados (`Qwen2.5-72B-Instruct MoS [72.71B] → Qwen2.5-0.5B [61,25 KB] & Qwen2.5-3B [140,00 KB]`):**
   * **Geometria Perfeita de Páginas SO no Núcleo `3B` (`0 B` de *padding*):** Cada `HeadExpandedScarCapsule` no `Qwen2.5-3B-Instruct` (`36L`, `16 × 128` cabeças Q, $d = 2048$) ocupa **exatos `143.360 B` (`140,00 KB` = `35 × 4.096 B` páginas `mmap` do SO, `1.015.469×` menor que o `72B` BF16)** sobre `4.194.304` células Kronecker (`512 KB` bitmap CPU), elevando a concordância inédita Top-1 contra o `72.71B` de `94,44%` (`0.5B`) para **`98,61%` (`71/72` tokens exatos; `KL = 0,0727 / 0,0066 / 0,0079` — `6,11×` menor KL médio!)** com **`36/36` blocos internos `torch.equal = True`**.
