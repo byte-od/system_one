@@ -1,4 +1,4 @@
-# 🗺️ Roadmap Oficial de Evolução Científica e Engenharia (`v1.4` → `v2.x`): System One + MoS + SCache
+# 🗺️ Roadmap Oficial de Evolução Científica e Engenharia (`v1.4` → `v3.x`): System One + MoS + SCache
 
 > [!IMPORTANT]
 > **MANDATO INEGOCIÁVEL DE INTEGRIDADE ARQUITETURAL (ZERO FACHADAS):**  
@@ -6,9 +6,9 @@
 
 ---
 
-## 🧬 1. De Onde Viemos: A Equação-Mãe das Cicatrizes (`v1.3.0` Consolidado)
+## 🧬 1. De Onde Viemos: A Equação-Mãe das Cicatrizes (`v3.0.0` Consolidado)
 
-Originada no motor reflexivo [`system1_engine/core/scar_memory.py`](../system1_engine/core/scar_memory.py) (`34.8 KB` no Cache L1, latência CPU `0.23 ms`) e expandida em escala colossal no repositório irmão [`mixture-of-scars`](https://github.com/byte-od/mixture-of-scars) (`DOI v1.3.0: 10.5281/zenodo.24172784` · `Concept DOI: 10.5281/zenodo.24144512`), toda a arquitetura obedece ao **Princípio Unificado da Cicatriz**:
+Originada no motor reflexivo [`system1_engine/core/scar_memory.py`](../system1_engine/core/scar_memory.py) (`34.8 KB` no Cache L1, latência CPU `0.23 ms`) e expandida em escala colossal no repositório irmão [`mixture-of-scars`](https://github.com/byte-od/mixture-of-scars) (`DOI v3.0.0: 10.5281/zenodo.24172784` · `Concept DOI: 10.5281/zenodo.24144512`), toda a arquitetura obedece ao **Princípio Unificado da Cicatriz**:
 
 $$F(\mathbf{x}) = \underbrace{F_{\text{base}}(\mathbf{x})}_{\text{Tecido Base Enxuto}} + \sum_{k} \underbrace{\operatorname{ReLU}\!\left(\frac{\mathbf{x}^\top \mathbf{z}_k}{\|\mathbf{x}\|_2 \|\mathbf{z}_k\|_2 + \epsilon}\right)}_{\text{Cone Hemisférico (Vazamento 0.000000)}} \cdot \underbrace{\Delta_{\text{scar}, k}(\mathbf{x})}_{\text{Correção Residual de Erro / Surpresa}}$$
 
@@ -41,7 +41,7 @@ flowchart LR
 
 ---
 
-## ✅ 3. Horizonte 2 — CONCLUÍDO E AUDITADO (`v2.4.0`, `77/77` Testes Passando)
+## ✅ 3. Horizonte 2 & Consolidação `v3.0.0` — CONCLUÍDO E AUDITADO (`v3.0.0`, `84/84` Testes Passando em `25` Suítes)
 
 ### ✅ Fase 2.1 + `ScarStore v2` + CLI `mos-store` (Etapas 1–6 + Red-Team `0.5B vs 3B`): Transposição `72.71B → 0.5B & 3B` em Forma Fechada, `HeadExpandedScarStore` (`140,00 KB = 35×4KB` `mmap`), Streaming Real `HTTP/1.1 206` & Apagamento Forense `0x00` em SSD — **ENTREGUE E AUDITADO**
 * **Implementação Canônica & Auditorias (`scar-cache`):** `scar_cache/scar_grafting.py`, `scar_cache/scar_store_v2.py` (`Etapas 1 & 2`), `scar_cache/dual_depth_bridge.py` (`Etapa 3`), `scar_cache/head_expanded_attention.py` (`Etapas 4 & 5: HeadExpandedScarStore`), `docs/SCAR_STORE_V2_ARCHITECTURE.md`, `results/scar_store_v2_stage5_3b_vs_0p5b_audit.json` e `results/adversarial_0p5b_vs_3b_audit.json`.
