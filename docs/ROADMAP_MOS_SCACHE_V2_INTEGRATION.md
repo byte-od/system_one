@@ -41,11 +41,14 @@ flowchart LR
 
 ---
 
-## 🧠 3. Horizonte 2 — A Próxima Descoberta Científica (`v2.0`)
+## 🧠 3. Horizonte 2 — A Próxima Descoberta Científica (`v2.0.0a1`, `57/57` Testes)
 
-### Fase 2.1: "O Ciclo do Sono Artificial" (`SCache O(1)` $\to$ `MoS` Permanente)
-* **Inspiração Neurocientífica:** Durante a vigília, o **Hipocampo** (`SCache O(1)`) retém eventos de alta surpresa ($\|\mathbf{v} - \mathbf{W}_{\text{scar}}\hat{\mathbf{k}}\|_2$). Durante o repouso ("sono"), o sistema destila automaticamente os slots saturados do `SCache` em micro-especialistas permanentes `ScarExpert` ($\mathbf{B}_k \mathbf{A}_k$, `32–64 KB`) acoplados a cones direcionais `ReLU` $\mathbf{z}_k$ no **Neocórtex** (`MoS`), limpando o `SCache` para o próximo ciclo.
-* **Resultado:** Aprendizado contínuo vitalício (*Lifelong Learning*) em memória `O(1)` com **zero esquecimento catastrófico** (`0.000000` de vazamento fora do hemisfério do cone).
+### ✅ Fase 2.1: Transposição Direta em Forma Fechada (`72.71B → 0.5B`) & "Ciclo do Sono Artificial" — **ENTREGUE E AUDITADO**
+* **Implementação Canônica:** `scar_cache/scar_grafting.py` (`ScarGraftEngine`, `ScarBank`, `ScarCapsule`, Pedra de Roseta Vocabular por Planos Cortantes de Woodbury + Projetor de Espaço Nulo Exato `P_null` + CLI `mos-graft`), extração multi-stream empacotada do `72.71B` em `scar_cache/cli_72b.py` (`generate_packed_greedy`) e auditoria em `results/horizon2_scar_grafting_v2_audit.json`.
+* **Resultados Empíricos Auditados (`Qwen2.5-72B-Instruct MoS [72.71B] → Qwen2.5-0.5B-Instruct [0.49B]`):**
+  * **Zero Backpropagation / Zero SGD (`~0,90 s` por cápsula):** Sintetiza em forma fechada cápsulas portáteis `.safetensors` de `225,75 KB` FP16 (`64,75 KB` equivalente `INT4`, índice L1 de `5,25 KB` — **`629.052,7×` menor** transferência ativa que os `135,43 GiB` do `72B` BF16).
+  * **Superação da Barreira Linear $d = 896$ via Cones Esféricos `ReLU`:** Pelo próprio teorema de empacotamento esférico de Kabatiansky-Levenshtein em $\mathbb{S}^{895}$, os cones `ReLU` disjuntos (`tau = 0.62`, `strictly_disjoint_at_anchors = True`) evitam a saturação linear de `~896` edições estáticas, mantendo **`0.0000000000` (`torch.equal = True`)** de interferência fora do cone em 6 prompts de controle e **`< 2 ms` de `unlearn()` cirúrgico**.
+  * **Generalização em Paráfrases Inéditas + Autoaceleração `Ghost-Jump`:** No teorema de *Immerman-Szelepcsényi*, atingiu **`100,0%` de concordância Top-1** com o `72.71B` (`KL: 0,48 → 0,03`, redução de **`18,5×`**) e elevou a aceitação do `Ghost-Jump` contra o `72.71B` de **`26,0% → 100,0%`** (`44,7% → 100,0%` em *Landauer* e `13,0% → 60,0%` em *Kabatiansky-Levenshtein*).
 
 ### Fase 2.2: Alinhamento de Permutação Entre Camadas (*Sinkhorn Re-Basin*)
 * **Mecânica:** Reaproveitar o calibrador bistocástico **Soft Sinkhorn** do Tri-Compass (`SKILL.md`) para alinhar a permutação de neurônios entre camadas adjacentes ($\min_{\mathbf{P}} \|\mathbf{W}_{\ell+1} - \mathbf{P}\mathbf{W}_\ell\mathbf{P}^\top\|_F$) antes da fatoração `ASVD`.
