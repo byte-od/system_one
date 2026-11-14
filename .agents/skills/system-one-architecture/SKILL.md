@@ -94,6 +94,16 @@ description: >-
 
 ---
 
+### 🧩 F. VQ4-Scar (`Micro-Cicatrizes Vetoriais 4D + Cura Residual INT4-ASVD` — Nativo & WebGPU)
+* **Localização Canônica:** `scar_cache/vq4_scar_mos.py` (Nativo PyTorch/Metal/CUDA) + `scar_cache/webgpu/mos_scache_kernels.wgsl` (`vq4_equilibrate_fwht64` e `mos_fused_vq4_int4scar_gemv` em WGSL 1.0).
+* **Função:** Substituir a quantização escalar Gaussiana legada em **todo o ecossistema** (tanto no motor **Nativo** quanto no motor **Web**) por dicionários direcionais 4D acoplados a cicatrizes residuais comprimidas.
+* **Garantias Algorítmicas:**
+  * **`LUT256` (`256 × vec4<f16>` = `2 KB` por matriz / `4 KB` em `var<workgroup>`):** Entrada `0` travada no vetor nulo exato `(0,0,0,0)` + espigas esparsas + reticulado $D_4$ + GPU Lloyd-Max ponderado por energia $\alpha_b^2$.
+  * **Equilibração de Canal (`d_fp16`) + `FWHT-64` na Entrada:** Neutraliza *outliers* de ativação antes da rotação Hadamard, aplicando a transformada apenas uma vez por vetor de entrada $x$.
+  * **Cura Residual em 2 Passos (*2-Pass Residual Scar Healing*):** Comprime a própria cicatriz `ASVD` em `INT4` (`3,76x` menor que `FP16`) ajustando o 2º passo diretamente sobre o erro residual $(W - \widehat{W}_{\text{vq4}})$.
+
+---
+
 ## 🚫 2. Regras Estritas de Implementação (Checklist de Pureza)
 
 Ao implementar qualquer código sob esta arquitetura:
@@ -102,6 +112,7 @@ Ao implementar qualquer código sob esta arquitetura:
 2. **PROIBIDO mascarar bibliotecas off-the-shelf:** Nunca chame `LinearSVC`, `LightGBM` ou `CatBoost` genéricos de "Intuição proprietária". Se for usar um classificador tradicional, declare explicitamente como âncora estatística ou substitua pela implementação pura do `UniversalS1Agent`.
 3. **PROIBIDO usar KV Cache linear $\mathcal{O}(T)$ escondido:** Em agentes interativos e modelos de linguagem, o contexto deve ser compactado via cicatrizes MoS/SCache.
 4. **OBRIGATÓRIO validação matemática contínua:** Em pipelines de MoS, garantir similaridade cosseno $> 99\%$ em relação à inferência de referência.
+5. **OBRIGATÓRIO escopo e testes duplos (`Nativo` E `WebGPU`):** Mudanças arquiteturais nos operadores de cicatriz (`MoS`, `VQ4-Scar`, `SCache`, `GoldenSlice P_⊥lang`) valem para **todo o ecossistema** (servidor/desktop Nativo e navegador Web) e DEVEM ser testadas em **ambos** os motores com paridade numérica verificada (`cosine > 0.99999`) e avaliação poliglota *held-out* (`PT, EN, ES, FR`).
 
 ---
 
