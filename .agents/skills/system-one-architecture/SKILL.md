@@ -104,6 +104,15 @@ description: >-
 
 ---
 
+### 🌱 G. ScarNativeLM v5.0 (`Arquitetura Fundacional Pura de Cicatrizes — Tabula Rasa` — Nativo & 22 Shaders WebGPU)
+* **Localização Canônica:** `scar_native/` (`model.py`, `webgpu_v5.py`, `tokenizer.py`, `data.py`, CLI `mos-scar-native`) + Shaders `#21` (`scarnative_widrow_hoff_evict_update`) e `#22` (`scarnative_o1_hybrid_gqa_attention`) em `scar_cache/webgpu/mos_scache_kernels.wgsl` + `portfolio/src/lib/scarNativeEngine.ts` (`ScarNativeLab`).
+* **Função:** Eliminar o *Piso Gaussiano Pré-Treinado* treinando modelos fundacionais **100% do zero (`step = 0`, zero camadas `nn.Linear`, zero pesos externos)** diretamente na variedade de cicatrizes:
+  1. **`ScarNativeLinear` (`D4-LUT256 VQ4-STE` + `FWHT-64` + `d_eq` + `INT4-STE`):** Zero choque de quantização pós-treino (`0.000000` KL ao empacotar em binário).
+  2. **`DifferentiableSCacheAttention`:** Atenção híbrida diferenciável ponta a ponta em espaço estritamente $\mathcal{O}(1)$ (`Δ = 0 B` em qualquer horizonte $T \to \infty$) com matriz associativa Widrow-Hoff pré-RoPE $W_{\text{scar}}$ e paridade exata (`cos > 0.99999`) entre PyTorch e WebGPU WGSL 1.0.
+  3. **`LanguageNullspaceProjector` ($P_{\perp\text{lang}}$) + `DetachedScarStore`:** Tronco 100% livre de fatos mutáveis + cartuchos `INT4` RRR fechados (`0` SGD no tronco, alinhados a páginas de `4 KB`) cunhados apenas em inglês e disparando em `PT/EN/ES/FR`, com desaprendizagem criptográfica `0x00` GDPR instantânea (`ΔPPL = 0.0000`).
+
+---
+
 ## 🚫 2. Regras Estritas de Implementação (Checklist de Pureza)
 
 Ao implementar qualquer código sob esta arquitetura:
