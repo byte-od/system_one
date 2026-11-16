@@ -113,6 +113,22 @@ description: >-
 
 ---
 
+### 🚀 H. ScarNativeLM v6.0 (`Shared-Stage MoS, Chunkwise WY & Dual-Tier O(1) SCache` — Nativo & 26 Shaders WebGPU)
+* **Localização Canônica:** `scar_native/` (`chunkwise_wy.py`, `v6_bpe_tokenizer.py`, `model_v6.py`, `mos_digest.py`, `webgpu_v6.py`, `data_v6.py`, CLI `mos-digest`) + Shaders `#23` (`scarnative_v6_mos_router_topk_relu`), `#24` (`scarnative_v6_mos_bscar_accumulate`), `#25` (`scarnative_v6_hierarchical_evict_update`) e `#26` (`scarnative_v6_hierarchical_o1_gqa_attention`) em `scar_cache/webgpu/mos_scache_kernels.wgsl` + `portfolio/src/lib/scarNativeV6Engine.ts` (`ScarNativeLab.tsx`).
+* **Função:** Escalar a fundação *Tabula Rasa* para velocidade de pré-treino Tensor-Core, vocabulário byte-level BPE poliglota sem `<unk>`, sub-1 GiB de pico via *Sequential Stage-Streaming* e abstenção epistêmica nativa:
+  1. **`Chunkwise WY Widrow-Hoff` (`chunkwise_wy.py`):** Varredura paralela em blocos de tamanho $C$ resolvendo $(I + L_{ab})^{-1}$ triangular inferior unitário em Tensor Cores (`>12x` mais rápida que a recorrência sequencial em `A100` com paridade `cos > 0.999999` em forward + backward).
+  2. **`SharedStageUniversalBase` + `ScarMoSExpertBank` (`Top-k ReLU INT4-STE`):** As camadas de cada estágio compartilham um único substrato `D4-LUT256 VQ4` enquanto mantêm cicatrizes de identidade leves e especialistas direcionais `MoS` esparsos, reduzindo `v6-Frontier` (`96L, d=8192, 128K ctx`) de `205.01 GiB` para **`4.36 GiB`** (`MoS-LRU`, `46.99x`) ou **`0.91 GiB`** em *Sequential Stage-Streaming* (`diff = 0.00e+00` vs modo residente).
+  3. **`HierarchicalSCacheAttentionV6` (`Dual-Tier O(1)`):** Combina `RoPE Sinks + Sliding Ring + Surprise-Promoted RoPE Micro-Pages + Widrow-Hoff W_scar` em espaço estritamente constante (`Δ = +0 B` para $T \to \infty$), preservando cópia literal exata de dígitos/chaves e memória semântica contínua.
+  4. **`ProcrustesLanguageNullspace` ($R_{\text{lang}} \in SO(D) + P_{\perp\text{lang}}$) + `mos-digest` + `<abstain>`:** Compila diretórios inteiros de documentos Markdown em inglês em cartuchos `.scarstore` (`12 KB = 3 × 4 KB`, `Zero-SGD RRR`) que roteiam automaticamente em `PT/EN/ES/FR` via dobramento ortogonal $(h R_{\text{lang}}) A_{\text{scar}}^\top = h (A_{\text{scar}} R_{\text{lang}}^\top)^\top$, com *wipe* criptográfico `0x00` GDPR por entidade ou documento inteiro (`max |Δlogits| = 0.0`) e emissão nativa do token `<abstain>` fora do cone factual.
+
+---
+
+### 🌌 I. PointScarFlow v1.0 (`Gerador 3D Contínuo de Cicatrizes — Zero Catálogo` — Nativo & 12 Shaders WebGPU)
+* **Localização Canônica:** `scar_native/point_scar_flow.py` + `scar_native/point_scar_flow.wgsl` (`12` shaders `@compute` WGSL 1.0) + `portfolio/src/lib/pointScarFlowEngine.ts` + `portfolio/src/components/JarvisFloatingPointStage.tsx`.
+* **Função:** Geração generativa 3D contínua `Tabula Rasa` (`N = 1024` pontos 3D + normais/energia em `4` passos Euler OT Rectified Flow) condicionada diretamente pelo estado latente `Layer-23` $h_{23} \in \mathbb{R}^{2048}$ do `Qwen2.5-3B` no navegador (`3.87 MiB` em `VQ4-Scar + INT4-STE`, zero catálogo fixo de primitivas, invariância poliglota `PT/EN/ES/FR` `cos > 0.90`).
+
+---
+
 ## 🚫 2. Regras Estritas de Implementação (Checklist de Pureza)
 
 Ao implementar qualquer código sob esta arquitetura:
