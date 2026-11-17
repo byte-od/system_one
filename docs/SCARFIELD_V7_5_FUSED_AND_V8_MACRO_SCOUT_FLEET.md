@@ -1,8 +1,8 @@
 # Especificação Arquitetural `ScarField v7.5-Fused`, Comparativo com Gigantes Modernos & `v8.0` Frota de Macro-Batedores Geodésicos (*Macro-Scout Geodesic Fleet*)
 
 > **Data:** 17/11/2026  
-> **Status:** `v7.5-Fused` Implementado & Validado em `NVIDIA A100` (`@triton.jit` + Adjunto Simplético Zero-Autograd + Fechamento Causal Anti-Stuttering) · `v8.0 Macro-Scout Fleet` Especificado Normativamente (`Zero-Legacy / Zero-Facade`)  
-> **Localização Canônica de Código:** `scar_field/{triton_kernels,cayley_geodesic,e8_lattice,byte_shock_simplex,proper_time_bus,riemannian_muon,s1_scouts,engine}.py`
+> **Status:** `v7.5-Fused` & `v8.0 Macro-Scout Geodesic Fleet + Shared-Crystal Swarm` **Implementados & Validados em `NVIDIA A100`** (`Zero-Legacy / Zero-Facade`, `0` sessões GPU ociosas)  
+> **Localização Canônica de Código:** `scar_field/{macro_scout_fleet,triton_kernels,cayley_geodesic,e8_lattice,byte_shock_simplex,proper_time_bus,riemannian_muon,s1_scouts,engine}.py`
 
 ---
 
@@ -95,3 +95,24 @@ Em vez de replicar *Data Parallel* ingênuo (que apenas infla o *batch size* efe
 #### Nível 3 — Enxame Ultraleve sobre Substrato Cristalino $E_8$ Compartilhado (*Shared-Crystal MoS Swarm*)
 - O substrato universal Gosset $E_8$ (`1,000 bpw`, **`9,1 MiB` somente-leitura**) é **compartilhado em memória** entre **`16 a 32` Macro-Batedores ultraleves** (`< 2 MiB` de estado mutável cada!), onde cada batedor treina exclusivamente **cicatrizes atômicas ternárias `(A_scar, B_scar)` e polos locais de calota `(scar_poles, scar_u, scar_v)`**.
 - Ao final de cada ciclo, as cicatrizes de maior redução de surpresa epistêmica são destiladas/absorvidas diretamente de volta no cristal $E_8$ via `SVD/RRR`, combinando busca populacional paralela com descida geodésica exata!
+
+---
+
+## 4. Resultados Empíricos Finais do `ScarField v8.0` na `NVIDIA A100-SXM4-40GB` (`2.480` Passos = `2.000` Frota `M=4` + `480` Enxame `S=8` · `results/scar_field_v8_0_macro_fleet_audit.json`)
+
+| Métrica Auditada (`455.504 B` estado $\mathcal{O}(1)$, `Δ = +0 B`, `9,527 MiB` `.sfield.scar`) | `DenseByte` (`63,77 MiB`) | `ScarField v7.4` | `ScarField v7.5-Fused` | **`ScarField v8.0 Fleet`** |
+| :--- | :---: | :---: | :---: | :---: |
+| **Passkey Inédito `T = 512` (`8×` anel)** | `0,0%` | `100,0%` | `93,8%` | **`100,0%`** (`100%` / dígito) |
+| **Passkey Inédito `T = 768` (`12×` anel)** | `0,0%` | `81,2%` | `78,1%` | **`100,0%`** (`100%` / dígito) |
+| **Passkey Inédito `T = 1024` (`16×` anel)** | `0,0%` | `78,1%` | `71,9%` | **`100,0%`** (`100%` / dígito) |
+| **Passkey Inédito `T = 1536` (`24×` anel)** | `0,0%` | `6,2%` | `0,0%` | **`96,88%`** (`98,96%` / dígito!) |
+| **Passkey Inédito `T = 2048` (`32×` anel)** | `0,0%` | `3,1%` | `0,0%` | **`84,38%`** (`vs 65,62%` sem Banco Biortogonal: **`+18,76%`**!) |
+| **Suíte Adversarial 3 Turnos Dígitos Repetidos (`800..500`)** | — | `0,0%` em `800` | `87,5%` (`7/8`) | **`100,0%` (`8/8` limpos, `0/8` stutters!)** |
+| **Chat 3 Turnos `O(1)` PINs Aleatórios `[500..999]` (`24` sessões)** | — | `20,83%` | **`87,50%`** (`0/24` stutters) | **`75,00%`** (`0/24` stutters, `Δ = +0 B`) |
+| **Held-Out `EN` / `Code` / `PT` / `FR` (`BPB`)** | `3,63 / 3,40 / 3,50 / 3,52` | `2,22 / 1,54 / 2,49 / 2,29` | `2,25 / 1,71 / 2,48 / 2,39` | **`1,981` / `1,693` / `2,446` / `2,376`** |
+| **Síntese Python `AST` Válida & Paridade C99 `mmap`** | — | `2/2` · `0,999958` | `0/2` · `0,999976` | **`2/2 (100%)` · `cos = 1,000000` exato!** |
+
+### Descobertas Estruturais Confirmadas na `A100`
+1. **Fim do Colapso Multi-Tarefa de `biorth_gain`:** Graças à propriedade do especialista `long_biorth_passkey` + heap estrito Top-$M$ (`sal_new > min_sal + 1e-6`) + cirurgia biortogonal no espaço tangente (`2.512` pares de conflito curados na Frota `M=4` e `2.965` no Enxame `S=8`), `biorth_gain` subiu de `0,75` para **`1,3224`** (em vez de colapsar para `-0,072`), entregando **`100%` até `T=1024`, `96,9%` em `T=1536` e `84,4%` em `T=2048`** em estritos `455.504 B` (`Δ = +0 B`).
+2. **Validação Física do Cristal $E_8$ Compartilhado (`Nível 3`):** Os **`S = 8` batedores simultâneos** do `SharedCrystalMacroSwarm` operaram com apenas **`1.601.567` parâmetros mutáveis por batedor** (**`37,45×` menos** que os `59,98M` do Mestre), ocupando **`11,80 GiB` totais de VRAM** para 8 instâncias (praticamente o mesmo que 4 instâncias completas em `11,93 GiB`) e destilando `8/8` camadas de volta no container `.sfield.scar` de **`9,527 MiB` (`Δ = +0 B`, `mmap cos = 1,000000`)**.
+3. **Observação Franca sobre o `CUDACachingAllocator` em Multi-Stream:** Retendo simultaneamente os `4`–`8` grafos de ativação de `Phase B` antes de `Phase C` em pools separadas por `CUDA Stream`, o alocador do PyTorch atingiu o teto reservado de `39,5 GiB` e disparou reciclagens síncronas de cache (`1,00×` por passo frente a `M=1`, `2,48×` frente ao `v7.3`) — indicando `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` ou entrelaçamento imediato `fwd+bwd` por sub-onda como alavanca direta para converter a concorrência também em aceleração líquida de relógio.

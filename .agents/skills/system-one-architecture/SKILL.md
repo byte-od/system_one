@@ -142,12 +142,12 @@ description: >-
 
 ---
 
-### 🛸 K. Frota de Macro-Batedores Geodésicos (`ScarField v8.0 Macro-Scout Geodesic Fleet`)
-* **Localização Documental:** `docs/SCARFIELD_V7_5_FUSED_AND_V8_MACRO_SCOUT_FLEET.md`.
-* **Princípio Físico:** Como 1 instância completa de treino do `ScarField` (`60M` esférico, sem `v_t` do AdamW, `backward` reversível $\mathcal{O}(1)$ em $K$ e estado $\mathcal{O}(1)$ de `348,6 KiB`) consome apenas **`~1,3 – 1,5 GiB` de VRAM** (`9,53 MiB` empacotado em `.sfield.scar`), `96%` de uma `A100-40GB` permanece livre com 1 instância. A **Frota de Macro-Batedores** explora essa assimetria frente aos gigantes (`> 84 GiB`) em 3 níveis:
-  1. **Saturação Paralela dos SMs (`Multi-Stream CUDA` / `vmap` na Mesma GPU):** $M = 4\text{–}8$ instâncias concorrentes preenchendo as bolhas de latência dos `108` SMs (`4×–6×` mais avanço por segundo pelo mesmo custo de GPU).
-  2. **Macro-Batedores Especialistas por Habilidade + Fusão Geodésica Biortogonal (*Spherical DiLoCo / Geodesic Reptile*):** Batedores dedicados (`Prosa 4 Idiomas`, `Código AST`, `Passkey Biortogonal T=512..4096`, `Chat Multi-Turno O(1) + Abstenção 0x00`) caminham $H = 25\text{–}50$ passos locais independentes e fundem seus deslocamentos tangentes $\Delta_m \in \mathcal{T}_W \mathbb{S}^{I-1}$ via projeção biortogonal livre de conflitos antes da retração esférica e cura $E_8$ única (compatível inclusive com GPUs `L4/T4` sem `NVLink`, trafegando só `9,53 MiB`).
-  3. **Enxame sobre Cristal $E_8$ Compartilhado (*Shared-Crystal MoS Swarm*):** `1` substrato Gosset $E_8$ somente-leitura (`9,1 MiB`) compartilhado por `16–32` Macro-Batedores (`< 2 MiB` mutáveis cada) evoluindo cicatrizes ternárias `(A_scar, B_scar)` e polos locais, com destilação `SVD/RRR` das cicatrizes vencedoras no cristal mestre.
+### 🛸 K. Frota de Macro-Batedores Geodésicos (`ScarField v8.0 Macro-Scout Geodesic Fleet & Shared-Crystal Swarm`)
+* **Localização Canônica:** `scar_field/macro_scout_fleet.py`, `scripts/colab_train_scar_field_v8_0_macro_fleet.py`, `results/scar_field_v8_0_macro_fleet_audit.json` e `docs/SCARFIELD_V7_5_FUSED_AND_V8_MACRO_SCOUT_FLEET.md`.
+* **Princípio Físico & Validação Empírica em `NVIDIA A100` (`2.480` passos, `.sfield.scar` fixo em `9,527 MiB`, `mmap cos = 1,000000`):**
+  1. **Saturação Paralela Multi-Stream (`MacroScoutGeodesicFleet`):** `set_async_stream_mode(True)` sem sincronizações CPU$\leftrightarrow$GPU despachando especialistas simultâneos em `torch.cuda.Stream`s independentes (`11,93 GiB` para `M = 4` instâncias completas).
+  2. **Macro-Batedores Especialistas por Habilidade + Fusão Geodésica Biortogonal (`Log_{w_0}` / `Exp_{w_0}`):** Especialistas dedicados (`prose_polyglot`, `code_ast`, `long_biorth_passkey`, `chat_epistemic_o1`) + cirurgia de conflitos negativos (`2.512` pares curados) + sistema Dual de Gram `[M×M]` sem diluição `1/M` + heap estrito Top-$M$ no `BiorthogonalShockBank` (`sal_new > min_sal + 1e-6`), elevando o recall inédito de *Passkey* em `455.504 B` (`Δ = +0 B`) para **`100%` até `T=1024`, `96,88%` em `T=1536` e `84,38%` em `T=2048`** (`+18,76%` sobre a ablação sem banco biortogonal), **`100%` (`8/8`)** na suíte adversarial de PINs com dígitos repetidos (`0` gagueiras), `EN = 1,981 BPB`, `Code = 1,693 BPB` (`2/2` Python AST válido) e `8/8` abstenção `0x00`.
+  3. **Enxame sobre Cristal $E_8$ Compartilhado (`SharedCrystalMacroSwarm`):** `1` substrato Gosset $E_8$ somente-leitura compartilhado por ponteiro entre `S = 8` batedores ultraleves (**`37,45×` menos parâmetros mutáveis por batedor** = `1,60M` vs `59,98M`, `11,80 GiB` totais para 8 instâncias), destilando as cicatrizes ternárias vencedoras de volta no cristal $E_8$ com **`Δ = +0 B`**.
 
 ---
 
