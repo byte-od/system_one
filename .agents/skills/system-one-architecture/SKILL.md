@@ -129,15 +129,25 @@ description: >-
 
 ---
 
-### ⚡ J. ScarCodec Biortogonal (`v6.2`) & ScarField (`v7.3 / v7.4-Turbo` — Pós-Transformer Zero-Legado + Treino Guiado por Batedores S1)
-* **Localização Canônica:** `scar_codec/` (`numpy_engine.py`, `nd_e8.py`, `core.py`, `c_kernels.c`), `scar_field/` (`proper_time_bus.py`, `cayley_geodesic.py`, `e8_lattice.py`, `byte_shock_simplex.py`, `riemannian_muon.py`, `engine.py`) e `docs/SCARFIELD_V7_4_TURBO_AND_S1_SCOUT_TRAINING.md`.
+### ⚡ J. ScarCodec Biortogonal (`v6.3`) & ScarField (`v7.5-Fused` — Pós-Transformer Zero-Legado + `@triton.jit` + Fechamento Anti-Stuttering)
+* **Localização Canônica:** `scar_codec/` (`numpy_engine.py`, `nd_e8.py`, `core.py`, `c_kernels.c`), `scar_field/` (`triton_kernels.py`, `proper_time_bus.py`, `cayley_geodesic.py`, `e8_lattice.py`, `byte_shock_simplex.py`, `riemannian_muon.py`, `s1_scouts.py`, `engine.py`) e `docs/SCARFIELD_V7_5_FUSED_AND_V8_MACRO_SCOUT_FLEET.md`.
 * **Garantias Biortogonais (`ŨᵀU = I`, `Δ = +0 B`):**
   1. **`BiorthogonalObliqueProjector` ($\mathbf{P}_{\text{biorth}} = I - U_J \widetilde{U}_J^\top$, $\widetilde{U}_J^\top U_S = 0$):** Anula interferência de `-60 dB` (`1.000×`) sem atenuar sinais oblíquos não-ortogonais (`100%` retenção vs `28%` em `P_⊥` a `31,8°`).
   2. **Leitura Dual Biortogonal em `SCache O(1)` (`34.816 B`) & `BiorthogonalShockBank` (`ScarField`):** Resolve o sistema de Gram dos slots ativos $(S S^\top + \lambda I)^{-1}$, eliminando *crosstalk* sob superposição oblíqua (`cos = 0,9822–0,9908` no EEG `PhysioNet`, `cos = 0,9999` / `159×` menos erro no Ônibus Espacial NASA) e isolando polos `.uscar` irmãos com wipe `0x00` GDPR exato.
-  3. **Desacoplamento Suave–Choque–Reticulado + Escala Dual (`biorthogonal=True`):** Melhora todos os 10 arquivos científicos públicos sem alterar 1 byte do formato `.scar` (`+8,56 dB` no sismo `Tohoku Mw 9.1`, `-27,11%` bytes no Holter `MIT-BIH ±50 µV`, `0,8821 °C` no oceano 3D `NOAA`).
-* **Diretriz `ScarField v7.4-Turbo` + Batedores `System 1` no Treino:**
-  * Substituir `linalg.solve` (`cuSOLVER` LU) por inversão `Cayley-Schulz SPD` em Tensor Cores `BF16`, cachear `w_ste_rot` `1×` por passo e corrigir escalares de 1 elemento no `RiemannianMuon`.
-  * **Treino Guiado por Batedores `S1`:** Usar o `ByteShockFrontEnd` + `Kalman/Biorth Bus` (`1,1%` do custo do passo) como **Batedores de Fronteira** em 3 níveis: **(a)** *Gate `G0` Intra-Sequência* (compactando apenas os `~20%–25%` bytes de choque `s_t >= θ` para atravessar os fluxos pesados `Cayley S2`), **(b)** *Prospecção Assíncrona de Lote `8:1`* filtrando janelas redundantes antes do `backward`, e **(c)** *Destilação Anti-Loop por Salto Fantasma Zero-Copy* (`mutate_state=False` + `Juiz V(h)`).
+  3. **Desacoplamento Suave–Choque–Reticulado + Escala Dual (`biorthogonal=True`):** Melhora todos os 10 arquivos científicos públicos sem alterar 1 byte do formato `.scar` (`+8,56 dB` no sismo `Tohoku Mw 9.1`, `-27,11%` bytes no Holter `MIT-BIH ±50 µV`, `0,8821 °C` no oceano 3D `NOAA`, `44–72,5 MB/s` em C99 Conway–Sloane + `Gate G0`).
+* **Diretrizes `ScarField v7.5-Fused` (`699,8 ms/passo` na `A100`, `12,74 ms` Batedor `6:1`, `52,3 ms` Cura $E_8$):**
+  * **Kernels `@triton.jit` (`scar_field/triton_kernels.py`):** Conway–Sloane $\mathcal{O}(8)$ Gosset $E_8$ em registradores (`0` divergência vs C99), `Tsallis-1.5` sem `sort` invariante a deslocamento (`< 3e-7`), `RiemannianMuon` fundido em 2 passagens de HBM e onda multi-escala por rotação do dicionário `[256, D]`.
+  * **Adjunto Simplético Analítico Zero-Autograd + Inversa `Chunkwise WY` em Blocos `2×2`:** `0` chamadas `torch.autograd.grad` em `_ReversibleLeapfrogAutograd`, adjunto Rank-2 `[U, V]` sem alocar `p_mat/q_mat` e `_fast_block_unit_tril_inv` (`||T|| <= 1,0`, erro `< 5e-7` até `clen = 256`).
+  * **Fechamento Causal de Choque Anti-Stuttering (`Δ = +0 B`):** FIR causal de 1 passo (`shock_closure_decay = 0,85`) + harmônicos ímpares de repetição (`enable_repeat_phase = True`, shifts `5, 13, 21`) + amortecedor de ciclo em `state.recent_bytes`, mantendo `cos > 0,999999` de paridade de streaming.
+
+---
+
+### 🛸 K. Frota de Macro-Batedores Geodésicos (`ScarField v8.0 Macro-Scout Geodesic Fleet`)
+* **Localização Documental:** `docs/SCARFIELD_V7_5_FUSED_AND_V8_MACRO_SCOUT_FLEET.md`.
+* **Princípio Físico:** Como 1 instância completa de treino do `ScarField` (`60M` esférico, sem `v_t` do AdamW, `backward` reversível $\mathcal{O}(1)$ em $K$ e estado $\mathcal{O}(1)$ de `348,6 KiB`) consome apenas **`~1,3 – 1,5 GiB` de VRAM** (`9,53 MiB` empacotado em `.sfield.scar`), `96%` de uma `A100-40GB` permanece livre com 1 instância. A **Frota de Macro-Batedores** explora essa assimetria frente aos gigantes (`> 84 GiB`) em 3 níveis:
+  1. **Saturação Paralela dos SMs (`Multi-Stream CUDA` / `vmap` na Mesma GPU):** $M = 4\text{–}8$ instâncias concorrentes preenchendo as bolhas de latência dos `108` SMs (`4×–6×` mais avanço por segundo pelo mesmo custo de GPU).
+  2. **Macro-Batedores Especialistas por Habilidade + Fusão Geodésica Biortogonal (*Spherical DiLoCo / Geodesic Reptile*):** Batedores dedicados (`Prosa 4 Idiomas`, `Código AST`, `Passkey Biortogonal T=512..4096`, `Chat Multi-Turno O(1) + Abstenção 0x00`) caminham $H = 25\text{–}50$ passos locais independentes e fundem seus deslocamentos tangentes $\Delta_m \in \mathcal{T}_W \mathbb{S}^{I-1}$ via projeção biortogonal livre de conflitos antes da retração esférica e cura $E_8$ única (compatível inclusive com GPUs `L4/T4` sem `NVLink`, trafegando só `9,53 MiB`).
+  3. **Enxame sobre Cristal $E_8$ Compartilhado (*Shared-Crystal MoS Swarm*):** `1` substrato Gosset $E_8$ somente-leitura (`9,1 MiB`) compartilhado por `16–32` Macro-Batedores (`< 2 MiB` mutáveis cada) evoluindo cicatrizes ternárias `(A_scar, B_scar)` e polos locais, com destilação `SVD/RRR` das cicatrizes vencedoras no cristal mestre.
 
 ---
 
