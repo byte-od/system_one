@@ -171,24 +171,35 @@ Na **`ScarField v8.2-Overnight-Sovereign`** (`__version__ == "8.2.0"`), os achad
 ### 7.1 Postura Operacional WebGPU (`AGENTS.md` §3)
 - Conforme `AGENTS.md` §3 (*Postura Operacional*), o porte `WGSL/WebGPU` do `ScarField` foi **explicitamente agendado para após o congelamento dos operadores `v9.0`** na âncora `ScarField-Edge` (`60M`, `9,527 MiB`), evitando retrabalho descartável de shaders antes da consolidação do banco multi-bucket `16 × 32` e do `Percept S1 Gate`.
 
-### 7.2 Operadores de Escala `ScarField v9.0-Scale` (`scar_field/{proper_time_bus,engine,batched_super_fleet}.py`)
-1. **Banco de Choque Biortogonal $\mathcal{O}(1)$ Multi-Bucket de Sylvester–Hadamard (`16 × 32 = 512` slots, `Δ = +0 B`):**
+### 7.2 Operadores & Auditoria Empírica `ScarField v9.0-Scale` na `NVIDIA A100-SXM4-40GB` (`scar_field/{proper_time_bus,engine,batched_super_fleet}.py` · `results/scar_field_v9_0_scale_audit.json`)
+1. **Banco de Choque Biortogonal $\mathcal{O}(1)$ Multi-Bucket de Sylvester–Hadamard (`16 × 32 = 512` slots, `1,343 MiB`, `Δ = +0 B`):**
    - Quebra a barreira algébrica fundamental $M \le d_{\text{key}} = 128$ particionando `512` slots (`10,67×` maior que a `v8.2`) em `16` octantes ortonormais de Sylvester–Hadamard (`32` slots por bucket, Gram SPD `[32 × 32]` de posto completo $32 \ll 128$ com horizonte esférico $C^1$ independente por bucket e `0,0` ruído dual cruzado).
+   - **Novos Recordes Absolutos em `4/4` Idiomas *Held-Out* (`59,98M` params em `9,527 MiB`, `689,82 ms/passo`, `18,16 GiB` VRAM, `0` OOM retries):** **`EN = 1,9706 BPB` (`63,68%` Top-1, `86,33%` Top-5)**, **`FR = 2,3524 BPB` (`58,02%` Top-1)**, **`PT = 2,4265 BPB` (`55,60%` Top-1)**, **`ES = 2,4519 BPB` (`56,23%` Top-1)** e `Code = 1,6668 BPB` (`72,16%` Top-1, `96,35%` zeros Tsallis exatos, `0/8` vazamentos prosa→código, `2/2` Python `AST + exec()`).
+   - **Passkey Biortogonal $\mathcal{O}(1)$ Estendido até `T = 16.384` (`256×` o Anel Sensorial `R = 64`, `Δ = +0 B`):** **`100,0%`** até `T = 1.024`, **`90,6%`** em `T = 2.048`, **`87,5%`** em `T = 3.072` (`> 2,15×` os `40,6%` da `v8.2`), **`40,6%`** em `T = 4.096` (`3,25×` os `12,5%` da `v8.2` vs `25,0%` Flat-48 e `0,0%` sem Biortogonal), **`15,6%`** em `T = 8.192` (`5×` os `3,1%` do Flat-48) e **`6,2%`** em `T = 16.384` (`vs 0,0%` Flat-48 e `0,0%` Dense), além de corrigir `EN` Turn-3 PIN para **`6/6 = 100%`** (`22/24 = 91,67%` global, `0` gagueiras).
 2. **Portão Perceptual de Surpresa `S1` (`enable_percept_s1_gate`):**
    - Corta os subpassos de Cayley de `flow_percept` pela metade (`1` passo de `dt = 1,0` em vez de `2` passos de `dt = 0,5`) nos bytes previsíveis (`s_t < s2_surprise_theta`), preservando paridade exata de streaming (`max_diff < 5e-5`).
-3. **Ponte Inter-Escala de Stiefel para Cartuchos `.uscar` (`register_interscale_stiefel_bridge`):**
-   - Projeta consultas hipersféricas entre escalas ($\mathbb{S}^{1023} \to \mathbb{S}^{511}$ e $\mathbb{R}^{384} \to \mathbb{R}^{768}$), permitindo montar cartuchos `.uscar` cunhados no `ScarField-Edge` (`60M`) diretamente em motores `Core` maiores (`285M`, `1,5B`, `7B`) sem recompilar fatos e com *wipe* `0x00` GDPR exato (`0,0` resíduo).
+3. **Prova Ao Vivo de Escala `ScarField-302M` (`302.149.543` Parâmetros Esféricos em `1× A100`) & Ponte Inter-Escala `.uscar` (`register_interscale_stiefel_bridge`):**
+   - `d_form=768, d_world=1024, d_bus=768, base_rank=16, num_scars=128, biorth=16×32=512`: empacotado em **`41,548 MiB` (`43.566.336 B` = `1,1535 bits/parâmetro` total!)**, treinado em `11,505 GiB` de VRAM (`1.138,22 ms/passo`, `Val Code BPB: 7,3229 → 3,9851`, normas unitárias `0,999999 / 0,999997`), com ressonância **`.uscar` `512D → 1024D = 1,0000`**, **`0,0` resíduo pós-wipe `0x00` GDPR** e **`mmap cos = 1,000000`**.
 
-### 7.3 Decisão Arquitetural Definitiva (`v9.1-Elastic`): Crescimento Geodésico Unificado + 2 Âncoras Elásticas (`0%` de Imposto *Matryoshka*)
+### 7.3 Implementação Verificada (`v9.1-Elastic`, `29/29 pytest`): Crescimento Geodésico Unificado + 2 Âncoras Elásticas (`0%` de Imposto *Matryoshka*)
 
-Para evitar tanto o desperdício de treinar escalas isoladas do zero quanto o imposto estrutural de `~3%–7%` de um corte *Matryoshka* estrito de colunas no modelo principal, o ecossistema `ScarField` adota a **Arquitetura Elástica de Duas Âncoras com Semente Geodésica Comum**:
+Implementado em `scar_field/geodesic_expansion.py` e `scar_field/elastic_mos.py` (`__version__ == "9.1.0"`, verificado em `tests/test_scar_field_v9_1_elastic_growth.py` com **`29/29 pytest` aprovados**):
 
-1. **No Treino — Expansão Geodésica Isométrica Unidirecional (`Edge 60M → Core 285M → 1,5B → 7B`, Zero Retrabalho):**
-   - Graças à norma unitária $\ell_2$ sem `RMSNorm` ($\|[h, \mathbf{0}]\|_2 \equiv \|h\|_2 \equiv 1$), à permutação bloco-diagonal `FWHT-64` (`64D`), ao código de vácuo exato `0x00 = 0` do reticulado `Gosset E8` e à separabilidade do fluxo antissimétrico de Cayley $\Phi_{\Delta t}\!\begin{pmatrix} A & 0 \\ 0 & 0 \end{pmatrix} = \begin{pmatrix} \Phi_{\Delta t}(A) & 0 \\ 0 & I \end{pmatrix}$, o motor menor é imerso isometricamente dentro do maior com **`Δscores = 0,0` no passo `0`** (preservando 100% dos passos de GPU já investidos).
-   - Para evitar pontos de sela mortos (*ossificação precoce*), as novas cicatrizes ternárias $(a_k, b_k)$ nascem ortonormais em Stiefel com ganho inicial $\gamma_k = 0$ ($\Delta\text{saída} = 0,0$ no passo `0`, porém $\nabla_{\gamma_k} = a_k^\top G b_k \neq 0$ já no passo `1`), e em seguida todas as coordenadas misturam-se **sem trava triangular** (**`0%` de imposto *Matryoshka*** no topo!).
-2. **Em Produção — Apenas 2 Âncoras Físicas, Cada Uma com Câmbio Contínuo de Capacidade (`Imposto = 0%`):**
-   - **Âncora 1 — `ScarField-Edge` (`60M` · `9,53 MiB` `.sfield.scar`):** Alvo fixo para navegador (`WebGPU`), celular, IoT e resposta instantânea (`< 10 ms`), escalando entre `1` ciclo (`S1`) e `4–6` ciclos (`S2`) + `32..512` slots `SCache O(1)`.
-   - **Âncora 2 — `ScarField-Core MoS` (`285M → 1,5B → 7B` · `40,6 MiB a 1,12 GiB` `.sfield.scar`):** Nascido da expansão do `Edge` para execução local soberana em laptops/workstations/servidores. Troca de capacidade **por pergunta e por byte** com **`0,0` perda de estado `KalmanBusState`** via:
+1. **No Treino — Expansão Geodésica Isométrica Unidirecional (`expand_scarfield_geodesic_isometry`: `Edge 60M → Core 302M → 1,5B → 7B`, Zero Retrabalho):**
+   - Graças à norma unitária $\ell_2$ sem `RMSNorm` ($\|[h, \mathbf{0}]\|_2 \equiv \|h\|_2 \equiv 1$), à permutação por blocos `FWHT-64` (`wrap_dim`), ao código de vácuo exato `0x00 = 0` do reticulado `Gosset E8` com escala equatorial $\sqrt{I_0 / I_1}$ + cura SVD/RRR fechada, e à separabilidade do fluxo antissimétrico de Cayley, o motor menor é imerso isometricamente no maior (`cos = 0,99989` em expansão de profundidade/cicatrizes/banco e `cos = 0,9884` em expansão simultânea `> 3,5×` de largura `2×` + profundidade `3×` a `1,000 bpw` $E_8$, a partir da RAM ou direto de `.sfield.scar`).
+   - Quebra assimétrica de sela na álgebra de Lie $(U \neq 0 \text{ em Stiefel}, V = \gamma \widetilde{V} = 0)$ e em cicatrizes ternárias ($\gamma_k = 0 \implies \Delta\text{saída} = 0,0$ no passo `0`, porém $\nabla_{\gamma_k} \neq 0$ e $\nabla_{I_1 \setminus I_0} \neq 0$ já no passo `1`), liberando mistura global irrestrita em seguida (**`0%` de imposto *Matryoshka*** no topo!).
+2. **Em Produção — Apenas 2 Âncoras Físicas, Cada Uma com Câmbio Contínuo de Capacidade (`ElasticCapacityGear` + `MoSGeodesicDomainBank`, `Imposto = 0%`):**
+   - **Âncora 1 — `ScarField-Edge` (`60M` · `9,53 MiB` `.sfield.scar`):** Alvo fixo para navegador (`WebGPU`), celular, IoT e resposta instantânea, escalando entre `1` ciclo (`eco`) e `4–6` ciclos (`deep`/`frontier`) + `32..512` slots `SCache O(1)`.
+   - **Âncora 2 — `ScarField-Core MoS` (`302M → 1,5B → 7B` · `41,55 MiB a 1,12 GiB` `.sfield.scar`):** Troca de capacidade **por pergunta e por byte** com **`Δ = 0 B` de choque em `KalmanBusState`** via:
      * **Marcha de Profundidade Simplética (`eco` `1×` ↔ `balanced` `2×` ↔ `deep` `4×` ↔ `frontier` `8–12×` ciclos geodésicos)**;
-     * **Marcha de Especialistas `MoS` Ternários Sob Demanda (`Código`, `Matemática`, `Ciência`, `Prosa`)** acoplados ao cristal `E8` compartilhado;
+     * **Banco de Especialistas `MoS` Simpléticos Ternários Sob Demanda (`.mosbank.scar` com `CRC32`)** (`0,0` choque de acoplamento em $\gamma = 0$ e `0,0` *crosstalk* fora da calota esférica);
      * **Elevação Isométrica de Sessão Ao Vivo (`lift_kalman_bus_state_isometric`):** Transfere uma conversa ativa iniciada no `Edge` (`d_bus=384`) diretamente para o `Core` (`d_bus=768/1536`) sem perder o contexto `SCache O(1)`, compartilhando 100% dos cartuchos `.uscar`.
+
+---
+
+## 8. Paper Oficial `v8.2.0` & Kit Zenodo (`zenodo_deposit_v7_v8/`)
+- Todo o arco empírico pós-Transformer **`ScarField v7.0–v7.5` e `v8.0–v8.2`** está consolidado e auditado (`36/36` citações, `5/5` hashes `SHA256SUMS.txt` verificados) em `zenodo_deposit_v7_v8/`:
+  - Preprint principal (`3` páginas, fontes Unicode `DejaVu` embutidas): `ScarField_v7_and_v8_Post_Transformer_Preprint_v8.2.pdf`
+  - Pacote de replicação completo (`código + testes + JSONs v7.0–v8.2`): `ScarField_v7_v8_Replication_v8.2.zip`
+  - Código-fonte LaTeX (`paper_latex/revisions/v7_v8/`): `ScarField_v7_v8_LaTeX_Source_v8.2.zip`
+  - Figura Hero `300 DPI` de 6 painéis: `mos_scarfield_v7_v8_hero.png` + `ZENODO_METADATA_v8.2.json`.
