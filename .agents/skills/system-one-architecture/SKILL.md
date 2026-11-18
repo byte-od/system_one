@@ -151,6 +151,16 @@ description: >-
 
 ---
 
+### 🪐 L. Escala Soberana Multi-Bucket & Elasticidade Geodésica (`ScarField v9.0-Scale` & `v9.1-Elastic` — `Edge` + `Core MoS`)
+* **Localização Canônica:** `scar_field/proper_time_bus.py` (`build_spherical_hash_bucket_poles`, `register_interscale_stiefel_bridge`), `scar_field/geodesic_expansion.py`, `scar_field/elastic_mos.py`, `scar_field/engine.py`, `scripts/colab_train_scar_field_v9_0_scale.py` e `docs/SCARFIELD_V7_5_FUSED_AND_V8_MACRO_SCOUT_FLEET.md` (§7).
+* **Postura WebGPU (`AGENTS.md` §3):** Porte `WGSL/WebGPU` do `ScarField` explicitamente agendado para após o congelamento dos operadores `v9.0` na âncora `ScarField-Edge` (`60M`, `9,527 MiB`).
+* **Garantias de Escala & Elasticidade Imposto-Zero:**
+  1. **Banco Biortogonal $\mathcal{O}(1)$ Multi-Bucket de Sylvester–Hadamard (`16 × 32 = 512` slots, `Δ = +0 B`):** Quebra a barreira $M \le d_{\text{key}} = 128$ resolvendo Gram SPD `[32 × 32]` independente por octante com portão esférico $C^1$ local (`0,0` ruído dual cruzado) + `enable_percept_s1_gate` + Ponte de Stiefel `.uscar` inter-escala (`512D → 1024D → 2048D+`, wipe `0x00` GDPR exato).
+  2. **Imersão Geodésica Isométrica Unidirecional (`Edge → Core`, Zero Retrabalho & `0%` Imposto *Matryoshka*):** Expande `60M → 285M → 1,5B → 7B` via esfera $\ell_2$ ($\|[h, \mathbf{0}]\|_2 = \|h\|_2 \equiv 1$), permutação de blocos `FWHT-64`, vácuo `0x00` do `Gosset E8` e quebra de sela em Stiefel ($\gamma_k = 0 \implies \Delta\text{scores} = 0,0$ no passo `0` e $\nabla_{\gamma_k} \neq 0$ no passo `1`), liberando mistura global irrestrita em seguida.
+  3. **Duas Âncoras Físicas Elásticas (`ScarField-Edge` `9,53 MiB` + `ScarField-Core MoS` `40,6 MiB..1,12 GiB`):** Trocam de capacidade *por pergunta/byte* sem alterar `d_bus` (via marchas de ciclos simpléticos `1..12` + bancos de cicatrizes `MoS` ternários sob demanda) e suportam elevação sem perdas de `KalmanBusState` (`Edge → Core`).
+
+---
+
 ## 🚫 2. Regras Estritas de Implementação (Checklist de Pureza)
 
 Ao implementar qualquer código sob esta arquitetura:

@@ -162,4 +162,33 @@ Na **`ScarField v8.2-Overnight-Sovereign`** (`__version__ == "8.2.0"`), os achad
 4. **Quality Gate Contínuo & Seleção Automática de Checkpoint (`best_q = 3,3947`):**
    - Ao final do Enxame `S=8`, o seletor de qualidade restaurou automaticamente o melhor cristal validado (`Swarm R10`, `q = 3,3947`), garantindo novos recordes simultâneos em **`Code` (`1,6368 BPB`), `FR` (`2,3633 BPB`), `PT` (`2,4421 BPB`), `ES` (`2,4551 BPB`) e `EN Top-1` (`63,48%`, `1,9796 BPB`)**, `8/8` abstenção `0x00`, `0,0` resíduo GDPR e `mmap cos = 1,000000` (`scarfield_v8_2_overnight.sfield.scar` = `9,527 MiB`, `Δ = +0 B`).
 
-> **Nota de Transparência Científica (`v8.2`):** Nos 3 turnos `O(1)` (`455.504 B`, `Δ = +0 B`, **`0` gagueiras em `24 + 8` testes**), `PT`, `ES` e `FR` cravaram **`100,0%` (`18/18` nos PINs aleatórios `[500..999]` e `6/6` nos dígitos repetidos `800..500`)**. Já no template `EN`, o prefixo compartilhado de 6 bytes `"The st"` entre `"The stored session key..."` e `"The study of..."` (reforçado pela sobreamostragem de `34%` de Q&A enciclopédico em inglês para zerar vazamentos de código) desviou o 7º byte de `'o'` para `'u'`, deixando o agregado global em `75,0%` (`18/24` e `6/8`) — diagnóstico exato que orienta o *boost* posicional nos bytes `5..12` do template multi-turno em inglês numa futura `v8.3`.
+> **Nota de Transparência Científica (`v8.2`):** Nos 3 turnos `O(1)` (`455.504 B`, `Δ = +0 B`, **`0` gagueiras em `24 + 8` testes**), `PT`, `ES` e `FR` cravaram **`100,0%` (`18/18` nos PINs aleatórios `[500..999]` e `6/6` nos dígitos repetidos `800..500`)**. Já no template `EN`, o prefixo compartilhado de 6 bytes `"The st"` entre `"The stored session key..."` e `"The study of..."` (reforçado pela sobreamostragem de `34%` de Q&A enciclopédico em inglês para zerar vazamentos de código) desviou o 7º byte de `'o'` para `'u'`, deixando o agregado global em `75,0%` (`18/24` e `6/8`) — diagnóstico exato resolvido no `v9.0` via *boost* posicional nos primeiros 18 bytes do 3º turno.
+
+---
+
+## 7. `ScarField v9.0-Scale` & Estratégia Soberana de Escala Elástica (`v9.1-Elastic`)
+
+### 7.1 Postura Operacional WebGPU (`AGENTS.md` §3)
+- Conforme `AGENTS.md` §3 (*Postura Operacional*), o porte `WGSL/WebGPU` do `ScarField` foi **explicitamente agendado para após o congelamento dos operadores `v9.0`** na âncora `ScarField-Edge` (`60M`, `9,527 MiB`), evitando retrabalho descartável de shaders antes da consolidação do banco multi-bucket `16 × 32` e do `Percept S1 Gate`.
+
+### 7.2 Operadores de Escala `ScarField v9.0-Scale` (`scar_field/{proper_time_bus,engine,batched_super_fleet}.py`)
+1. **Banco de Choque Biortogonal $\mathcal{O}(1)$ Multi-Bucket de Sylvester–Hadamard (`16 × 32 = 512` slots, `Δ = +0 B`):**
+   - Quebra a barreira algébrica fundamental $M \le d_{\text{key}} = 128$ particionando `512` slots (`10,67×` maior que a `v8.2`) em `16` octantes ortonormais de Sylvester–Hadamard (`32` slots por bucket, Gram SPD `[32 × 32]` de posto completo $32 \ll 128$ com horizonte esférico $C^1$ independente por bucket e `0,0` ruído dual cruzado).
+2. **Portão Perceptual de Surpresa `S1` (`enable_percept_s1_gate`):**
+   - Corta os subpassos de Cayley de `flow_percept` pela metade (`1` passo de `dt = 1,0` em vez de `2` passos de `dt = 0,5`) nos bytes previsíveis (`s_t < s2_surprise_theta`), preservando paridade exata de streaming (`max_diff < 5e-5`).
+3. **Ponte Inter-Escala de Stiefel para Cartuchos `.uscar` (`register_interscale_stiefel_bridge`):**
+   - Projeta consultas hipersféricas entre escalas ($\mathbb{S}^{1023} \to \mathbb{S}^{511}$ e $\mathbb{R}^{384} \to \mathbb{R}^{768}$), permitindo montar cartuchos `.uscar` cunhados no `ScarField-Edge` (`60M`) diretamente em motores `Core` maiores (`285M`, `1,5B`, `7B`) sem recompilar fatos e com *wipe* `0x00` GDPR exato (`0,0` resíduo).
+
+### 7.3 Decisão Arquitetural Definitiva (`v9.1-Elastic`): Crescimento Geodésico Unificado + 2 Âncoras Elásticas (`0%` de Imposto *Matryoshka*)
+
+Para evitar tanto o desperdício de treinar escalas isoladas do zero quanto o imposto estrutural de `~3%–7%` de um corte *Matryoshka* estrito de colunas no modelo principal, o ecossistema `ScarField` adota a **Arquitetura Elástica de Duas Âncoras com Semente Geodésica Comum**:
+
+1. **No Treino — Expansão Geodésica Isométrica Unidirecional (`Edge 60M → Core 285M → 1,5B → 7B`, Zero Retrabalho):**
+   - Graças à norma unitária $\ell_2$ sem `RMSNorm` ($\|[h, \mathbf{0}]\|_2 \equiv \|h\|_2 \equiv 1$), à permutação bloco-diagonal `FWHT-64` (`64D`), ao código de vácuo exato `0x00 = 0` do reticulado `Gosset E8` e à separabilidade do fluxo antissimétrico de Cayley $\Phi_{\Delta t}\!\begin{pmatrix} A & 0 \\ 0 & 0 \end{pmatrix} = \begin{pmatrix} \Phi_{\Delta t}(A) & 0 \\ 0 & I \end{pmatrix}$, o motor menor é imerso isometricamente dentro do maior com **`Δscores = 0,0` no passo `0`** (preservando 100% dos passos de GPU já investidos).
+   - Para evitar pontos de sela mortos (*ossificação precoce*), as novas cicatrizes ternárias $(a_k, b_k)$ nascem ortonormais em Stiefel com ganho inicial $\gamma_k = 0$ ($\Delta\text{saída} = 0,0$ no passo `0`, porém $\nabla_{\gamma_k} = a_k^\top G b_k \neq 0$ já no passo `1`), e em seguida todas as coordenadas misturam-se **sem trava triangular** (**`0%` de imposto *Matryoshka*** no topo!).
+2. **Em Produção — Apenas 2 Âncoras Físicas, Cada Uma com Câmbio Contínuo de Capacidade (`Imposto = 0%`):**
+   - **Âncora 1 — `ScarField-Edge` (`60M` · `9,53 MiB` `.sfield.scar`):** Alvo fixo para navegador (`WebGPU`), celular, IoT e resposta instantânea (`< 10 ms`), escalando entre `1` ciclo (`S1`) e `4–6` ciclos (`S2`) + `32..512` slots `SCache O(1)`.
+   - **Âncora 2 — `ScarField-Core MoS` (`285M → 1,5B → 7B` · `40,6 MiB a 1,12 GiB` `.sfield.scar`):** Nascido da expansão do `Edge` para execução local soberana em laptops/workstations/servidores. Troca de capacidade **por pergunta e por byte** com **`0,0` perda de estado `KalmanBusState`** via:
+     * **Marcha de Profundidade Simplética (`eco` `1×` ↔ `balanced` `2×` ↔ `deep` `4×` ↔ `frontier` `8–12×` ciclos geodésicos)**;
+     * **Marcha de Especialistas `MoS` Ternários Sob Demanda (`Código`, `Matemática`, `Ciência`, `Prosa`)** acoplados ao cristal `E8` compartilhado;
+     * **Elevação Isométrica de Sessão Ao Vivo (`lift_kalman_bus_state_isometric`):** Transfere uma conversa ativa iniciada no `Edge` (`d_bus=384`) diretamente para o `Core` (`d_bus=768/1536`) sem perder o contexto `SCache O(1)`, compartilhando 100% dos cartuchos `.uscar`.
